@@ -26,5 +26,5 @@ input_rtp_loss_policy = "recover"
 stream_workers = 1
 queue_capacity = 3
 frame_buffer_slots = 3
-entropy_workers = 4
+entropy_workers = 1
 graph_packet_capacity = 2

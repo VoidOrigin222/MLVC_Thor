@@ -151,7 +151,9 @@ bash scripts/run_five.sh encode contexts
 ```
 
 修改 `configs/five/<模式>/encode-0.toml` 至 `encode-4.toml` 的五个输入地址、
-解码板 IP，以及对应解码配置的 RTSP 发布地址。模板以每路 13 FPS 为目标。
+解码板 IP，以及对应解码配置的 RTSP 发布地址。contexts 模板以每路 12 FPS 为目标，
+解码 entropy_workers=1；batch5 模板保留每路 13 FPS 和 4 worker。
+12 FPS 的重复验证和延迟说明见 [DECODE_LATENCY_VALIDATION.md](DECODE_LATENCY_VALIDATION.md)。
 MediaMTX 由使用者启动。
 
 batch5 引擎放在 `engines/batch5/`，使用独立的 `models/manifest_thor_batch5.json`。

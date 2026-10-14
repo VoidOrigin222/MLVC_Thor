@@ -46,7 +46,7 @@ pidfile.write_text(json.dumps(items))
 ''')
 
 
-def prepare(host, label, scheme, frames):
+def prepare(host, label, scheme, frames, target_fps, entropy_workers, binary_dir):
     operation = "encode" if host == ENCODER else "decode"
     return remote(host, f'''
 import os,re,subprocess,json
@@ -63,12 +63,13 @@ for lane in range(5):
  extra='profile_output = "logs/'+label+'-'+operation+'-lane'+str(lane)+'-trace.json"\\n'
  if operation=='encode':
   s=re.sub(r'(?m)^input_video\\s*=.*$', 'input_rtsp = "rtsp://192.168.5.3:18554/five-in'+str(lane)+'"',s)
-  s=s.replace('fps = 30','fps = 13').replace('target_fps = 0','target_fps = 13')
+  s=s.replace('fps = 30','fps = {target_fps}').replace('target_fps = 0','target_fps = {target_fps}')
  else:
   s=s.replace('output_transport_mode = "none"','output_transport_mode = "rtsp"')
   s=re.sub(r'(?m)^output_transport_rtsp_url\\s*=.*$', 'output_transport_rtsp_url = "rtsp://192.168.5.3:18554/five-out'+str(lane)+'"', s)
   extra+='latency_probe_host = "192.168.5.16"\\nlatency_probe_port = '+str(39500+lane)+'\\n'
   extra+='input_rtp_queue_capacity = 256\\ninput_rtp_queue_bytes = 67108864\\ninput_rtp_overflow_policy = "fail"\\ninput_rtp_pending_frames = 256\\ninput_rtp_reorder_wait_ms = 500\\ninput_rtp_eos_wait_ms = 5000\\ninput_rtp_loss_policy = "fail"\\n'
+  s=re.sub(r'(?m)^entropy_workers\\s*=.*$', 'entropy_workers = {entropy_workers}',s)
  s=s.replace('[pipeline]',extra+'[pipeline]')
  path='configs/'+label+'-'+operation+'-lane'+str(lane)+'.toml'
  Path(path).write_text(s); configs.append(path)
@@ -89,9 +90,10 @@ if operation=='encode':
 codec=[]
 if scheme=='processes':
  for lane,path in enumerate(configs):
-  p=launch(['timeout','100','bin/bench/multi_'+operation,'--config',path],'logs/'+label+'-'+operation+'-lane'+str(lane)+'.log'); codec.append(p.pid)
+  binary='{binary_dir}/mlvc_'+operation+'_thor' if {binary_dir!r}=='bin' else '{binary_dir}/multi_'+operation
+  p=launch(['timeout','100',binary,'--config',path],'logs/'+label+'-'+operation+'-lane'+str(lane)+'.log'); codec.append(p.pid)
 else:
- p=launch(['timeout','100','bin/bench/mlvc_multi_thor',operation,scheme,'logs/'+label+'-'+operation,*configs],'logs/'+label+'-'+operation+'-process.log');codec.append(p.pid)
+ p=launch(['timeout','100','{binary_dir}/mlvc_multi_thor',operation,scheme,'logs/'+label+'-'+operation,*configs],'logs/'+label+'-'+operation+'-process.log');codec.append(p.pid)
 Path('logs/'+label+'-'+operation+'-pids.json').write_text(json.dumps(procs))
 print(json.dumps({{'codec_pids':codec,'processes':procs}}))
 ''')
@@ -139,6 +141,14 @@ for lane in range(5):
   if latency:
    latency.sort();r['latency_ms']={{'mean':statistics.mean(latency),'p50':statistics.median(latency),'p95':latency[int(.95*(len(latency)-1))]}}
    r['steady_window_ns']=[samples[min(valid)],int(acks[str(max(valid))])]
+   ordered=sorted(valid); first=ordered[:120]; last=ordered[-120:]
+   first_latency=statistics.mean((int(acks[str(i)])-samples[i])/1e6 for i in first)
+   last_latency=statistics.mean((int(acks[str(i)])-samples[i])/1e6 for i in last)
+   r['latency_first120_mean_ms']=first_latency
+   r['latency_last120_mean_ms']=last_latency
+   r['latency_growth_ms']=last_latency-first_latency
+   if len(last)>1:
+    r['decode_ack_tail_fps']=(len(last)-1)*1e9/(int(acks[str(last[-1])])-int(acks[str(last[0])]))
   timeline=[]
   for p in Path('logs').glob(label+'-input-five-in'+str(lane)+'-*.csv'):
    timeline.extend(dict((k,int(v)) for k,v in row.items()) for row in csv.DictReader(p.open()))
@@ -160,14 +170,21 @@ def main():
     p.add_argument("--frames", type=int, default=390)
     p.add_argument("--output", type=Path, required=True)
     p.add_argument("--label")
+    p.add_argument("--target-fps", type=int, default=13)
+    p.add_argument("--decoder-entropy-workers", type=int, default=4)
+    p.add_argument("--binary-dir", choices=["bin", "bin/bench"], default="bin")
     args = p.parse_args()
+    if args.target_fps < 1 or args.decoder_entropy_workers < 1:
+        p.error("Target FPS and entropy workers must be positive")
     label = args.label or "five-" + args.scheme
     try:
         sources(label, True)
         time.sleep(1)
-        prepare(DECODER, label, args.scheme, args.frames)
+        prepare(DECODER, label, args.scheme, args.frames, args.target_fps,
+                args.decoder_entropy_workers, args.binary_dir)
         time.sleep(3)
-        prepare(ENCODER, label, args.scheme, args.frames)
+        prepare(ENCODER, label, args.scheme, args.frames, args.target_fps,
+                args.decoder_entropy_workers, args.binary_dir)
         print("Started " + label, flush=True)
         deadline = time.monotonic() + 105
         while time.monotonic() < deadline:
@@ -192,7 +209,9 @@ print(json.dumps({{'ok':ok,'errors':errors}}))
         enc = collect(ENCODER, label, "encode", args.frames)
         dec = collect(DECODER, label, "decode", args.frames)
         result = {"scheme": args.scheme, "label": label,
-                  "frames_per_lane": args.frames, "encode": enc, "decode": dec}
+                  "frames_per_lane": args.frames, "target_fps": args.target_fps,
+                  "decoder_entropy_workers": args.decoder_entropy_workers,
+                  "binary_dir": args.binary_dir, "encode": enc, "decode": dec}
         result["complete"] = all(
             lane["ok"] and lane["metrics"].get("frames") == args.frames
             for side in (enc, dec) for lane in side["lanes"])

@@ -1,5 +1,8 @@
 # 五路 RTSP 双板验证
 
+本文保留 13 FPS 对照。最新五上下文 12 FPS 和解码窗口调优见
+[解码延迟验证](DECODE_LATENCY_VALIDATION.md)。
+
 日期：2026-10-14。编码板 192.168.5.16，解码板 192.168.5.17，均为 Jetson AGX Thor。
 CUDA 13.0、TensorRT 10.13.3.9、FFmpeg 6.1 共享库，TensorRT FP16 推理。
 
