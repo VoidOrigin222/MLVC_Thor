@@ -1,12 +1,11 @@
 #include "mlvc/core/tensor_handle.h"
 
-#include <acl/acl.h>
-
 #include <cstring>
 #include <utility>
 
 #include "mlvc/core/status.h"
 #include "mlvc/framework/profile_range.h"
+#include <acl/acl.h>
 
 namespace mlvc {
 namespace {
@@ -17,13 +16,16 @@ std::size_t TensorByteSize(const TensorShape& shape, DataType dtype) {
 
 void CheckAclStatus(aclError status, const char* operation) {
   if (status != ACL_ERROR_NONE) {
-    throw Error(std::string(operation) + " failed: ret=" + std::to_string(status));
+    throw Error(std::string(operation) +
+                " failed: ret=" + std::to_string(status));
   }
 }
 
 }  // namespace
 
-TensorHandle::TensorHandle(TensorShape shape, DataType dtype) { Reset(std::move(shape), dtype); }
+TensorHandle::TensorHandle(TensorShape shape, DataType dtype) {
+  Reset(std::move(shape), dtype);
+}
 
 void TensorHandle::Reset(TensorShape shape, DataType dtype) {
   shape_ = std::move(shape);
@@ -46,7 +48,8 @@ void TensorHandle::Reset(TensorShape shape, DataType dtype) {
 }
 
 void TensorHandle::AttachCpuBuffer(void* data, std::size_t bytes, bool valid) {
-  Check(data != nullptr || bytes == 0, "CPU tensor handle buffer must not be null");
+  Check(data != nullptr || bytes == 0,
+        "CPU tensor handle buffer must not be null");
   Check(bytes >= this->bytes(), "CPU tensor handle buffer is too small");
   external_cpu_data_ = data;
   external_cpu_bytes_ = bytes;
@@ -76,7 +79,9 @@ void TensorHandle::AllocateAclBuffer(bool valid) {
   acl_dirty_ = valid && !cpu_valid_ && !pinned_cpu_valid_;
 }
 
-std::size_t TensorHandle::bytes() const { return TensorByteSize(shape_, dtype_); }
+std::size_t TensorHandle::bytes() const {
+  return TensorByteSize(shape_, dtype_);
+}
 
 TensorResidency TensorHandle::residency() const {
   const bool has_cpu = has_cpu_buffer();
@@ -120,7 +125,9 @@ TensorHandleState TensorHandle::State() const {
   };
 }
 
-std::string TensorHandle::ResidencyString() const { return TensorResidencyName(residency()); }
+std::string TensorHandle::ResidencyString() const {
+  return TensorResidencyName(residency());
+}
 
 bool TensorHandle::has_cpu_buffer() const {
   return (external_cpu_data_ != nullptr && external_cpu_bytes_ >= bytes()) ||
@@ -128,7 +135,8 @@ bool TensorHandle::has_cpu_buffer() const {
 }
 
 bool TensorHandle::has_pinned_cpu_buffer() const {
-  return pinned_cpu_buffer_.data() != nullptr && pinned_cpu_buffer_.bytes() >= bytes();
+  return pinned_cpu_buffer_.data() != nullptr &&
+         pinned_cpu_buffer_.bytes() >= bytes();
 }
 
 bool TensorHandle::has_acl_buffer() const {
@@ -141,14 +149,16 @@ TensorView TensorHandle::CpuView() const {
 }
 
 TensorView TensorHandle::PinnedCpuView() const {
-  Check(has_pinned_cpu_buffer(), "pinned CPU tensor handle buffer is not allocated");
-  return TensorView::Borrowed(PinnedCpuData(), &shape_, dtype_, MemoryLocation::kPinnedCpu);
+  Check(has_pinned_cpu_buffer(),
+        "pinned CPU tensor handle buffer is not allocated");
+  return TensorView::Borrowed(PinnedCpuData(), &shape_, dtype_,
+                              MemoryLocation::kPinnedCpu);
 }
 
 TensorView TensorHandle::AclView() const {
   Check(has_acl_buffer(), "ACL tensor handle buffer is not allocated");
-  return TensorView::Borrowed(const_cast<void*>(acl_buffer_.data()), &shape_, dtype_,
-                              MemoryLocation::kAcl);
+  return TensorView::Borrowed(const_cast<void*>(acl_buffer_.data()), &shape_,
+                              dtype_, MemoryLocation::kAcl);
 }
 
 void TensorHandle::MarkCpuModified() {
@@ -162,7 +172,8 @@ void TensorHandle::MarkCpuModified() {
 }
 
 void TensorHandle::MarkPinnedCpuModified() {
-  Check(has_pinned_cpu_buffer(), "pinned CPU tensor handle buffer is not allocated");
+  Check(has_pinned_cpu_buffer(),
+        "pinned CPU tensor handle buffer is not allocated");
   pinned_cpu_valid_ = true;
   cpu_valid_ = false;
   acl_valid_ = false;
@@ -190,7 +201,8 @@ void TensorHandle::MarkCpuValid() {
 }
 
 void TensorHandle::MarkPinnedCpuValid() {
-  Check(has_pinned_cpu_buffer(), "pinned CPU tensor handle buffer is not allocated");
+  Check(has_pinned_cpu_buffer(),
+        "pinned CPU tensor handle buffer is not allocated");
   pinned_cpu_valid_ = true;
   pinned_cpu_dirty_ = false;
   cpu_dirty_ = false;
@@ -212,28 +224,33 @@ TensorCopyResult TensorHandle::EnsureAcl(void*) {
     AllocateAclBuffer(false);
   }
   if (acl_valid_ && !acl_dirty_) {
-    return TensorCopyResult{false, 0, MemoryLocation::kAcl, MemoryLocation::kAcl};
+    return TensorCopyResult{false, 0, MemoryLocation::kAcl,
+                            MemoryLocation::kAcl};
   }
   if (pinned_cpu_valid_) {
-    CheckAclStatus(aclrtMemcpy(acl_buffer_.data(), bytes(), PinnedCpuData(), bytes(),
-                               ACL_MEMCPY_HOST_TO_DEVICE),
+    CheckAclStatus(aclrtMemcpy(acl_buffer_.data(), bytes(), PinnedCpuData(),
+                               bytes(), ACL_MEMCPY_HOST_TO_DEVICE),
                    "aclrtMemcpy TensorHandle pinned CPU to ACL");
     acl_valid_ = true;
     pinned_cpu_dirty_ = false;
     acl_dirty_ = false;
-    return TensorCopyResult{true, bytes(), MemoryLocation::kPinnedCpu, MemoryLocation::kAcl};
+    return TensorCopyResult{true, bytes(), MemoryLocation::kPinnedCpu,
+                            MemoryLocation::kAcl};
   }
-  Check(cpu_valid_, "TensorHandle has no valid CPU or pinned CPU source for ACL upload");
-  CheckAclStatus(
-      aclrtMemcpy(acl_buffer_.data(), bytes(), CpuData(), bytes(), ACL_MEMCPY_HOST_TO_DEVICE),
-      "aclrtMemcpy TensorHandle CPU to ACL");
+  Check(cpu_valid_,
+        "TensorHandle has no valid CPU or pinned CPU source for ACL upload");
+  CheckAclStatus(aclrtMemcpy(acl_buffer_.data(), bytes(), CpuData(), bytes(),
+                             ACL_MEMCPY_HOST_TO_DEVICE),
+                 "aclrtMemcpy TensorHandle CPU to ACL");
   acl_valid_ = true;
   cpu_dirty_ = false;
   acl_dirty_ = false;
-  return TensorCopyResult{true, bytes(), MemoryLocation::kCpu, MemoryLocation::kAcl};
+  return TensorCopyResult{true, bytes(), MemoryLocation::kCpu,
+                          MemoryLocation::kAcl};
 }
 
-TensorCopyResult TensorHandle::MaterializeToCpu(std::string_view reason, void*) {
+TensorCopyResult TensorHandle::MaterializeToCpu(std::string_view reason,
+                                                void*) {
   MLVC_PROFILE_RANGE_FUNCTION();
   CheckNoConflictingDirtyState();
   last_materialization_reason_ = std::string(reason);
@@ -241,7 +258,8 @@ TensorCopyResult TensorHandle::MaterializeToCpu(std::string_view reason, void*) 
     UseOwnedCpuBuffer(false);
   }
   if (cpu_valid_ && !cpu_dirty_) {
-    return TensorCopyResult{false, 0, MemoryLocation::kCpu, MemoryLocation::kCpu};
+    return TensorCopyResult{false, 0, MemoryLocation::kCpu,
+                            MemoryLocation::kCpu};
   }
   if (pinned_cpu_valid_) {
     std::memcpy(CpuData(), PinnedCpuData(), bytes());
@@ -249,16 +267,19 @@ TensorCopyResult TensorHandle::MaterializeToCpu(std::string_view reason, void*) 
     cpu_dirty_ = false;
     pinned_cpu_dirty_ = false;
     acl_dirty_ = false;
-    return TensorCopyResult{true, bytes(), MemoryLocation::kPinnedCpu, MemoryLocation::kCpu};
+    return TensorCopyResult{true, bytes(), MemoryLocation::kPinnedCpu,
+                            MemoryLocation::kCpu};
   }
-  Check(acl_valid_, "TensorHandle has no valid ACL source for CPU materialization");
-  CheckAclStatus(
-      aclrtMemcpy(CpuData(), bytes(), acl_buffer_.data(), bytes(), ACL_MEMCPY_DEVICE_TO_HOST),
-      "aclrtMemcpy TensorHandle ACL to CPU");
+  Check(acl_valid_,
+        "TensorHandle has no valid ACL source for CPU materialization");
+  CheckAclStatus(aclrtMemcpy(CpuData(), bytes(), acl_buffer_.data(), bytes(),
+                             ACL_MEMCPY_DEVICE_TO_HOST),
+                 "aclrtMemcpy TensorHandle ACL to CPU");
   cpu_valid_ = true;
   cpu_dirty_ = false;
   acl_dirty_ = false;
-  return TensorCopyResult{true, bytes(), MemoryLocation::kAcl, MemoryLocation::kCpu};
+  return TensorCopyResult{true, bytes(), MemoryLocation::kAcl,
+                          MemoryLocation::kCpu};
 }
 
 void TensorHandle::RecordReady(void*) { ready_event_recorded_ = true; }
@@ -272,10 +293,13 @@ void* TensorHandle::CpuData() const {
   return const_cast<void*>(cpu_buffer_.data());
 }
 
-void* TensorHandle::PinnedCpuData() const { return const_cast<void*>(pinned_cpu_buffer_.data()); }
+void* TensorHandle::PinnedCpuData() const {
+  return const_cast<void*>(pinned_cpu_buffer_.data());
+}
 
 void TensorHandle::CheckNoConflictingDirtyState() const {
-  const int dirty_count = (cpu_dirty_ ? 1 : 0) + (pinned_cpu_dirty_ ? 1 : 0) + (acl_dirty_ ? 1 : 0);
+  const int dirty_count =
+      (cpu_dirty_ ? 1 : 0) + (pinned_cpu_dirty_ ? 1 : 0) + (acl_dirty_ ? 1 : 0);
   Check(dirty_count <= 1, "TensorHandle has conflicting dirty buffers");
 }
 

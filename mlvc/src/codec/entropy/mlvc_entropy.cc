@@ -1,10 +1,9 @@
 #include "mlvc/codec/mlvc_entropy.h"
 
-#include <mlvc/codec/detail/tensor/tensor_utils.h>
-
 #include <algorithm>
 #include <cmath>
 
+#include "mlvc/codec/detail/tensor/tensor_utils.h"
 #include "mlvc/core/status.h"
 #include "mlvc/entropy/entropy_codec.h"
 #include "mlvc/framework/profile_range.h"
@@ -78,14 +77,16 @@ void ValidateForcedLtrConfiguration(int gop, int ltr_start_idx, int ltr_period,
   if (gop > 0) {
     Check(reference_frame / gop == recovery_frame / gop,
           "forced LTR reference and recovery frames must be in the same GOP");
-    Check(recovery_frame % gop != 0, "forced LTR recovery frame cannot be an I-frame");
+    Check(recovery_frame % gop != 0,
+          "forced LTR recovery frame cannot be an I-frame");
   }
   const int reference_cycle = gop > 0 ? reference_frame % gop : reference_frame;
   Check(ShouldSaveLtrFeatures(reference_cycle, ltr_start_idx, ltr_period),
         "forced LTR reference frame is not an LTR capture frame");
 }
 
-MlvcFrameType MlvcFrameTypeForFrame(int frame_index, int gop, int reset_interval, int ltr_start_idx,
+MlvcFrameType MlvcFrameTypeForFrame(int frame_index, int gop,
+                                    int reset_interval, int ltr_start_idx,
                                     int ltr_period) {
   if (IsMlvcIFrame(frame_index, gop, reset_interval)) {
     return MlvcFrameType::kIFrame;
@@ -109,15 +110,22 @@ std::string_view MlvcFrameTypeName(MlvcFrameType frame_type) {
   return "p";
 }
 
-std::string_view MlvcEntropyPrefix(bool is_i_frame) { return is_i_frame ? "i" : "p"; }
+std::string_view MlvcEntropyPrefix(bool is_i_frame) {
+  return is_i_frame ? "i" : "p";
+}
 
-bool MlvcUseTwoParts(int width, int height) { return width * height > 1280 * 720; }
+bool MlvcUseTwoParts(int width, int height) {
+  return width * height > 1280 * 720;
+}
 
-void BuildMlvcScaleIndexesFromZRaw(const TensorData& z_raw, int y_channels, int y_height,
-                                   int y_width, int channel_repeat, std::vector<uint8_t>* scales_0,
+void BuildMlvcScaleIndexesFromZRaw(const TensorData& z_raw, int y_channels,
+                                   int y_height, int y_width,
+                                   int channel_repeat,
+                                   std::vector<uint8_t>* scales_0,
                                    std::vector<uint8_t>* scales_1) {
   MLVC_PROFILE_RANGE_FUNCTION();
-  Check(scales_0 != nullptr && scales_1 != nullptr, "scale outputs are required");
+  Check(scales_0 != nullptr && scales_1 != nullptr,
+        "scale outputs are required");
   Check(z_raw.dtype == mlvc::DataType::kFloat16, "z_raw must be float16");
   Check(z_raw.shape.dims().size() == 4, "z_raw must be rank-4");
   Check(y_channels > 0 && y_height > 0 && y_width > 0, "invalid y shape");
@@ -129,7 +137,8 @@ void BuildMlvcScaleIndexesFromZRaw(const TensorData& z_raw, int y_channels, int 
   const int z_height = static_cast<int>(z_raw.shape.dim(2));
   const int z_width = static_cast<int>(z_raw.shape.dim(3));
   const int base_channels = y_channels / channel_repeat;
-  Check(base_channels <= z_channels, "z_raw channel count is too small for scale decoding");
+  Check(base_channels <= z_channels,
+        "z_raw channel count is too small for scale decoding");
 
   std::vector<float> z_values;
   Fp16ToFloat(z_raw, &z_values);
@@ -147,10 +156,12 @@ void BuildMlvcScaleIndexesFromZRaw(const TensorData& z_raw, int y_channels, int 
   std::vector<int> source_y(static_cast<std::size_t>(y_height));
   std::vector<int> source_x(static_cast<std::size_t>(y_width));
   for (int y = 0; y < y_height; ++y) {
-    source_y[static_cast<std::size_t>(y)] = std::min(y / spatial_repeat, z_height - 1);
+    source_y[static_cast<std::size_t>(y)] =
+        std::min(y / spatial_repeat, z_height - 1);
   }
   for (int x = 0; x < y_width; ++x) {
-    source_x[static_cast<std::size_t>(x)] = std::min(x / spatial_repeat, z_width - 1);
+    source_x[static_cast<std::size_t>(x)] =
+        std::min(x / spatial_repeat, z_width - 1);
   }
   for (int channel = 0; channel < half_channels; ++channel) {
     const std::size_t dst_base = static_cast<std::size_t>(channel) * plane;
@@ -159,33 +170,41 @@ void BuildMlvcScaleIndexesFromZRaw(const TensorData& z_raw, int y_channels, int 
     for (int y = 0; y < y_height; ++y) {
       const bool even_row = (y & 1) == 0;
       const std::size_t source_row_0 =
-          (static_cast<std::size_t>(source_channel_0) * static_cast<std::size_t>(z_height) +
+          (static_cast<std::size_t>(source_channel_0) *
+               static_cast<std::size_t>(z_height) +
            static_cast<std::size_t>(source_y[static_cast<std::size_t>(y)])) *
           static_cast<std::size_t>(z_width);
       const std::size_t source_row_1 =
-          (static_cast<std::size_t>(source_channel_1) * static_cast<std::size_t>(z_height) +
+          (static_cast<std::size_t>(source_channel_1) *
+               static_cast<std::size_t>(z_height) +
            static_cast<std::size_t>(source_y[static_cast<std::size_t>(y)])) *
           static_cast<std::size_t>(z_width);
       for (int x = 0; x < y_width; ++x) {
         const bool even_col = (x & 1) == 0;
         const bool mask0 = (even_row == even_col);
-        const std::size_t offset = static_cast<std::size_t>(y) * static_cast<std::size_t>(y_width) +
-                                   static_cast<std::size_t>(x);
+        const std::size_t offset =
+            static_cast<std::size_t>(y) * static_cast<std::size_t>(y_width) +
+            static_cast<std::size_t>(x);
         const std::size_t source_offset =
             static_cast<std::size_t>(source_x[static_cast<std::size_t>(x)]);
         const int scale_0 = std::clamp(
-            static_cast<int>(std::abs(z_values[source_row_0 + source_offset])), 0, kScaleLevel - 1);
+            static_cast<int>(std::abs(z_values[source_row_0 + source_offset])),
+            0, kScaleLevel - 1);
         const int scale_1 = std::clamp(
-            static_cast<int>(std::abs(z_values[source_row_1 + source_offset])), 0, kScaleLevel - 1);
-        (*scales_0)[dst_base + offset] = static_cast<uint8_t>(mask0 ? scale_0 : scale_1);
-        (*scales_1)[dst_base + offset] = static_cast<uint8_t>(mask0 ? scale_1 : scale_0);
+            static_cast<int>(std::abs(z_values[source_row_1 + source_offset])),
+            0, kScaleLevel - 1);
+        (*scales_0)[dst_base + offset] =
+            static_cast<uint8_t>(mask0 ? scale_0 : scale_1);
+        (*scales_1)[dst_base + offset] =
+            static_cast<uint8_t>(mask0 ? scale_1 : scale_0);
       }
     }
   }
 }
 
 void BuildMlvcCombinedYIndexes(const std::vector<int8_t>& symbols,
-                               const std::vector<uint8_t>& scales, std::vector<int16_t>* indexes) {
+                               const std::vector<uint8_t>& scales,
+                               std::vector<int16_t>* indexes) {
   MLVC_PROFILE_RANGE_FUNCTION();
   Check(indexes != nullptr, "index output is required");
   Check(symbols.size() == scales.size(), "symbols/scales size mismatch");

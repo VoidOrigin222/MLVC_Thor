@@ -1,12 +1,12 @@
-#include <mlvc/application/stream/encode/encode_state.h>
-#include <mlvc/codec/mlvc_entropy.h>
-#include <mlvc/codec/tensor_utils.h>
-#include <mlvc/core/status.h>
-
 #include <iostream>
 #include <stdexcept>
 #include <string>
 #include <vector>
+
+#include "mlvc/application/stream/encode/encode_state.h"
+#include "mlvc/codec/mlvc_entropy.h"
+#include "mlvc/codec/tensor_utils.h"
+#include "mlvc/core/status.h"
 
 namespace {
 
@@ -22,13 +22,16 @@ void ExpectReject(Function&& function, const char* description) {
 }
 
 void CacheLtrFrame(mlvc::codec::EncodeState* state, int frame_index,
-                   const mlvc::codec::EncodeStreamOptions& options, float feature_value) {
+                   const mlvc::codec::EncodeStreamOptions& options,
+                   float feature_value) {
   const auto decision = state->BeginFrame(frame_index, options);
-  mlvc::Check(decision.mark_as_ltr, "test frame is not scheduled as an LTR capture");
+  mlvc::Check(decision.mark_as_ltr,
+              "test frame is not scheduled as an LTR capture");
   std::string feature_name = "feature";
   auto feature = mlvc::codec::MakeFp16Tensor({1}, feature_value);
   mlvc::codec::RunOutput output;
-  output.tensors[0] = mlvc::codec::RunOutput::Entry{&feature_name, &feature, nullptr};
+  output.tensors[0] =
+      mlvc::codec::RunOutput::Entry{&feature_name, &feature, nullptr};
   output.size = 1;
   state->UpdateAfterEncode(frame_index, decision, output, nullptr);
 }
@@ -39,16 +42,22 @@ int main() {
   try {
     constexpr int kGop = 96;
     constexpr int kResetInterval = 32;
-    mlvc::Check(mlvc::codec::ShouldResetReferenceFeature(0, kGop, kResetInterval),
-                "the first I frame must reset the reference feature");
-    mlvc::Check(mlvc::codec::ShouldResetReferenceFeature(31, kGop, kResetInterval),
-                "a reset-interval boundary P frame must reset the reference feature");
-    mlvc::Check(!mlvc::codec::ShouldResetReferenceFeature(32, kGop, kResetInterval),
-                "a normal P frame must preserve the reference feature");
-    mlvc::Check(mlvc::codec::ShouldResetReferenceFeature(63, kGop, kResetInterval),
-                "each reset-interval boundary P frame must reset the reference feature");
-    mlvc::Check(mlvc::codec::ShouldResetReferenceFeature(96, kGop, kResetInterval),
-                "a GOP-boundary I frame must reset the reference feature");
+    mlvc::Check(
+        mlvc::codec::ShouldResetReferenceFeature(0, kGop, kResetInterval),
+        "the first I frame must reset the reference feature");
+    mlvc::Check(
+        mlvc::codec::ShouldResetReferenceFeature(31, kGop, kResetInterval),
+        "a reset-interval boundary P frame must reset the reference feature");
+    mlvc::Check(
+        !mlvc::codec::ShouldResetReferenceFeature(32, kGop, kResetInterval),
+        "a normal P frame must preserve the reference feature");
+    mlvc::Check(
+        mlvc::codec::ShouldResetReferenceFeature(63, kGop, kResetInterval),
+        "each reset-interval boundary P frame must reset the reference "
+        "feature");
+    mlvc::Check(
+        mlvc::codec::ShouldResetReferenceFeature(96, kGop, kResetInterval),
+        "a GOP-boundary I frame must reset the reference feature");
 
     mlvc::codec::EncodeStreamOptions options;
     options.gop = kGop;
@@ -70,14 +79,17 @@ int main() {
     mlvc::Check(state.reference().feature.has_value(),
                 "forced recovery did not populate the reference feature");
     std::vector<float> recovered_feature;
-    mlvc::codec::Fp16ToFloat(state.reference().feature.value(), &recovered_feature);
-    mlvc::Check(recovered_feature.size() == 1 && recovered_feature[0] == 8.0f,
-                "forced recovery did not select the requested non-latest LTR frame");
+    mlvc::codec::Fp16ToFloat(state.reference().feature.value(),
+                             &recovered_feature);
+    mlvc::Check(
+        recovered_feature.size() == 1 && recovered_feature[0] == 8.0f,
+        "forced recovery did not select the requested non-latest LTR frame");
 
     state.BeginFrame(96, options);
     options.forced_ltr_recovery_frame = 104;
-    ExpectReject([&] { state.BeginFrame(104, options); },
-                 "forced recovery using an LTR cache cleared at the GOP boundary");
+    ExpectReject(
+        [&] { state.BeginFrame(104, options); },
+        "forced recovery using an LTR cache cleared at the GOP boundary");
     mlvc::codec::EncodeStreamOptions warp_options;
     warp_options.gop = kGop;
     warp_options.reset_interval = kResetInterval;
@@ -90,17 +102,20 @@ int main() {
     for (int frame = 0; frame < 193; ++frame) {
       const auto warp = warp_state.BeginFrame(frame, warp_options);
       const auto legacy = legacy_state.BeginFrame(frame, legacy_options);
-      mlvc::Check(warp.is_i_frame == (frame % kGop == 0), "warp GOP schedule changed");
+      mlvc::Check(warp.is_i_frame == (frame % kGop == 0),
+                  "warp GOP schedule changed");
       mlvc::Check(warp.reset_reference == (frame % kResetInterval == 0),
                   "warp must reset from reconstructed frames at 0,32,64,...");
-      mlvc::Check(legacy.reset_reference ==
-                      mlvc::codec::ShouldResetReferenceFeature(frame, kGop, kResetInterval),
-                  "disabling warp changed the legacy reference schedule");
+      mlvc::Check(
+          legacy.reset_reference == mlvc::codec::ShouldResetReferenceFeature(
+                                        frame, kGop, kResetInterval),
+          "disabling warp changed the legacy reference schedule");
     }
     std::cout << "reference reset schedule test passed\n";
     return 0;
   } catch (const std::exception& error) {
-    std::cerr << "test_reference_reset_schedule failed: " << error.what() << "\n";
+    std::cerr << "test_reference_reset_schedule failed: " << error.what()
+              << "\n";
     return 1;
   }
 }

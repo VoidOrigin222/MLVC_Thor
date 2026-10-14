@@ -1,16 +1,17 @@
 #ifndef MLVC_APPLICATION_STREAM_MLVC_STREAM_H_
 #define MLVC_APPLICATION_STREAM_MLVC_STREAM_H_
 
-#include <mlvc/application/runtime/mlvc_codec_runtime.h>
-#include <mlvc/application/stream/stream_encoder.h>
-#include <mlvc/framework/codec_graph_executor.h>
-#include <mlvc/framework/entropy_worker.h>
-#include <mlvc/framework/profiler.h>
-#include <mlvc/runtime/model_manifest.h>
-
 #include <filesystem>
 #include <optional>
 #include <string>
+
+#include "mlvc/application/runtime/mlvc_codec_runtime.h"
+#include "mlvc/application/stream/stream_encoder.h"
+#include "mlvc/framework/codec_graph_executor.h"
+#include "mlvc/framework/entropy_worker.h"
+#include "mlvc/framework/profiler.h"
+#include "mlvc/io/udp_frame_transport.h"
+#include "mlvc/runtime/model_manifest.h"
 
 namespace mlvc::codec {
 
@@ -23,7 +24,8 @@ struct EncodePipelineServices {
   mlvc::app::MlvcCodecRuntime* codec_runtime = nullptr;
 };
 
-int RunEncodeStream(const EncodeStreamOptions& options, EncodePipelineServices* services = nullptr);
+int RunEncodeStream(const EncodeStreamOptions& options,
+                    EncodePipelineServices* services = nullptr);
 
 struct DecodePipelineServices {
   mlvc::Profiler* profiler = nullptr;
@@ -33,6 +35,9 @@ struct DecodePipelineServices {
 };
 
 struct DecodeStreamOptions {
+  // Optional benchmark acknowledgement; disabled during normal operation.
+  std::string latency_probe_host;
+  int latency_probe_port = 0;
   std::filesystem::path manifest_path;
   std::filesystem::path input_bitstream_path;
   std::filesystem::path output_video_path;
@@ -57,12 +62,14 @@ struct DecodeStreamOptions {
   int input_transport_port = 0;
   std::string input_transport_mode = "udp";
   uint8_t input_transport_payload_type = 96;
+  mlvc::io::RtpReceivePolicy input_rtp_policy;
   int output_transport_queue_capacity = 3;
   PipelineOptions pipeline;
 };
 
-int RunDecodeStream(const DecodeStreamOptions& options, DecodePipelineServices* services = nullptr);
+int RunDecodeStream(const DecodeStreamOptions& options,
+                    DecodePipelineServices* services = nullptr);
 
 }  // namespace mlvc::codec
 
-#endif  // MLVC_APPLICATION_STREAM_MLVC_STREAM_H
+#endif  // MLVC_APPLICATION_STREAM_MLVC_STREAM_H_

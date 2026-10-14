@@ -7,7 +7,8 @@ namespace mlvc::codec {
 
 constexpr std::string_view kCodecExecutionProfile = "pipeline-v1";
 constexpr std::string_view kCodecExecutionMode = "async";
-constexpr std::string_view kCodecStageOutputBinding = "acl-device-with-cpu-mirror";
+constexpr std::string_view kCodecStageOutputBinding =
+    "acl-device-with-cpu-mirror";
 constexpr std::string_view kCodecScheduler = "dag";
 
 inline bool IsCodecExecutionProfile(std::string_view profile) {

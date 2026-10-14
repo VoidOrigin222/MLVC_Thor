@@ -1,17 +1,17 @@
 #ifndef MLVC_APPLICATION_STREAM_ENCODE_ENCODE_STATE_H_
 #define MLVC_APPLICATION_STREAM_ENCODE_ENCODE_STATE_H_
 
-#include <mlvc/application/stream/mlvc_stream.h>
-#include <mlvc/codec/detail/frame/reference_state.h>
-#include <mlvc/codec/detail/stage/stage_runner.h>
-#include <mlvc/codec/mlvc_entropy.h>
-#include <mlvc/codec/tensor_data.h>
-#include <mlvc/framework/profiler.h>
-
 #include <cstdint>
 #include <map>
 #include <vector>
-#include <mlvc/transport/rtcp_session.h>
+
+#include "mlvc/application/stream/mlvc_stream.h"
+#include "mlvc/codec/detail/frame/reference_state.h"
+#include "mlvc/codec/detail/stage/stage_runner.h"
+#include "mlvc/codec/mlvc_entropy.h"
+#include "mlvc/codec/tensor_data.h"
+#include "mlvc/framework/profiler.h"
+#include "mlvc/transport/rtcp_session.h"
 
 namespace mlvc::codec {
 
@@ -27,10 +27,16 @@ class EncodeState {
  public:
   explicit EncodeState(const std::vector<int64_t>& feature_shape);
 
-  EncodeFrameDecision BeginFrame(int frame_index, const EncodeStreamOptions& options);
-  void SetForceRandomAccess(bool requested) { force_random_access_ = requested; }
-  bool ApplyControl(const mlvc::transport::MlvcControlMessage& message, int frame_index);
-  int EffectiveQIndex(int fallback) const { return fixed_q_index_ >= 0 ? fixed_q_index_ : fallback; }
+  EncodeFrameDecision BeginFrame(int frame_index,
+                                 const EncodeStreamOptions& options);
+  void SetForceRandomAccess(bool requested) {
+    force_random_access_ = requested;
+  }
+  bool ApplyControl(const mlvc::transport::MlvcControlMessage& message,
+                    int frame_index);
+  int EffectiveQIndex(int fallback) const {
+    return fixed_q_index_ >= 0 ? fixed_q_index_ : fallback;
+  }
   void PrepareLtrRecovery(int frame_index, const EncodeStreamOptions& options,
                           const EncodeFrameDecision& decision);
   void UpdateAfterEncode(int frame_index, const EncodeFrameDecision& decision,
@@ -39,7 +45,9 @@ class EncodeState {
   const ReferenceState& reference() const { return reference_; }
   ReferenceState& reference() { return reference_; }
   const TensorData& zero_feature() const { return zero_feature_; }
-  int current_ltr_reference_frame() const { return current_ltr_reference_frame_; }
+  int current_ltr_reference_frame() const {
+    return current_ltr_reference_frame_;
+  }
 
  private:
   ReferenceState reference_;

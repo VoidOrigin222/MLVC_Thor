@@ -1,7 +1,14 @@
 #ifndef MLVC_RUNTIME_ACL_RUNTIME_H_
 #define MLVC_RUNTIME_ACL_RUNTIME_H_
 
-#include <acl/acl.h>
+#ifdef MLVC_TENSORRT
+#include "mlvc/runtime/tensorrt_runtime.h"
+namespace mlvc {
+using AclRuntime = TensorRtRuntime;
+using AclStage = TensorRtStage;
+using AclModelSet = TensorRtModelSet;
+}  // namespace mlvc
+#else
 
 #include <cstddef>
 #include <filesystem>
@@ -14,6 +21,7 @@
 
 #include "mlvc/core/tensor.h"
 #include "mlvc/runtime/model_manifest.h"
+#include <acl/acl.h>
 
 namespace mlvc {
 
@@ -49,7 +57,8 @@ class AclRuntime {
 
 class AclStage {
  public:
-  AclStage(AclRuntime* runtime, ModelRecord record, std::filesystem::path model_path);
+  AclStage(AclRuntime* runtime, ModelRecord record,
+           std::filesystem::path model_path);
   ~AclStage();
 
   AclStage(const AclStage&) = delete;
@@ -77,8 +86,10 @@ class AclStage {
   static TensorSpec ReadOutputSpec(aclmdlDesc* desc, std::size_t index);
 
   void BuildDatasets();
-  void DestroyDataset(aclmdlDataset*& dataset, std::vector<aclDataBuffer*>& data_buffers);
-  const NamedTensorView* FindNamedView(const NamedTensorView* views, std::size_t count,
+  void DestroyDataset(aclmdlDataset*& dataset,
+                      std::vector<aclDataBuffer*>& data_buffers);
+  const NamedTensorView* FindNamedView(const NamedTensorView* views,
+                                       std::size_t count,
                                        const std::string& name) const;
 
   AclRuntime* runtime_ = nullptr;
@@ -110,4 +121,5 @@ class AclModelSet {
 
 }  // namespace mlvc
 
+#endif  // MLVC_TENSORRT
 #endif  // MLVC_RUNTIME_ACL_RUNTIME_H_

@@ -19,8 +19,11 @@ class Task {
 
 class FunctionTask final : public Task {
  public:
-  FunctionTask(std::string name, int frame_index, std::function<void()> function)
-      : name_(std::move(name)), frame_index_(frame_index), function_(std::move(function)) {}
+  FunctionTask(std::string name, int frame_index,
+               std::function<void()> function)
+      : name_(std::move(name)),
+        frame_index_(frame_index),
+        function_(std::move(function)) {}
 
   void Run() override { function_(); }
   const std::string& name() const override { return name_; }

@@ -1,8 +1,8 @@
-#include "mlvc/transport/mlvc_media_unit.h"
-
 #include <cassert>
 #include <cstdint>
 #include <vector>
+
+#include "mlvc/transport/mlvc_media_unit.h"
 
 using namespace mlvc::transport;
 
@@ -23,7 +23,8 @@ int main() {
   assert(scu_bytes[0] == 1 && scu_bytes[1] == 1);
   const auto parsed_scu = ParseScu(scu_bytes);
   assert(parsed_scu.config_id == 7 && parsed_scu.coded_width == 1920);
-  assert(parsed_scu.nominal_fps_num == 30000 && parsed_scu.nominal_fps_den == 1001);
+  assert(parsed_scu.nominal_fps_num == 30000 &&
+         parsed_scu.nominal_fps_den == 1001);
   assert(parsed_scu.codec_bundle_sha256 == scu.codec_bundle_sha256);
   for (std::size_t i = 0; i < parsed_scu.config_hash.size(); ++i) {
     assert(parsed_scu.config_hash[i] == scu.codec_bundle_sha256[i]);
@@ -35,13 +36,16 @@ int main() {
   policy_switch.config_id = 8;
   policy_switch.tlvs.push_back(
       MlvcTlv{kMlvcTlvNominalPolicy, std::vector<uint8_t>(16, 1)});
-  assert(MlvcScuDecoderCompatible(parsed_scu, ParseScu(SerializeScu(policy_switch))));
+  assert(MlvcScuDecoderCompatible(parsed_scu,
+                                  ParseScu(SerializeScu(policy_switch))));
   MlvcScu color_switch = policy_switch;
   color_switch.tlvs.clear();
   color_switch.tlvs.push_back(MlvcTlv{kMlvcTlvColorimetry, {1, 2, 3, 4}});
-  assert(!MlvcScuDecoderCompatible(parsed_scu, ParseScu(SerializeScu(color_switch))));
+  assert(!MlvcScuDecoderCompatible(parsed_scu,
+                                   ParseScu(SerializeScu(color_switch))));
   auto bad_scu_hash = scu_bytes;
-  bad_scu_hash[64] ^= 0x01;  // config_hash starts at byte 64 in the fixed SCU header.
+  bad_scu_hash[64] ^=
+      0x01;  // config_hash starts at byte 64 in the fixed SCU header.
   bool rejected_scu_hash = false;
   try {
     (void)ParseScu(bad_scu_hash);
@@ -91,7 +95,8 @@ int main() {
   wrapped_reference.frame_id = 0;
   wrapped_reference.frame_type = 1;
   wrapped_reference.short_ref_frame_id = 0xfffffffeu;
-  assert(ParseEfu(SerializeEfu(wrapped_reference)).short_ref_frame_id == 0xfffffffeu);
+  assert(ParseEfu(SerializeEfu(wrapped_reference)).short_ref_frame_id ==
+         0xfffffffeu);
   auto inter_with_ltr = wrapped_reference;
   inter_with_ltr.long_ref_frame_id = 0xfffffffeu;
   bool rejected_inter_ltr = false;

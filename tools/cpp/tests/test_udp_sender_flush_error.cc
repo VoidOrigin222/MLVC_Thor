@@ -1,10 +1,10 @@
-#include "mlvc/transport/udp_message_transport.h"
-
 #include <cassert>
 #include <condition_variable>
 #include <mutex>
 #include <stdexcept>
 #include <string>
+
+#include "mlvc/transport/udp_message_transport.h"
 
 int main() {
   int send_count = 0;
@@ -27,7 +27,8 @@ int main() {
 
   bool flush_failed = false;
   {
-    mlvc::transport::UdpMessageSender sender("127.0.0.1", 9, "flush error test", options);
+    mlvc::transport::UdpMessageSender sender("127.0.0.1", 9, "flush error test",
+                                             options);
     sender.Send({1});
     {
       std::unique_lock<std::mutex> lock(hook_mutex);
@@ -42,8 +43,9 @@ int main() {
     try {
       sender.Flush();
     } catch (const std::exception& error) {
-      flush_failed = std::string(error.what()).find("injected final UDP send failure") !=
-                     std::string::npos;
+      flush_failed =
+          std::string(error.what()).find("injected final UDP send failure") !=
+          std::string::npos;
     }
   }
   assert(flush_failed);
@@ -55,8 +57,8 @@ int main() {
   queue_limits.max_queue_delay_ms = 1;
   bool oversized_delay_rejected = false;
   {
-    mlvc::transport::UdpMessageSender sender("127.0.0.1", 9, "queue delay limit test",
-                                             queue_limits);
+    mlvc::transport::UdpMessageSender sender(
+        "127.0.0.1", 9, "queue delay limit test", queue_limits);
     try {
       sender.Send(std::vector<uint8_t>(1100, 0x5a));
     } catch (const std::exception&) {

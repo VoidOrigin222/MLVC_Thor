@@ -29,7 +29,8 @@ class ScopedRepositoryAllocationTrackingPause {
  public:
   ScopedRepositoryAllocationTrackingPause();
 
-  ScopedRepositoryAllocationTrackingPause(const ScopedRepositoryAllocationTrackingPause&) = delete;
+  ScopedRepositoryAllocationTrackingPause(
+      const ScopedRepositoryAllocationTrackingPause&) = delete;
   ScopedRepositoryAllocationTrackingPause& operator=(
       const ScopedRepositoryAllocationTrackingPause&) = delete;
 

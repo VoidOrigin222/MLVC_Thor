@@ -1,10 +1,10 @@
 #ifndef MLVC_IO_UDP_FRAME_TRANSPORT_H_
 #define MLVC_IO_UDP_FRAME_TRANSPORT_H_
 
-#include <cstddef>
-#include <cstdint>
 #include <array>
 #include <chrono>
+#include <cstddef>
+#include <cstdint>
 #include <deque>
 #include <map>
 #include <optional>
@@ -13,10 +13,10 @@
 #include <vector>
 
 #include "mlvc/io/mlvc_bitstream.h"
+#include "mlvc/transport/mlvc_media_unit.h"
 #include "mlvc/transport/rtp_message_receiver.h"
 #include "mlvc/transport/rtp_mlvc.h"
 #include "mlvc/transport/udp_message_transport.h"
-#include "mlvc/transport/mlvc_media_unit.h"
 
 namespace mlvc::io {
 
@@ -28,8 +28,8 @@ class UdpMlvcSender {
                 mlvc::transport::UdpSendOptions options = {});
   ~UdpMlvcSender();
   void SendHeader(const MlvcBitstreamHeader& header);
-  void SendFrame(int frame_index, mlvc::codec::MlvcFrameType frame_type, int q_index,
-                 const std::vector<uint8_t>& payload);
+  void SendFrame(int frame_index, mlvc::codec::MlvcFrameType frame_type,
+                 int q_index, const std::vector<uint8_t>& payload);
   void SendEnd();
   void Close();
 
@@ -46,9 +46,11 @@ class UdpMlvcReceiver {
   explicit UdpMlvcReceiver(uint16_t port);
   ~UdpMlvcReceiver();
   MlvcBitstreamHeader ReceiveHeader();
-  bool ReceiveFrame(int* frame_index, mlvc::codec::MlvcFrameType* frame_type, int* q_index,
-                    std::vector<uint8_t>* payload);
-  const MlvcFrameMetadata& last_frame_metadata() const { return last_frame_metadata_; }
+  bool ReceiveFrame(int* frame_index, mlvc::codec::MlvcFrameType* frame_type,
+                    int* q_index, std::vector<uint8_t>* payload);
+  const MlvcFrameMetadata& last_frame_metadata() const {
+    return last_frame_metadata_;
+  }
 
  private:
   mlvc::transport::UdpMessageReceiver receiver_;
@@ -61,7 +63,8 @@ class UdpMlvcReceiver {
 
 class RtpMlvcSender {
  public:
-  RtpMlvcSender(const std::string& host, uint16_t port, uint64_t pacing_rate_bps = 0,
+  RtpMlvcSender(const std::string& host, uint16_t port,
+                uint64_t pacing_rate_bps = 0,
                 std::size_t max_burst_bytes = 4096,
                 std::size_t max_queue_bytes = 4u * 1024u * 1024u,
                 uint64_t max_queue_delay_ms = 1000, uint8_t payload_type = 96);
@@ -70,17 +73,19 @@ class RtpMlvcSender {
   // Starts a new protocol configuration.  The next frame must be a random
   // access I-frame; frame IDs remain monotonic across the switch.
   void SendConfiguration(uint32_t config_id, const MlvcBitstreamHeader& header);
-  void SendFrame(int frame_index, mlvc::codec::MlvcFrameType frame_type, int q_index,
+  void SendFrame(int frame_index, mlvc::codec::MlvcFrameType frame_type,
+                 int q_index, const std::vector<uint8_t>& payload);
+  void SendFrame(int frame_index, mlvc::codec::MlvcFrameType frame_type,
+                 int q_index, const MlvcFrameMetadata& metadata,
                  const std::vector<uint8_t>& payload);
-  void SendFrame(int frame_index, mlvc::codec::MlvcFrameType frame_type, int q_index,
-                 const MlvcFrameMetadata& metadata, const std::vector<uint8_t>& payload);
   void SendEnd();
   void Close();
   bool ConsumeRandomAccessRequest();
   bool PopMlvcControl(mlvc::transport::MlvcControlMessage* message);
   uint16_t rtcp_local_port() const;
-  void SendMlvcControlResponse(const mlvc::transport::MlvcControlMessage& request, bool accepted,
-                               const std::string& reason);
+  void SendMlvcControlResponse(
+      const mlvc::transport::MlvcControlMessage& request, bool accepted,
+      const std::string& reason);
 
  private:
   mlvc::transport::RtpMlvcSender sender_;
@@ -95,17 +100,28 @@ class RtpMlvcSender {
   bool closed_ = false;
 };
 
+struct RtpReceivePolicy {
+  mlvc::transport::RtpReceiveOptions queue;
+  std::size_t pending_frames = 64;
+  std::chrono::milliseconds reorder_wait{100};
+  std::chrono::milliseconds eos_wait{2000};
+  bool require_complete = false;
+};
+
 class RtpMlvcReceiver {
  public:
   explicit RtpMlvcReceiver(uint16_t port,
                            std::array<uint8_t, 32> expected_bundle_hash = {},
-                           uint8_t payload_type = 96);
+                           uint8_t payload_type = 96,
+                           RtpReceivePolicy policy = {});
   ~RtpMlvcReceiver();
   uint16_t local_port() const { return receiver_.local_port(); }
   MlvcBitstreamHeader ReceiveHeader();
-  bool ReceiveFrame(int* frame_index, mlvc::codec::MlvcFrameType* frame_type, int* q_index,
-                    std::vector<uint8_t>* payload);
- const MlvcFrameMetadata& last_frame_metadata() const { return last_frame_metadata_; }
+  bool ReceiveFrame(int* frame_index, mlvc::codec::MlvcFrameType* frame_type,
+                    int* q_index, std::vector<uint8_t>* payload);
+  const MlvcFrameMetadata& last_frame_metadata() const {
+    return last_frame_metadata_;
+  }
 
  private:
   void HandleConfigurationUnit(const std::vector<uint8_t>& unit);
@@ -121,6 +137,10 @@ class RtpMlvcReceiver {
   void RememberDecodedFrame(uint32_t frame_id, bool store_as_ltr);
 
   mlvc::transport::RtpMessageReceiver receiver_;
+  RtpReceivePolicy policy_;
+  uint64_t dependency_gaps_ = 0;
+  uint64_t skipped_frames_ = 0;
+  uint64_t recovery_count_ = 0;
   MlvcBitstreamHeader header_;
   uint32_t config_id_ = 0;
   std::array<uint8_t, 32> expected_bundle_hash_{};

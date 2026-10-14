@@ -26,7 +26,8 @@ class BoundedQueue {
 
   bool Push(T value) {
     std::unique_lock<std::mutex> lock(mutex_);
-    not_full_.wait(lock, [this] { return closed_ || queue_.size() < capacity_; });
+    not_full_.wait(lock,
+                   [this] { return closed_ || queue_.size() < capacity_; });
     if (closed_) return false;
     queue_.push(std::move(value));
     not_empty_.notify_one();
@@ -89,9 +90,11 @@ class BoundedQueue {
 
 class StreamingPipeline {
  public:
-  using Processor = std::function<std::shared_ptr<DataObject>(const std::shared_ptr<DataObject>&)>;
+  using Processor = std::function<std::shared_ptr<DataObject>(
+      const std::shared_ptr<DataObject>&)>;
 
-  explicit StreamingPipeline(std::size_t worker_count = 0, std::size_t queue_capacity = 8);
+  explicit StreamingPipeline(std::size_t worker_count = 0,
+                             std::size_t queue_capacity = 8);
   ~StreamingPipeline();
 
   StreamingPipeline(const StreamingPipeline&) = delete;

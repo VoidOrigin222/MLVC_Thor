@@ -1,12 +1,12 @@
 #ifndef MLVC_APPLICATION_RUNTIME_MLVC_CODEC_RUNTIME_H_
 #define MLVC_APPLICATION_RUNTIME_MLVC_CODEC_RUNTIME_H_
 
-#include <mlvc/codec/detail/stage/stage_workspace.h>
-#include <mlvc/entropy/sidecar.h>
-#include <mlvc/runtime/model_manifest.h>
-#include <mlvc/runtime/stage_runtime.h>
-
 #include <filesystem>
+
+#include "mlvc/codec/detail/stage/stage_workspace.h"
+#include "mlvc/entropy/sidecar.h"
+#include "mlvc/runtime/model_manifest.h"
+#include "mlvc/runtime/stage_runtime.h"
 
 namespace mlvc::app {
 
@@ -15,9 +15,9 @@ namespace mlvc::app {
 // contain device resources whose lifetime must remain tied to the ACL runtime.
 class MlvcCodecRuntime {
  public:
-  MlvcCodecRuntime(
-      const std::filesystem::path& manifest_path, int device,
-      mlvc::codec::StageOutputBindingMode binding_mode = mlvc::codec::StageOutputBindingMode::kCpu);
+  MlvcCodecRuntime(const std::filesystem::path& manifest_path, int device,
+                   mlvc::codec::StageOutputBindingMode binding_mode =
+                       mlvc::codec::StageOutputBindingMode::kCpu);
   ~MlvcCodecRuntime() = default;
 
   MlvcCodecRuntime(const MlvcCodecRuntime&) = delete;
@@ -30,11 +30,17 @@ class MlvcCodecRuntime {
   mlvc::StageModelSet& models() { return models_; }
   const mlvc::StageModelSet& models() const { return models_; }
   const mlvc::RuntimeSidecar& sidecar() const { return sidecar_; }
-  mlvc::codec::StageOutputWorkspace& stage_output_workspace() { return workspace_; }
-  const mlvc::codec::StageOutputWorkspace& stage_output_workspace() const { return workspace_; }
+  mlvc::codec::StageOutputWorkspace& stage_output_workspace() {
+    return workspace_;
+  }
+  const mlvc::codec::StageOutputWorkspace& stage_output_workspace() const {
+    return workspace_;
+  }
 
   const mlvc::ModelManifest& manifest() const { return models_.manifest(); }
-  const std::filesystem::path& manifest_path() const { return models_.manifest().path(); }
+  const std::filesystem::path& manifest_path() const {
+    return models_.manifest().path();
+  }
   int device() const { return runtime_.device_id(); }
 
  private:

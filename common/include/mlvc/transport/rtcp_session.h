@@ -1,8 +1,8 @@
 #ifndef MLVC_TRANSPORT_RTCP_SESSION_H_
 #define MLVC_TRANSPORT_RTCP_SESSION_H_
 
-#include <cstdint>
 #include <chrono>
+#include <cstdint>
 #include <memory>
 #include <optional>
 #include <string>
@@ -103,12 +103,12 @@ struct RtcpCompoundContents {
 // Build and parse the RTCP packets used by the MLVC v1 control plane. The
 // compound builder includes RR/SR and SDES CNAME before optional feedback or
 // APP packets, as required by the RFC 3550 compound profile.
-std::vector<uint8_t> EncodeRtcpSenderReport(const RtcpSenderReport& report,
-                                            const std::string& cname,
-                                            const std::vector<std::vector<uint8_t>>& extra = {});
-std::vector<uint8_t> EncodeRtcpReceiverReport(const RtcpReceiverReport& report,
-                                              const std::string& cname,
-                                              const std::vector<std::vector<uint8_t>>& extra = {});
+std::vector<uint8_t> EncodeRtcpSenderReport(
+    const RtcpSenderReport& report, const std::string& cname,
+    const std::vector<std::vector<uint8_t>>& extra = {});
+std::vector<uint8_t> EncodeRtcpReceiverReport(
+    const RtcpReceiverReport& report, const std::string& cname,
+    const std::vector<std::vector<uint8_t>>& extra = {});
 std::vector<uint8_t> EncodeRtcpNack(const RtcpNack& nack);
 std::vector<uint8_t> EncodeRtcpPli(const RtcpPli& pli);
 std::vector<uint8_t> EncodeRtcpFir(const RtcpFir& fir);
@@ -149,7 +149,8 @@ class RtcpUdpEndpoint {
 // Builds and validates the minimal RFC 3550 compound RTCP packet used to end
 // an RTP sender session: RR + SDES/CNAME + BYE.  The media stream does not use
 // the optional MLVC EOS media unit as its RTP session terminator.
-std::vector<uint8_t> EncodeRtcpSessionBye(uint32_t ssrc, const std::string& cname);
+std::vector<uint8_t> EncodeRtcpSessionBye(uint32_t ssrc,
+                                          const std::string& cname);
 uint32_t DecodeRtcpSessionBye(const std::vector<uint8_t>& packet);
 
 }  // namespace mlvc::transport

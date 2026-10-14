@@ -1,16 +1,19 @@
-#include <arpa/inet.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
+#include <chrono>
 #include <cstdint>
 #include <iostream>
 #include <stdexcept>
+#include <thread>
 #include <vector>
 
-#include "mlvc/transport/rtp_message_receiver.h"
 #include "mlvc/transport/mlvc_media_unit.h"
+#include "mlvc/transport/rtp_message_receiver.h"
 #include "mlvc/transport/rtp_mlvc.h"
+#include <arpa/inet.h>
 
+using mlvc::transport::EncodeRtpMlvcFragment;
 using mlvc::transport::kEfuRandomAccess;
 using mlvc::transport::kEfuResetReference;
 using mlvc::transport::kMlvcHeaderMaxBytes;
@@ -19,7 +22,6 @@ using mlvc::transport::kRtpMlvcStart;
 using mlvc::transport::MlvcEfu;
 using mlvc::transport::MlvcScu;
 using mlvc::transport::ParseEfu;
-using mlvc::transport::EncodeRtpMlvcFragment;
 using mlvc::transport::RtpMessageReceiver;
 using mlvc::transport::RtpMlvcFragment;
 using mlvc::transport::RtpUnitType;
@@ -40,12 +42,12 @@ std::vector<uint8_t> MakeRtpPacket(uint16_t sequence, uint32_t ssrc,
   std::vector<uint8_t> packet(12, 0);
   packet[0] = 0x80;  // RTP version 2.
   const bool is_last_fragment =
-      static_cast<uint64_t>(fragment.fragment_offset) + fragment.payload.size() ==
+      static_cast<uint64_t>(fragment.fragment_offset) +
+          fragment.payload.size() ==
       fragment.unit_length;
-  packet[1] = static_cast<uint8_t>(96 | (fragment.unit_type == RtpUnitType::kEfu &&
-                                                is_last_fragment
-                                            ? 0x80
-                                            : 0));
+  packet[1] = static_cast<uint8_t>(
+      96 |
+      (fragment.unit_type == RtpUnitType::kEfu && is_last_fragment ? 0x80 : 0));
   packet[2] = static_cast<uint8_t>(sequence >> 8);
   packet[3] = static_cast<uint8_t>(sequence);
   packet[4] = 0;
@@ -65,10 +67,11 @@ void SendPacket(int socket, uint16_t port, const std::vector<uint8_t>& packet) {
   destination.sin_family = AF_INET;
   destination.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
   destination.sin_port = htons(port);
-  const ssize_t sent =
-      ::sendto(socket, packet.data(), packet.size(), 0,
-               reinterpret_cast<const sockaddr*>(&destination), sizeof(destination));
-  Require(sent == static_cast<ssize_t>(packet.size()), "failed to send RTP test packet");
+  const ssize_t sent = ::sendto(socket, packet.data(), packet.size(), 0,
+                                reinterpret_cast<const sockaddr*>(&destination),
+                                sizeof(destination));
+  Require(sent == static_cast<ssize_t>(packet.size()),
+          "failed to send RTP test packet");
 }
 
 RtpMlvcFragment CompleteFragment(uint32_t unit_id, uint8_t value) {
@@ -79,8 +82,13 @@ RtpMlvcFragment CompleteFragment(uint32_t unit_id, uint8_t value) {
   efu.unit_flags |= kEfuRandomAccess | kEfuResetReference;
   efu.entropy_payload = {value};
   const auto bytes = SerializeEfu(efu);
-  return RtpMlvcFragment{RtpUnitType::kEfu, kRtpMlvcStart | kRtpMlvcEnd, 7, unit_id, 0,
-                         static_cast<uint32_t>(bytes.size()), bytes};
+  return RtpMlvcFragment{RtpUnitType::kEfu,
+                         kRtpMlvcStart | kRtpMlvcEnd,
+                         7,
+                         unit_id,
+                         0,
+                         static_cast<uint32_t>(bytes.size()),
+                         bytes};
 }
 
 uint8_t PayloadByte(const std::vector<uint8_t>& unit) {
@@ -98,19 +106,27 @@ void TestFirstAndContinuous() {
   const int sender = MakeSenderSocket();
   std::vector<uint8_t> unit;
 
-  SendPacket(sender, receiver.local_port(), MakeRtpPacket(100, 0x11223344, CompleteFragment(1, 1)));
+  SendPacket(sender, receiver.local_port(),
+             MakeRtpPacket(100, 0x11223344, CompleteFragment(1, 1)));
   Require(receiver.Receive(&unit), "first RTP packet did not complete a unit");
   Require(PayloadByte(unit) == 1, "first RTP unit mismatch");
   Require(receiver.lost_packets() == 0, "first RTP packet counted as lost");
-  Require(receiver.duplicate_packets() == 0, "first RTP packet counted as duplicate");
-  Require(receiver.reordered_packets() == 0, "first RTP packet counted as reordered");
+  Require(receiver.duplicate_packets() == 0,
+          "first RTP packet counted as duplicate");
+  Require(receiver.reordered_packets() == 0,
+          "first RTP packet counted as reordered");
 
-  SendPacket(sender, receiver.local_port(), MakeRtpPacket(101, 0x11223344, CompleteFragment(2, 2)));
-  Require(receiver.Receive(&unit), "continuous RTP packet did not complete a unit");
+  SendPacket(sender, receiver.local_port(),
+             MakeRtpPacket(101, 0x11223344, CompleteFragment(2, 2)));
+  Require(receiver.Receive(&unit),
+          "continuous RTP packet did not complete a unit");
   Require(PayloadByte(unit) == 2, "continuous RTP unit mismatch");
-  Require(receiver.lost_packets() == 0, "continuous RTP packet counted as lost");
-  Require(receiver.duplicate_packets() == 0, "continuous RTP packet counted as duplicate");
-  Require(receiver.reordered_packets() == 0, "continuous RTP packet counted as reordered");
+  Require(receiver.lost_packets() == 0,
+          "continuous RTP packet counted as lost");
+  Require(receiver.duplicate_packets() == 0,
+          "continuous RTP packet counted as duplicate");
+  Require(receiver.reordered_packets() == 0,
+          "continuous RTP packet counted as reordered");
   ::close(sender);
 }
 
@@ -131,11 +147,14 @@ void TestLossAndDuplicate() {
              MakeRtpPacket(13, 0x01020304, CompleteFragment(13, 13)));
   SendPacket(sender, receiver.local_port(),
              MakeRtpPacket(14, 0x01020304, CompleteFragment(14, 14)));
-  Require(receiver.Receive(&unit), "valid RTP packet after duplicate was not received");
+  Require(receiver.Receive(&unit),
+          "valid RTP packet after duplicate was not received");
   Require(PayloadByte(unit) == 14, "duplicate RTP packet was not discarded");
   Require(receiver.duplicate_packets() == 1, "RTP duplicate count mismatch");
-  Require(receiver.lost_packets() == 2, "duplicate RTP packet changed the loss count");
-  Require(receiver.reordered_packets() == 0, "duplicate RTP packet counted as reordered");
+  Require(receiver.lost_packets() == 2,
+          "duplicate RTP packet changed the loss count");
+  Require(receiver.reordered_packets() == 0,
+          "duplicate RTP packet counted as reordered");
   ::close(sender);
 }
 
@@ -145,22 +164,35 @@ void TestReorderStillReassembles() {
   std::vector<uint8_t> unit;
   const auto complete = CompleteFragment(20, 0xaa);
   const std::size_t split = complete.payload.size() / 2;
-  const RtpMlvcFragment tail{RtpUnitType::kEfu, kRtpMlvcEnd, 7, 20,
-                             static_cast<uint32_t>(split),
-                             static_cast<uint32_t>(complete.payload.size()),
-                             std::vector<uint8_t>(complete.payload.begin() + split,
-                                                  complete.payload.end())};
-  const RtpMlvcFragment head{RtpUnitType::kEfu, kRtpMlvcStart, 7, 20, 0,
-                             static_cast<uint32_t>(complete.payload.size()),
-                             std::vector<uint8_t>(complete.payload.begin(),
-                                                  complete.payload.begin() + split)};
+  const RtpMlvcFragment tail{
+      RtpUnitType::kEfu,
+      kRtpMlvcEnd,
+      7,
+      20,
+      static_cast<uint32_t>(split),
+      static_cast<uint32_t>(complete.payload.size()),
+      std::vector<uint8_t>(complete.payload.begin() + split,
+                           complete.payload.end())};
+  const RtpMlvcFragment head{
+      RtpUnitType::kEfu,
+      kRtpMlvcStart,
+      7,
+      20,
+      0,
+      static_cast<uint32_t>(complete.payload.size()),
+      std::vector<uint8_t>(complete.payload.begin(),
+                           complete.payload.begin() + split)};
 
-  SendPacket(sender, receiver.local_port(), MakeRtpPacket(21, 0xaabbccdd, tail));
-  SendPacket(sender, receiver.local_port(), MakeRtpPacket(20, 0xaabbccdd, head));
-  Require(receiver.Receive(&unit), "reordered RTP head did not complete a unit");
+  SendPacket(sender, receiver.local_port(),
+             MakeRtpPacket(21, 0xaabbccdd, tail));
+  SendPacket(sender, receiver.local_port(),
+             MakeRtpPacket(20, 0xaabbccdd, head));
+  Require(receiver.Receive(&unit),
+          "reordered RTP head did not complete a unit");
   Require(PayloadByte(unit) == 0xaa, "reordered RTP unit mismatch");
   Require(receiver.reordered_packets() == 1, "RTP reorder count mismatch");
-  Require(receiver.lost_packets() == 0, "reordered RTP packets counted as lost");
+  Require(receiver.lost_packets() == 0,
+          "reordered RTP packets counted as lost");
   ::close(sender);
 }
 
@@ -169,9 +201,11 @@ void TestSsrcChangeRejected() {
   const int sender = MakeSenderSocket();
   std::vector<uint8_t> unit;
 
-  SendPacket(sender, receiver.local_port(), MakeRtpPacket(1, 0x11111111, CompleteFragment(30, 30)));
+  SendPacket(sender, receiver.local_port(),
+             MakeRtpPacket(1, 0x11111111, CompleteFragment(30, 30)));
   Require(receiver.Receive(&unit), "SSRC test first packet did not complete");
-  SendPacket(sender, receiver.local_port(), MakeRtpPacket(2, 0x22222222, CompleteFragment(31, 31)));
+  SendPacket(sender, receiver.local_port(),
+             MakeRtpPacket(2, 0x22222222, CompleteFragment(31, 31)));
   bool rejected = false;
   try {
     receiver.Receive(&unit);
@@ -187,16 +221,24 @@ void TestLatePacketClosesLossGap() {
   const int sender = MakeSenderSocket();
   std::vector<uint8_t> unit;
 
-  SendPacket(sender, receiver.local_port(), MakeRtpPacket(10, 0x55667788, CompleteFragment(10, 10)));
-  Require(receiver.Receive(&unit), "first late-packet test unit did not complete");
-  SendPacket(sender, receiver.local_port(), MakeRtpPacket(12, 0x55667788, CompleteFragment(12, 12)));
-  Require(receiver.Receive(&unit), "unit after a sequence gap did not complete");
-  Require(receiver.lost_packets() == 1, "sequence gap was not counted before late packet arrived");
-  SendPacket(sender, receiver.local_port(), MakeRtpPacket(11, 0x55667788, CompleteFragment(11, 11)));
+  SendPacket(sender, receiver.local_port(),
+             MakeRtpPacket(10, 0x55667788, CompleteFragment(10, 10)));
+  Require(receiver.Receive(&unit),
+          "first late-packet test unit did not complete");
+  SendPacket(sender, receiver.local_port(),
+             MakeRtpPacket(12, 0x55667788, CompleteFragment(12, 12)));
+  Require(receiver.Receive(&unit),
+          "unit after a sequence gap did not complete");
+  Require(receiver.lost_packets() == 1,
+          "sequence gap was not counted before late packet arrived");
+  SendPacket(sender, receiver.local_port(),
+             MakeRtpPacket(11, 0x55667788, CompleteFragment(11, 11)));
   Require(receiver.Receive(&unit), "late RTP unit did not complete");
   Require(PayloadByte(unit) == 11, "late RTP unit payload mismatch");
-  Require(receiver.lost_packets() == 0, "late RTP packet did not close the loss gap");
-  Require(receiver.reordered_packets() == 1, "late RTP packet was not counted as reordered");
+  Require(receiver.lost_packets() == 0,
+          "late RTP packet did not close the loss gap");
+  Require(receiver.reordered_packets() == 1,
+          "late RTP packet was not counted as reordered");
   ::close(sender);
 }
 
@@ -235,17 +277,19 @@ void TestScuFrameLimitAppliedBeforeReassembly() {
                                      0,
                                      static_cast<uint32_t>(scu_bytes.size()),
                                      scu_bytes};
-  SendPacket(sender, receiver.local_port(), MakeRtpPacket(1, 0xabcdef01, scu_fragment));
+  SendPacket(sender, receiver.local_port(),
+             MakeRtpPacket(1, 0xabcdef01, scu_fragment));
   std::vector<uint8_t> unit;
   Require(receiver.Receive(&unit), "SCU frame-limit setup was not received");
 
-  const RtpMlvcFragment oversized_efu{RtpUnitType::kEfu,
-                                      kRtpMlvcStart,
-                                      9,
-                                      0,
-                                      0,
-                                      static_cast<uint32_t>(kMlvcHeaderMaxBytes + 2),
-                                      {0x01}};
+  const RtpMlvcFragment oversized_efu{
+      RtpUnitType::kEfu,
+      kRtpMlvcStart,
+      9,
+      0,
+      0,
+      static_cast<uint32_t>(kMlvcHeaderMaxBytes + 2),
+      {0x01}};
   SendPacket(sender, receiver.local_port(),
              MakeRtpPacket(2, 0xabcdef01, oversized_efu));
   bool rejected = false;
@@ -254,7 +298,97 @@ void TestScuFrameLimitAppliedBeforeReassembly() {
   } catch (const std::runtime_error&) {
     rejected = true;
   }
-  Require(rejected, "RTP receiver allocated an EFU above its SCU frame-size limit");
+  Require(rejected,
+          "RTP receiver allocated an EFU above its SCU frame-size limit");
+  ::close(sender);
+}
+
+template <typename Predicate>
+void WaitUntil(Predicate ready) {
+  const auto until = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+  while (!ready() && std::chrono::steady_clock::now() < until)
+    std::this_thread::sleep_for(std::chrono::milliseconds(2));
+  Require(ready(), "RTP queue test timed out");
+}
+
+void TestRecoverQueueKeepsReading() {
+  mlvc::transport::RtpReceiveOptions options;
+  options.queue_capacity = 2;
+  options.overflow_policy = "recover";
+  RtpMessageReceiver receiver(0, "recover queue test", 96, options);
+  const int sender = MakeSenderSocket();
+  for (int i = 0; i < 6; ++i)
+    SendPacket(sender, receiver.local_port(),
+               MakeRtpPacket(100 + i, 0x11223344, CompleteFragment(i, i)));
+  WaitUntil([&] { return receiver.queue_dropped_units() == 4; });
+  std::vector<uint8_t> unit;
+  Require(receiver.Receive(&unit) && PayloadByte(unit) == 4,
+          "recover queue retained an old frame");
+  Require(receiver.Receive(&unit) && PayloadByte(unit) == 5,
+          "recover queue stopped receiving fresh frames");
+  Require(receiver.lost_packets() == 0 && receiver.queue_max_depth() == 2,
+          "local queue discard was confused with wire loss");
+  ::close(sender);
+}
+
+void TestCompleteQueueFailsExplicitly() {
+  mlvc::transport::RtpReceiveOptions options;
+  options.queue_capacity = 2;
+  options.overflow_policy = "fail";
+  RtpMessageReceiver receiver(0, "complete queue test", 96, options);
+  const int sender = MakeSenderSocket();
+  for (int i = 0; i < 3; ++i)
+    SendPacket(sender, receiver.local_port(),
+               MakeRtpPacket(100 + i, 0x11223344, CompleteFragment(i, i)));
+  WaitUntil([&] { return receiver.queue_overflows() == 1; });
+  std::vector<uint8_t> unit;
+  bool rejected = false;
+  try {
+    receiver.ReceiveFor(&unit, std::chrono::milliseconds(100));
+  } catch (const std::runtime_error&) {
+    rejected = true;
+  }
+  Require(rejected && receiver.queue_dropped_units() == 0,
+          "complete queue silently discarded video");
+  ::close(sender);
+}
+
+void TestRecoverQueuePreservesControls() {
+  mlvc::transport::RtpReceiveOptions options;
+  options.queue_capacity = 3;
+  options.overflow_policy = "recover";
+  RtpMessageReceiver receiver(0, "control queue test", 96, options);
+  const int sender = MakeSenderSocket();
+  MlvcScu scu;
+  scu.config_id = 7;
+  scu.coded_width = scu.visible_width = 64;
+  scu.coded_height = scu.visible_height = 64;
+  scu.max_frame_bytes = 65536;
+  scu.codec_bundle_sha256.fill(0x42);
+  auto send = [&](uint16_t seq, RtpUnitType type, uint32_t id,
+                  const std::vector<uint8_t>& bytes) {
+    SendPacket(sender, receiver.local_port(),
+               MakeRtpPacket(seq, 0x11223344,
+                             {type, kRtpMlvcStart | kRtpMlvcEnd, 7, id, 0,
+                              static_cast<uint32_t>(bytes.size()), bytes}));
+  };
+  send(100, RtpUnitType::kScu, 7, SerializeScu(scu));
+  for (int i = 0; i < 6; ++i)
+    SendPacket(sender, receiver.local_port(),
+               MakeRtpPacket(101 + i, 0x11223344, CompleteFragment(i, i)));
+  send(107, RtpUnitType::kEos, 6, mlvc::transport::SerializeEos(7, 6));
+  WaitUntil([&] { return receiver.queue_dropped_units() == 5; });
+  std::vector<uint8_t> unit;
+  Require(receiver.Receive(&unit) &&
+              mlvc::transport::ParseMediaUnitHeader(unit).unit_type ==
+                  mlvc::transport::MlvcMediaUnitType::kScu,
+          "queue discarded stream configuration");
+  Require(receiver.Receive(&unit) && PayloadByte(unit) == 5,
+          "queue did not retain the newest video unit");
+  Require(receiver.Receive(&unit) &&
+              mlvc::transport::ParseMediaUnitHeader(unit).unit_type ==
+                  mlvc::transport::MlvcMediaUnitType::kEos,
+          "queue discarded EOS");
   ::close(sender);
 }
 
@@ -269,10 +403,14 @@ int main() {
     TestSsrcChangeRejected();
     TestMarkerMismatchRejected();
     TestScuFrameLimitAppliedBeforeReassembly();
+    TestRecoverQueueKeepsReading();
+    TestCompleteQueueFailsExplicitly();
+    TestRecoverQueuePreservesControls();
     std::cout << "rtp message receiver sequence test passed\n";
     return 0;
   } catch (const std::exception& error) {
-    std::cerr << "rtp message receiver sequence test failed: " << error.what() << "\n";
+    std::cerr << "rtp message receiver sequence test failed: " << error.what()
+              << "\n";
     return 1;
   }
 }

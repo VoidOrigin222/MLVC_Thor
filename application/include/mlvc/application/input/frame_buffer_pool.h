@@ -1,10 +1,10 @@
 #ifndef MLVC_APPLICATION_INPUT_FRAME_BUFFER_POOL_H_
 #define MLVC_APPLICATION_INPUT_FRAME_BUFFER_POOL_H_
 
-#include <mlvc/codec/tensor_data.h>
-
 #include <cstddef>
 #include <vector>
+
+#include "mlvc/codec/tensor_data.h"
 
 namespace mlvc::app {
 
@@ -21,7 +21,9 @@ class FrameInputArena final : public FrameBufferPool {
   FrameInputArena(const mlvc::TensorSpec& frame_spec, int slot_count,
                   bool allocate_host_buffers = true);
 
-  codec::TensorData& Get(std::size_t slot_index) override { return slots_.at(slot_index); }
+  codec::TensorData& Get(std::size_t slot_index) override {
+    return slots_.at(slot_index);
+  }
   const codec::TensorData& Get(std::size_t slot_index) const override {
     return slots_.at(slot_index);
   }

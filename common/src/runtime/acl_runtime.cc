@@ -27,7 +27,8 @@ DataType MlvcDataType(aclDataType dtype) {
     case ACL_UINT8:
       return DataType::kUInt8;
     default:
-      throw Error("unsupported ACL tensor dtype: " + std::to_string(static_cast<int>(dtype)));
+      throw Error("unsupported ACL tensor dtype: " +
+                  std::to_string(static_cast<int>(dtype)));
   }
 }
 
@@ -35,18 +36,22 @@ std::vector<int64_t> DimsVector(const aclmdlIODims& dims) {
   return std::vector<int64_t>(dims.dims, dims.dims + dims.dimCount);
 }
 
-bool MatchesOmOutputName(const std::string& logical, const std::string& actual) {
+bool MatchesOmOutputName(const std::string& logical,
+                         const std::string& actual) {
   if (logical == actual) return true;
   // ATC may expose "<operator>:<output index>:<ONNX output name>".
-  // Preserve the logical name used by RunStage; do not accept arbitrary suffixes.
+  // Preserve the logical name used by RunStage; do not accept arbitrary
+  // suffixes.
   const std::string suffix = ":" + logical;
   if (logical.empty() || actual.size() <= suffix.size() ||
-      actual.compare(actual.size() - suffix.size(), suffix.size(), suffix) != 0) {
+      actual.compare(actual.size() - suffix.size(), suffix.size(), suffix) !=
+          0) {
     return false;
   }
   const std::size_t index_end = actual.size() - suffix.size();
   const std::size_t separator = actual.rfind(':', index_end - 1);
-  if (separator == std::string::npos || separator == 0 || separator + 1 == index_end) {
+  if (separator == std::string::npos || separator == 0 ||
+      separator + 1 == index_end) {
     return false;
   }
   return std::all_of(actual.begin() + separator + 1, actual.begin() + index_end,
@@ -55,8 +60,10 @@ bool MatchesOmOutputName(const std::string& logical, const std::string& actual) 
 
 void ValidateOmTensor(const TensorSpec& expected, const TensorSpec& actual,
                       const std::string& context, bool output) {
-  Check(output ? MatchesOmOutputName(expected.name, actual.name) : expected.name == actual.name,
-        context + " name mismatch: manifest=" + expected.name + ", om=" + actual.name);
+  Check(output ? MatchesOmOutputName(expected.name, actual.name)
+               : expected.name == actual.name,
+        context + " name mismatch: manifest=" + expected.name +
+            ", om=" + actual.name);
   Check(expected.dtype == actual.dtype, context + " dtype mismatch");
   Check(expected.shape == actual.shape, context + " shape mismatch");
 }
@@ -85,11 +92,13 @@ aclrtMemcpyKind OutputCopyKind(MemoryLocation location) {
 
 void CheckTensorCompatible(const TensorSpec& spec, const TensorView& view,
                            const std::string& stage_name) {
-  Check(view.dtype() == spec.dtype, "ACL stage input/output dtype mismatch: " + stage_name + "." +
-                                        spec.name + " expected " + DataTypeName(spec.dtype) +
-                                        " got " + DataTypeName(view.dtype()));
-  Check(view.shape().dims() == spec.shape,
-        "ACL stage input/output shape mismatch: " + stage_name + "." + spec.name);
+  Check(view.dtype() == spec.dtype,
+        "ACL stage input/output dtype mismatch: " + stage_name + "." +
+            spec.name + " expected " + DataTypeName(spec.dtype) + " got " +
+            DataTypeName(view.dtype()));
+  Check(
+      view.shape().dims() == spec.shape,
+      "ACL stage input/output shape mismatch: " + stage_name + "." + spec.name);
 }
 
 void AppendEnvPath(const char* name, const std::filesystem::path& path) {
@@ -105,7 +114,8 @@ void AppendEnvPath(const char* name, const std::filesystem::path& path) {
   }
   const std::string current(existing);
   const bool is_suffix = current.size() > value.size() &&
-                         current.compare(current.size() - value.size(), value.size(), value) == 0 &&
+                         current.compare(current.size() - value.size(),
+                                         value.size(), value) == 0 &&
                          current[current.size() - value.size() - 1] == ':';
   if (current == value || current.find(value + ":") == 0 ||
       current.find(":" + value + ":") != std::string::npos || is_suffix) {
@@ -142,23 +152,28 @@ void SetEnvIfUnset(const char* name, const std::filesystem::path& value) {
   }
 }
 
-void ValidateAclTensorSpecs(const std::vector<TensorSpec>& specs, const std::string& record_name,
-                            const char* label) {
+void ValidateAclTensorSpecs(const std::vector<TensorSpec>& specs,
+                            const std::string& record_name, const char* label) {
   Check(!specs.empty(), "ACL runtime requires non-empty " + std::string(label) +
                             " specs for model record: " + record_name);
   for (const TensorSpec& spec : specs) {
-    Check(!spec.name.empty(), "ACL runtime requires named " + std::string(label) +
+    Check(!spec.name.empty(), "ACL runtime requires named " +
+                                  std::string(label) +
                                   " tensors for model record: " + record_name);
     Check(spec.dtype == DataType::kFloat16 || spec.dtype == DataType::kInt32 ||
-              (std::strcmp(label, "input") == 0 && spec.dtype == DataType::kUInt8),
-          "ACL runtime requires FP16, INT32, or UINT8 input " + std::string(label) +
-              " tensors for model record: " + record_name + "." + spec.name);
-    Check(!spec.shape.empty(), "ACL runtime requires static " + std::string(label) +
-                                   " tensor shapes for model record: " + record_name + "." +
-                                   spec.name);
+              (std::strcmp(label, "input") == 0 &&
+               spec.dtype == DataType::kUInt8),
+          "ACL runtime requires FP16, INT32, or UINT8 input " +
+              std::string(label) + " tensors for model record: " + record_name +
+              "." + spec.name);
+    Check(!spec.shape.empty(),
+          "ACL runtime requires static " + std::string(label) +
+              " tensor shapes for model record: " + record_name + "." +
+              spec.name);
     for (int64_t dim : spec.shape) {
       Check(dim > 0, "ACL runtime requires positive " + std::string(label) +
-                         " tensor shapes for model record: " + record_name + "." + spec.name);
+                         " tensor shapes for model record: " + record_name +
+                         "." + spec.name);
     }
   }
 }
@@ -189,13 +204,16 @@ void BootstrapAclEnvironment() {
     SetEnvIfUnset("ASCEND_OPP_PATH", cann_home / "opp");
     SetEnvIfUnset("TOOLCHAIN_HOME", cann_home / "toolkit");
     setenv("MLVC_ACL_REPO_ROOT", repo_root.c_str(), 0);
-    const std::filesystem::path custom_opp_root = repo_root / "output" / "custom_opp";
-    AppendEnvPath("ASCEND_CUSTOM_OPP_PATH", custom_opp_root / "wsiluchunkadd" / "vendors" / "mlvc");
+    const std::filesystem::path custom_opp_root =
+        repo_root / "output" / "custom_opp";
+    AppendEnvPath("ASCEND_CUSTOM_OPP_PATH",
+                  custom_opp_root / "wsiluchunkadd" / "vendors" / "mlvc");
     AppendEnvPath("ASCEND_CUSTOM_OPP_PATH",
                   custom_opp_root / "mlvc_prior_ops" / "vendors" / "mlvc");
 
-    const std::filesystem::path prior_opapi = custom_opp_root / "mlvc_prior_ops" / "vendors" /
-                                              "mlvc" / "op_api" / "lib" / "libcust_opapi.so";
+    const std::filesystem::path prior_opapi =
+        custom_opp_root / "mlvc_prior_ops" / "vendors" / "mlvc" / "op_api" /
+        "lib" / "libcust_opapi.so";
     std::error_code error;
     if (std::getenv("MLVC_PRIOR_OPAPI_LIB") == nullptr &&
         std::filesystem::is_regular_file(prior_opapi, error)) {
@@ -205,15 +223,19 @@ void BootstrapAclEnvironment() {
 }
 
 void ValidateAclManifestForAclRuntime(const ModelManifest& manifest) {
-  Check(manifest.runtime() == "acl", "ACL runtime requires a manifest with runtime = \"acl\"");
-  Check(!manifest.soc_version().empty(), "ACL runtime requires an ACL manifest soc_version");
+  Check(manifest.runtime() == "acl",
+        "ACL runtime requires a manifest with runtime = \"acl\"");
+  Check(!manifest.soc_version().empty(),
+        "ACL runtime requires an ACL manifest soc_version");
   Check(manifest.dtype() == "fp16" || manifest.dtype() == "float16",
         "ACL runtime requires ACL manifest dtype = fp16");
   for (const ModelRecord& record : manifest.models()) {
     Check(record.backend == "acl",
-          "ACL runtime requires backend = \"acl\" for model record: " + record.name);
-    Check(record.model.extension() == ".om",
-          "ACL runtime requires OM model files for model record: " + record.name);
+          "ACL runtime requires backend = \"acl\" for model record: " +
+              record.name);
+    Check(
+        record.model.extension() == ".om",
+        "ACL runtime requires OM model files for model record: " + record.name);
     ValidateAclTensorSpecs(record.inputs, record.name, "input");
     ValidateAclTensorSpecs(record.outputs, record.name, "output");
   }
@@ -262,13 +284,15 @@ void AclRuntime::MakeCurrent() const {
   CheckAcl(aclrtSetCurrentContext(context_), "aclrtSetCurrentContext");
 }
 
-AclStage::AclStage(AclRuntime* runtime, ModelRecord record, std::filesystem::path model_path)
+AclStage::AclStage(AclRuntime* runtime, ModelRecord record,
+                   std::filesystem::path model_path)
     : runtime_(runtime), record_(std::move(record)) {
   try {
     Check(runtime_ != nullptr, "ACL runtime is required");
     Check(std::filesystem::exists(model_path),
           "ACL OM file does not exist: " + model_path.string());
-    CheckAcl(aclrtSetCurrentContext(runtime_->context()), "aclrtSetCurrentContext");
+    CheckAcl(aclrtSetCurrentContext(runtime_->context()),
+             "aclrtSetCurrentContext");
     CheckAcl(aclmdlLoadFromFile(model_path.c_str(), &model_id_),
              "aclmdlLoadFromFile " + model_path.string());
     model_loaded_ = true;
@@ -288,7 +312,8 @@ AclStage::AclStage(AclRuntime* runtime, ModelRecord record, std::filesystem::pat
             "ACL manifest input count does not match OM desc: " + record_.name);
       for (std::size_t index = 0; index < om_input_count; ++index) {
         ValidateOmTensor(record_.inputs[index], ReadInputSpec(desc_, index),
-                         record_.name + " Input[" + std::to_string(index) + "]", false);
+                         record_.name + " Input[" + std::to_string(index) + "]",
+                         false);
       }
     }
     if (record_.outputs.empty()) {
@@ -297,11 +322,13 @@ AclStage::AclStage(AclRuntime* runtime, ModelRecord record, std::filesystem::pat
         record_.outputs.push_back(ReadOutputSpec(desc_, index));
       }
     } else {
-      Check(record_.outputs.size() == om_output_count,
-            "ACL manifest output count does not match OM desc: " + record_.name);
+      Check(
+          record_.outputs.size() == om_output_count,
+          "ACL manifest output count does not match OM desc: " + record_.name);
       for (std::size_t index = 0; index < om_output_count; ++index) {
-        ValidateOmTensor(record_.outputs[index], ReadOutputSpec(desc_, index),
-                         record_.name + " Output[" + std::to_string(index) + "]", true);
+        ValidateOmTensor(
+            record_.outputs[index], ReadOutputSpec(desc_, index),
+            record_.name + " Output[" + std::to_string(index) + "]", true);
       }
     }
     BuildDatasets();
@@ -341,7 +368,8 @@ void AclStage::AllocateDeviceBuffer(DeviceBuffer* buffer, std::size_t bytes) {
   if (bytes == 0) {
     return;
   }
-  CheckAcl(aclrtMalloc(&buffer->data, bytes, ACL_MEM_MALLOC_NORMAL_ONLY), "aclrtMalloc");
+  CheckAcl(aclrtMalloc(&buffer->data, bytes, ACL_MEM_MALLOC_NORMAL_ONLY),
+           "aclrtMalloc");
   buffer->bytes = bytes;
 }
 
@@ -391,22 +419,28 @@ void AclStage::BuildDatasets() {
   for (std::size_t index = 0; index < record_.inputs.size(); ++index) {
     const std::size_t bytes = aclmdlGetInputSizeByIndex(desc_, index);
     AllocateDeviceBuffer(&input_buffers_[index], bytes);
-    input_data_buffers_[index] = aclCreateDataBuffer(input_buffers_[index].data, bytes);
-    Check(input_data_buffers_[index] != nullptr, "aclCreateDataBuffer input failed");
+    input_data_buffers_[index] =
+        aclCreateDataBuffer(input_buffers_[index].data, bytes);
+    Check(input_data_buffers_[index] != nullptr,
+          "aclCreateDataBuffer input failed");
     CheckAcl(aclmdlAddDatasetBuffer(input_dataset_, input_data_buffers_[index]),
              "aclmdlAddDatasetBuffer input");
   }
   for (std::size_t index = 0; index < record_.outputs.size(); ++index) {
     const std::size_t bytes = aclmdlGetOutputSizeByIndex(desc_, index);
     AllocateDeviceBuffer(&output_buffers_[index], bytes);
-    output_data_buffers_[index] = aclCreateDataBuffer(output_buffers_[index].data, bytes);
-    Check(output_data_buffers_[index] != nullptr, "aclCreateDataBuffer output failed");
-    CheckAcl(aclmdlAddDatasetBuffer(output_dataset_, output_data_buffers_[index]),
-             "aclmdlAddDatasetBuffer output");
+    output_data_buffers_[index] =
+        aclCreateDataBuffer(output_buffers_[index].data, bytes);
+    Check(output_data_buffers_[index] != nullptr,
+          "aclCreateDataBuffer output failed");
+    CheckAcl(
+        aclmdlAddDatasetBuffer(output_dataset_, output_data_buffers_[index]),
+        "aclmdlAddDatasetBuffer output");
   }
 }
 
-void AclStage::DestroyDataset(aclmdlDataset*& dataset, std::vector<aclDataBuffer*>& data_buffers) {
+void AclStage::DestroyDataset(aclmdlDataset*& dataset,
+                              std::vector<aclDataBuffer*>& data_buffers) {
   for (aclDataBuffer*& buffer : data_buffers) {
     if (buffer != nullptr) {
       (void)aclDestroyDataBuffer(buffer);
@@ -420,7 +454,8 @@ void AclStage::DestroyDataset(aclmdlDataset*& dataset, std::vector<aclDataBuffer
   }
 }
 
-const NamedTensorView* AclStage::FindNamedView(const NamedTensorView* views, std::size_t count,
+const NamedTensorView* AclStage::FindNamedView(const NamedTensorView* views,
+                                               std::size_t count,
                                                const std::string& name) const {
   for (std::size_t index = 0; index < count; ++index) {
     if (views[index].name != nullptr && name == views[index].name) {
@@ -442,7 +477,8 @@ void AclStage::Run(const std::map<std::string, TensorView>& inputs,
   for (const auto& [name, view] : outputs) {
     output_list.push_back(NamedTensorView{name.c_str(), view});
   }
-  RunNamed(input_list.data(), input_list.size(), output_list.data(), output_list.size());
+  RunNamed(input_list.data(), input_list.size(), output_list.data(),
+           output_list.size());
 }
 
 void AclStage::Run(std::initializer_list<NamedTensorView> inputs,
@@ -451,45 +487,58 @@ void AclStage::Run(std::initializer_list<NamedTensorView> inputs,
 }
 
 void AclStage::RunNamed(const NamedTensorView* inputs, std::size_t input_count,
-                        const NamedTensorView* outputs, std::size_t output_count) {
+                        const NamedTensorView* outputs,
+                        std::size_t output_count) {
   MLVC_PROFILE_RANGE_FUNCTION();
-  CheckAcl(aclrtSetCurrentContext(runtime_->context()), "aclrtSetCurrentContext");
+  CheckAcl(aclrtSetCurrentContext(runtime_->context()),
+           "aclrtSetCurrentContext");
   for (std::size_t index = 0; index < record_.inputs.size(); ++index) {
     const TensorSpec& spec = record_.inputs[index];
-    const NamedTensorView* input = FindNamedView(inputs, input_count, spec.name);
-    Check(input != nullptr,
-          "missing input tensor for ACL stage " + record_.name + ": " + spec.name);
+    const NamedTensorView* input =
+        FindNamedView(inputs, input_count, spec.name);
+    Check(input != nullptr, "missing input tensor for ACL stage " +
+                                record_.name + ": " + spec.name);
     CheckTensorCompatible(spec, input->view, record_.name);
     const std::size_t bytes = input->view.bytes();
-    Check(bytes == input_buffers_[index].bytes, "ACL input byte size does not match OM desc");
+    Check(bytes == input_buffers_[index].bytes,
+          "ACL input byte size does not match OM desc");
     if (input->view.location() == MemoryLocation::kAcl) {
-      CheckAcl(aclUpdateDataBuffer(input_data_buffers_[index], input->view.data(), bytes),
+      CheckAcl(aclUpdateDataBuffer(input_data_buffers_[index],
+                                   input->view.data(), bytes),
                "aclUpdateDataBuffer input " + record_.name + "." + spec.name);
     } else {
-      CheckAcl(aclUpdateDataBuffer(input_data_buffers_[index], input_buffers_[index].data,
+      CheckAcl(aclUpdateDataBuffer(input_data_buffers_[index],
+                                   input_buffers_[index].data,
                                    input_buffers_[index].bytes),
-               "aclUpdateDataBuffer input staging " + record_.name + "." + spec.name);
-      CheckAcl(aclrtMemcpy(input_buffers_[index].data, input_buffers_[index].bytes,
-                           input->view.data(), bytes, InputCopyKind(input->view.location())),
+               "aclUpdateDataBuffer input staging " + record_.name + "." +
+                   spec.name);
+      CheckAcl(aclrtMemcpy(input_buffers_[index].data,
+                           input_buffers_[index].bytes, input->view.data(),
+                           bytes, InputCopyKind(input->view.location())),
                "aclrtMemcpy H2D " + record_.name + "." + spec.name);
     }
   }
 
   for (std::size_t index = 0; index < record_.outputs.size(); ++index) {
     const TensorSpec& spec = record_.outputs[index];
-    const NamedTensorView* output = FindNamedView(outputs, output_count, spec.name);
-    Check(output != nullptr,
-          "missing output tensor for ACL stage " + record_.name + ": " + spec.name);
+    const NamedTensorView* output =
+        FindNamedView(outputs, output_count, spec.name);
+    Check(output != nullptr, "missing output tensor for ACL stage " +
+                                 record_.name + ": " + spec.name);
     CheckTensorCompatible(spec, output->view, record_.name);
     const std::size_t bytes = output->view.bytes();
-    Check(bytes == output_buffers_[index].bytes, "ACL output byte size does not match OM desc");
+    Check(bytes == output_buffers_[index].bytes,
+          "ACL output byte size does not match OM desc");
     if (output->view.location() == MemoryLocation::kAcl) {
-      CheckAcl(aclUpdateDataBuffer(output_data_buffers_[index], output->view.data(), bytes),
+      CheckAcl(aclUpdateDataBuffer(output_data_buffers_[index],
+                                   output->view.data(), bytes),
                "aclUpdateDataBuffer output " + record_.name + "." + spec.name);
     } else {
-      CheckAcl(aclUpdateDataBuffer(output_data_buffers_[index], output_buffers_[index].data,
+      CheckAcl(aclUpdateDataBuffer(output_data_buffers_[index],
+                                   output_buffers_[index].data,
                                    output_buffers_[index].bytes),
-               "aclUpdateDataBuffer output staging " + record_.name + "." + spec.name);
+               "aclUpdateDataBuffer output staging " + record_.name + "." +
+                   spec.name);
     }
   }
 
@@ -498,14 +547,16 @@ void AclStage::RunNamed(const NamedTensorView* inputs, std::size_t input_count,
 
   for (std::size_t index = 0; index < record_.outputs.size(); ++index) {
     const TensorSpec& spec = record_.outputs[index];
-    const NamedTensorView* output = FindNamedView(outputs, output_count, spec.name);
-    Check(output != nullptr,
-          "missing output tensor for ACL stage " + record_.name + ": " + spec.name);
+    const NamedTensorView* output =
+        FindNamedView(outputs, output_count, spec.name);
+    Check(output != nullptr, "missing output tensor for ACL stage " +
+                                 record_.name + ": " + spec.name);
     if (output->view.location() != MemoryLocation::kAcl) {
       const std::size_t bytes = output->view.bytes();
-      CheckAcl(aclrtMemcpy(output->view.data(), bytes, output_buffers_[index].data, bytes,
-                           OutputCopyKind(output->view.location())),
-               "aclrtMemcpy D2H " + record_.name + "." + spec.name);
+      CheckAcl(
+          aclrtMemcpy(output->view.data(), bytes, output_buffers_[index].data,
+                      bytes, OutputCopyKind(output->view.location())),
+          "aclrtMemcpy D2H " + record_.name + "." + spec.name);
     }
   }
 }
@@ -518,11 +569,12 @@ AclModelSet::AclModelSet(AclRuntime* runtime, ModelManifest manifest)
   Check(actual_soc != nullptr && actual_soc[0] != '\0',
         "ACL runtime could not determine the device SoC");
   Check(manifest_.soc_version() == actual_soc,
-        "ACL manifest soc_version mismatch: manifest=" + manifest_.soc_version() +
-            ", device=" + actual_soc);
+        "ACL manifest soc_version mismatch: manifest=" +
+            manifest_.soc_version() + ", device=" + actual_soc);
   for (ModelRecord& record : manifest_.models()) {
     const std::filesystem::path model_path =
-        record.model.is_absolute() ? record.model : manifest_.directory() / record.model;
+        record.model.is_absolute() ? record.model
+                                   : manifest_.directory() / record.model;
     if (!record.replaces.empty() && !std::filesystem::exists(model_path)) {
       continue;
     }

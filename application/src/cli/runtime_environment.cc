@@ -1,4 +1,5 @@
-#include <mlvc/application/cli/runtime_environment.h>
+#include "mlvc/application/cli/runtime_environment.h"
+
 #include <unistd.h>
 
 #include <cstdlib>
@@ -11,7 +12,8 @@
 namespace mlvc {
 namespace {
 
-constexpr char kRuntimeEnvBootstrapped[] = "MLVC_CODEC_RUNTIME_ENV_BOOTSTRAPPED";
+constexpr char kRuntimeEnvBootstrapped[] =
+    "MLVC_CODEC_RUNTIME_ENV_BOOTSTRAPPED";
 
 void AppendIfDirectory(const std::filesystem::path& path,
                        std::vector<std::filesystem::path>* paths) {
@@ -23,7 +25,8 @@ void AppendIfDirectory(const std::filesystem::path& path,
 
 std::filesystem::path ExecutablePath(const char* argv0) {
   std::error_code error;
-  std::filesystem::path path = std::filesystem::canonical("/proc/self/exe", error);
+  std::filesystem::path path =
+      std::filesystem::canonical("/proc/self/exe", error);
   if (!error) {
     return path;
   }
@@ -53,8 +56,9 @@ void SetPriorOpapiLibraryIfPresent(const std::filesystem::path& repo_root) {
   if (std::getenv(kPriorOpapiEnv) != nullptr) {
     return;
   }
-  const std::filesystem::path library = repo_root / "output" / "custom_opp" / "mlvc_prior_ops" /
-                                        "vendors" / "ulbvc" / "op_api" / "lib" / "libcust_opapi.so";
+  const std::filesystem::path library = repo_root / "output" / "custom_opp" /
+                                        "mlvc_prior_ops" / "vendors" / "ulbvc" /
+                                        "op_api" / "lib" / "libcust_opapi.so";
   std::error_code error;
   if (std::filesystem::is_regular_file(library, error)) {
     setenv(kPriorOpapiEnv, library.c_str(), 1);
@@ -69,19 +73,21 @@ void PrepareAscendRuntimeEnvironment(char** argv) {
   }
 
   const std::filesystem::path executable = ExecutablePath(argv[0]);
-  const std::filesystem::path repo_root = executable.parent_path().parent_path();
-  const std::filesystem::path cann_home = std::getenv("CANN_HOME") != nullptr
-                                              ? std::filesystem::path(std::getenv("CANN_HOME"))
-                                              : std::filesystem::path("/usr/local/Ascend/cann");
+  const std::filesystem::path repo_root =
+      executable.parent_path().parent_path();
+  const std::filesystem::path cann_home =
+      std::getenv("CANN_HOME") != nullptr
+          ? std::filesystem::path(std::getenv("CANN_HOME"))
+          : std::filesystem::path("/usr/local/Ascend/cann");
 
   std::vector<std::filesystem::path> library_dirs;
   AppendIfDirectory(cann_home / "lib64", &library_dirs);
   AppendIfDirectory(cann_home / "runtime" / "lib64", &library_dirs);
-  AppendIfDirectory(repo_root / "output" / "custom_opp" / "wsiluchunkadd" / "vendors" / "ulbvc" /
-                        "op_api" / "lib",
+  AppendIfDirectory(repo_root / "output" / "custom_opp" / "wsiluchunkadd" /
+                        "vendors" / "ulbvc" / "op_api" / "lib",
                     &library_dirs);
-  AppendIfDirectory(repo_root / "output" / "custom_opp" / "mlvc_prior_ops" / "vendors" / "ulbvc" /
-                        "op_api" / "lib",
+  AppendIfDirectory(repo_root / "output" / "custom_opp" / "mlvc_prior_ops" /
+                        "vendors" / "ulbvc" / "op_api" / "lib",
                     &library_dirs);
   SetPriorOpapiLibraryIfPresent(repo_root);
 
@@ -92,7 +98,8 @@ void PrepareAscendRuntimeEnvironment(char** argv) {
   setenv(kRuntimeEnvBootstrapped, "1", 1);
   setenv("LD_LIBRARY_PATH", library_path.c_str(), 1);
   execv(executable.c_str(), argv);
-  std::cerr << "warning: failed to restart with ACL runtime library path; continuing\n";
+  std::cerr << "warning: failed to restart with ACL runtime library path; "
+               "continuing\n";
 }
 
 }  // namespace mlvc

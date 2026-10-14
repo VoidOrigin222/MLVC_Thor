@@ -1,10 +1,9 @@
 #ifndef MLVC_CODEC_DETAIL_ALLOCATION_PROFILE_H_
 #define MLVC_CODEC_DETAIL_ALLOCATION_PROFILE_H_
 
-#include <mlvc/codec/detail/profile/allocation_tracking.h>
-
 #include <string>
 
+#include "mlvc/codec/detail/profile/allocation_tracking.h"
 #include "mlvc/framework/profiler.h"
 
 namespace mlvc::codec {
@@ -12,7 +11,8 @@ namespace mlvc::codec {
 void AddAllocationProfile(mlvc::Profiler* profiler, const char* name,
                           const codec::AllocationSnapshot& before,
                           const codec::AllocationSnapshot& after);
-void AddHotPathAllocationProfile(mlvc::Profiler* profiler, const codec::AllocationSnapshot& before,
+void AddHotPathAllocationProfile(mlvc::Profiler* profiler,
+                                 const codec::AllocationSnapshot& before,
                                  const codec::AllocationSnapshot& after);
 
 class ScopedAllocationSpan {
@@ -32,7 +32,8 @@ class ScopedAllocationTrackingPause {
  public:
   ScopedAllocationTrackingPause();
   ScopedAllocationTrackingPause(const ScopedAllocationTrackingPause&) = delete;
-  ScopedAllocationTrackingPause& operator=(const ScopedAllocationTrackingPause&) = delete;
+  ScopedAllocationTrackingPause& operator=(
+      const ScopedAllocationTrackingPause&) = delete;
   ~ScopedAllocationTrackingPause();
 
  private:

@@ -44,3 +44,12 @@ configs/quality/
 /work/
 /tools/run_fullchain_20260925.py
 /tools/run_fullchain_venc_npu_20260926.py
+
+# Thor runtime bundles and local test server certificates.
+/engines/
+/data/
+/deps/
+/bin/
+/deliveries/
+/auto.crt
+/auto.key

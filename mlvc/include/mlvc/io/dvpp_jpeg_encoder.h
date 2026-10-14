@@ -1,13 +1,12 @@
 #ifndef MLVC_IO_DVPP_JPEG_ENCODER_H_
 #define MLVC_IO_DVPP_JPEG_ENCODER_H_
 
-#include <acl/acl.h>
-
 #include <cstdint>
 #include <memory>
 #include <vector>
 
 #include "mlvc/io/fp16_yuv444_to_nv12.h"
+#include <acl/acl.h>
 
 namespace mlvc::io {
 

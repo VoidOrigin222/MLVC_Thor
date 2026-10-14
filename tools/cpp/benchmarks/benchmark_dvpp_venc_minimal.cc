@@ -1,17 +1,18 @@
-#include <acl/acl.h>
-#include <acl/ops/acl_dvpp.h>
+#include <pthread.h>
 
 #include <atomic>
+#include <condition_variable>
 #include <cstdint>
 #include <cstdlib>
-#include <condition_variable>
 #include <exception>
 #include <iostream>
 #include <mutex>
-#include <pthread.h>
-#include <string>
 #include <stdexcept>
+#include <string>
 #include <thread>
+
+#include <acl/acl.h>
+#include <acl/ops/acl_dvpp.h>
 
 namespace {
 
@@ -28,14 +29,21 @@ Options ParseOptions(int argc, char** argv) {
     const std::string arg = argv[index];
     if (index + 1 >= argc) throw std::runtime_error("missing value for " + arg);
     const std::string value = argv[++index];
-    if (arg == "--device") options.device = std::stoi(value);
-    else if (arg == "--width") options.width = std::stoi(value);
-    else if (arg == "--height") options.height = std::stoi(value);
-    else if (arg == "--level") options.level = std::stoi(value);
-    else throw std::runtime_error("unknown option: " + arg);
+    if (arg == "--device")
+      options.device = std::stoi(value);
+    else if (arg == "--width")
+      options.width = std::stoi(value);
+    else if (arg == "--height")
+      options.height = std::stoi(value);
+    else if (arg == "--level")
+      options.level = std::stoi(value);
+    else
+      throw std::runtime_error("unknown option: " + arg);
   }
-  if (options.width <= 0 || options.height <= 0 || options.level < 0 || options.level > 2) {
-    throw std::runtime_error("invalid dimensions or level (level must be 0, 1, or 2)");
+  if (options.width <= 0 || options.height <= 0 || options.level < 0 ||
+      options.level > 2) {
+    throw std::runtime_error(
+        "invalid dimensions or level (level must be 0, 1, or 2)");
   }
   return options;
 }
@@ -44,7 +52,8 @@ void Check(aclError status, const std::string& operation) {
   if (status == ACL_ERROR_NONE) return;
   std::cerr << operation << " failed: ret=" << status;
   const char* detail = aclGetRecentErrMsg();
-  if (detail != nullptr && detail[0] != '\0') std::cerr << ", detail=" << detail;
+  if (detail != nullptr && detail[0] != '\0')
+    std::cerr << ", detail=" << detail;
   std::cerr << "\n";
   throw std::runtime_error(operation + " failed");
 }
@@ -56,7 +65,8 @@ class ReportThread {
   explicit ReportThread(aclrtContext context) : context_(context) {
     thread_ = std::thread([this] {
       try {
-        Check(aclrtSetCurrentContext(context_), "aclrtSetCurrentContext report thread");
+        Check(aclrtSetCurrentContext(context_),
+              "aclrtSetCurrentContext report thread");
         {
           std::lock_guard<std::mutex> lock(mutex_);
           ready_ = true;
@@ -64,9 +74,11 @@ class ReportThread {
         condition_.notify_one();
         while (running_.load(std::memory_order_acquire)) {
           const aclError status = aclrtProcessReport(100);
-          if (status != ACL_ERROR_NONE && status != ACL_ERROR_RT_REPORT_TIMEOUT) {
+          if (status != ACL_ERROR_NONE &&
+              status != ACL_ERROR_RT_REPORT_TIMEOUT) {
             std::lock_guard<std::mutex> lock(mutex_);
-            error_ = std::make_exception_ptr(std::runtime_error("aclrtProcessReport failed"));
+            error_ = std::make_exception_ptr(
+                std::runtime_error("aclrtProcessReport failed"));
             running_.store(false, std::memory_order_release);
             break;
           }
@@ -90,7 +102,8 @@ class ReportThread {
   }
 
   uint64_t thread_handle() {
-    return static_cast<uint64_t>(reinterpret_cast<uintptr_t>(thread_.native_handle()));
+    return static_cast<uint64_t>(
+        reinterpret_cast<uintptr_t>(thread_.native_handle()));
   }
 
  private:
@@ -118,18 +131,23 @@ int main(int argc, char** argv) {
     ReportThread report(context);
 
     desc = aclvencCreateChannelDesc();
-    if (desc == nullptr) throw std::runtime_error("aclvencCreateChannelDesc returned null");
-    Check(aclvencSetChannelDescThreadId(desc, report.thread_handle()), "set pthread handle");
+    if (desc == nullptr)
+      throw std::runtime_error("aclvencCreateChannelDesc returned null");
+    Check(aclvencSetChannelDescThreadId(desc, report.thread_handle()),
+          "set pthread handle");
     Check(aclvencSetChannelDescCallback(desc, &NoopCallback), "set callback");
     Check(aclvencSetChannelDescEnType(desc, H264_MAIN_LEVEL), "set H.264 type");
     Check(aclvencSetChannelDescPicFormat(desc, PIXEL_FORMAT_YUV_SEMIPLANAR_420),
           "set NV12 format");
-    Check(aclvencSetChannelDescPicWidth(desc, static_cast<uint32_t>(options.width)),
+    Check(aclvencSetChannelDescPicWidth(desc,
+                                        static_cast<uint32_t>(options.width)),
           "set width");
-    Check(aclvencSetChannelDescPicHeight(desc, static_cast<uint32_t>(options.height)),
+    Check(aclvencSetChannelDescPicHeight(desc,
+                                         static_cast<uint32_t>(options.height)),
           "set height");
     if (options.level >= 1) {
-      Check(aclvencSetChannelDescKeyFrameInterval(desc, options.level == 2 ? 1 : 96),
+      Check(aclvencSetChannelDescKeyFrameInterval(desc,
+                                                  options.level == 2 ? 1 : 96),
             "set GOP");
     }
     if (options.level >= 2) {
@@ -137,8 +155,9 @@ int main(int argc, char** argv) {
       Check(aclvencSetChannelDescRcMode(desc, 2), "set CBR mode");
       Check(aclvencSetChannelDescMaxBitRate(desc, 10000), "set max bitrate");
     }
-    std::cout << "attempt level=" << options.level << " dimensions=" << options.width << "x"
-              << options.height << "\n";
+    std::cout << "attempt level=" << options.level
+              << " dimensions=" << options.width << "x" << options.height
+              << "\n";
     Check(aclvencCreateChannel(desc), "aclvencCreateChannel");
     channel_created = true;
     std::cout << "venc_channel_created=1\n";

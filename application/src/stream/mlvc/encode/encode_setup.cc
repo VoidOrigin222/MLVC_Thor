@@ -1,43 +1,62 @@
-#include <mlvc/application/stream/encode/encode_setup.h>
-#include <mlvc/codec/execution_profile.h>
+#include "mlvc/application/stream/encode/encode_setup.h"
 
+#include <cmath>
 #include <filesystem>
 
+#include "mlvc/codec/execution_profile.h"
 #include "mlvc/core/status.h"
 
 namespace mlvc::codec {
 
 void ValidateEncodeInput(const EncodeStreamOptions& options) {
+  Check(std::isfinite(options.target_fps) && options.target_fps >= 0 &&
+            options.target_fps <= 1000,
+        "target_fps must be finite and in [0,1000]");
   Check(!options.motion_camera_nv12 ||
             (options.translation_warp && options.motion_shifts_file.empty() &&
              options.motion_prefetch_frames > 0),
         "camera motion NV12 requires online translation warp with prefetch");
-  Check(!options.motion_camera_nv12 ||
-            (!options.input_camera_device.empty() && options.camera_options.has_value()),
+
+  Check(!options.motion_camera_nv12 || (!options.input_camera_device.empty() &&
+                                        options.camera_options.has_value()),
         "motion_camera_nv12 requires camera input");
   Check(!options.motion_skip_loop_filter ||
             (options.translation_warp && options.motion_shifts_file.empty()),
         "motion_skip_loop_filter requires online translation warp");
-  Check(options.motion_x264_preset == "medium" || options.motion_x264_preset == "veryfast" ||
-            options.motion_x264_preset == "superfast" || options.motion_x264_preset == "ultrafast",
+#ifndef MLVC_TENSORRT
+  Check(options.motion_x264_preset == "medium" ||
+            options.motion_x264_preset == "veryfast" ||
+            options.motion_x264_preset == "superfast" ||
+            options.motion_x264_preset == "ultrafast",
         "motion_x264_preset must be medium, veryfast, superfast, or ultrafast");
   Check(options.motion_x264_threads >= 1 && options.motion_x264_threads <= 16,
         "motion_x264_threads must be in [1, 16]");
-  Check((options.motion_x264_preset == "medium" && options.motion_x264_threads == 1) ||
+  Check((options.motion_x264_preset == "medium" &&
+         options.motion_x264_threads == 1) ||
             (options.translation_warp && options.motion_backend == "libx264" &&
              options.motion_shifts_file.empty()),
         "non-default x264 settings require online libx264 translation warp");
+#endif
 
-  Check(options.motion_prefetch_frames >= 0 && options.motion_prefetch_frames <= 2,
+  Check(options.motion_prefetch_frames >= 0 &&
+            options.motion_prefetch_frames <= 2,
         "motion_prefetch_frames must be 0, 1, or 2");
   Check(options.motion_prefetch_frames == 0 || options.translation_warp,
         "motion prefetch requires translation warp");
+#ifdef MLVC_TENSORRT
+  Check(options.motion_backend == "nvenc" || options.motion_backend == "dvpp",
+        "Thor motion_backend requires hardware encoding");
+#else
   Check(options.motion_backend == "libx264" || options.motion_backend == "dvpp",
-        "motion_backend must be libx264 or dvpp");
+        "unsupported motion_backend (Thor: libx264 or nvenc; Ascend: libx264 "
+        "or dvpp)");
   Check(options.translation_warp || options.motion_backend == "libx264",
         "a non-default motion_backend requires translation warp");
-  Check(options.motion_shifts_file.empty() || options.motion_backend == "libx264",
-        "motion_shifts_file replays saved motion and cannot be combined with motion_backend=dvpp");
+  Check(
+      options.motion_shifts_file.empty() || options.motion_backend == "libx264",
+      "motion_shifts_file replays saved motion and cannot be combined with "
+      "motion_backend=dvpp");
+#endif
   Check(options.translation_warp || options.motion_shifts_file.empty(),
         "motion_shifts_file requires translation warp");
   if (options.translation_warp) {
@@ -45,40 +64,53 @@ void ValidateEncodeInput(const EncodeStreamOptions& options) {
           "translation warp currently requires GOP 96 and reset interval 32");
     Check(options.ltr_period == 0 && options.forced_ltr_recovery_frame < 0 &&
               options.forced_ltr_reference_frame < 0,
-          "translation warp requires LTR disabled because proxy motion uses the previous frame");
-    Check(options.output_transport_port == 0 || options.output_transport_mode == "rtp",
+          "translation warp requires LTR disabled because proxy motion uses "
+          "the previous frame");
+    Check(options.output_transport_port == 0 ||
+              options.output_transport_mode == "rtp",
           "translation warp requires MLVC-ES files or RTP transport");
   }
   Check(mlvc::codec::IsCodecExecutionProfile(options.execution_profile),
         "unsupported codec execution profile: " + options.execution_profile);
-  Check(!options.manifest_path.empty(), "encode stream requires a manifest path");
-  Check(options.input_synthetic || !options.input_camera_device.empty() || !options.input_video_path.empty() ||
+  Check(!options.manifest_path.empty(),
+        "encode stream requires a manifest path");
+  Check(options.input_synthetic || !options.input_camera_device.empty() ||
+            !options.input_video_path.empty() ||
             !options.input_frame_dir.empty(),
-        "MLVC encode requires input_synthetic, input_camera_device, input_frame_dir, or input_video");
+        "MLVC encode requires input_synthetic, input_camera_device, "
+        "input_frame_dir, or input_video");
   if (options.input_synthetic) {
-    Check(options.input_camera_device.empty() && options.input_video_path.empty() &&
+    Check(options.input_camera_device.empty() &&
+              options.input_video_path.empty() &&
               options.input_frame_dir.empty() && options.frame_num > 0,
           "synthetic input requires a finite frame count and no other source");
     return;
   }
   if (!options.input_camera_device.empty()) {
-    Check(options.camera_options.has_value(), "camera options are required for camera input");
+    Check(options.camera_options.has_value(),
+          "camera options are required for camera input");
     Check(options.input_camera_device == options.input_video_path,
           "camera device and selected input path must match");
   }
   if (!options.input_video_path.empty()) {
+    const std::string path = options.input_video_path.string();
+    if (path.rfind("rtsp://", 0) == 0 || path.rfind("rtsps://", 0) == 0) return;
     Check(std::filesystem::exists(options.input_video_path),
-          "MLVC input video does not exist: " + options.input_video_path.string());
+          "MLVC input video does not exist: " +
+              options.input_video_path.string());
     return;
   }
   Check(std::filesystem::is_directory(options.input_frame_dir),
-        "MLVC input frame directory does not exist: " + options.input_frame_dir.string());
+        "MLVC input frame directory does not exist: " +
+            options.input_frame_dir.string());
   Check(std::filesystem::exists(options.input_frame_dir / "source_info.txt"),
-        "MLVC frame directory requires source_info.txt: " + options.input_frame_dir.string());
+        "MLVC frame directory requires source_info.txt: " +
+            options.input_frame_dir.string());
 }
 
-mlvc::io::MlvcBitstreamHeader BuildEncodeHeader(const EncodeStreamOptions& options,
-                                                const SourceFrameGeometry& geometry, double fps) {
+mlvc::io::MlvcBitstreamHeader BuildEncodeHeader(
+    const EncodeStreamOptions& options, const SourceFrameGeometry& geometry,
+    double fps) {
   mlvc::io::MlvcBitstreamHeader header;
   header.version = 4;
   header.width = geometry.width;

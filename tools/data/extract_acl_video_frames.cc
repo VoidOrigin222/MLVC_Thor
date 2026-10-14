@@ -1,8 +1,3 @@
-#include <mlvc/codec/tensor_data.h>
-#include <mlvc/core/status.h>
-#include <mlvc/io/video_io.h>
-#include <mlvc/runtime/model_manifest.h>
-
 #include <chrono>
 #include <filesystem>
 #include <fstream>
@@ -10,11 +5,17 @@
 #include <string>
 #include <string_view>
 
+#include "mlvc/codec/tensor_data.h"
+#include "mlvc/core/status.h"
+#include "mlvc/io/video_io.h"
+#include "mlvc/runtime/model_manifest.h"
+
 namespace {
 
 constexpr std::string_view kDefaultManifest = "../mlvc1080p/manifest.json";
 
-const mlvc::TensorSpec& FindTensorSpec(const mlvc::ModelRecord& record, std::string_view name) {
+const mlvc::TensorSpec& FindTensorSpec(const mlvc::ModelRecord& record,
+                                       std::string_view name) {
   for (const mlvc::TensorSpec& spec : record.inputs) {
     if (spec.name == name) {
       return spec;
@@ -25,7 +26,8 @@ const mlvc::TensorSpec& FindTensorSpec(const mlvc::ModelRecord& record, std::str
       return spec;
     }
   }
-  throw mlvc::Error("missing tensor spec: " + record.name + "." + std::string(name));
+  throw mlvc::Error("missing tensor spec: " + record.name + "." +
+                    std::string(name));
 }
 
 void PrintUsage(const char* argv0) {
@@ -68,7 +70,8 @@ int main(int argc, char** argv) {
 
   try {
     mlvc::ModelManifest manifest = mlvc::ModelManifest::Load(manifest_path);
-    const mlvc::TensorSpec& frame_spec = FindTensorSpec(manifest.GetModel("MLVCEncoder"), "x");
+    const mlvc::TensorSpec& frame_spec =
+        FindTensorSpec(manifest.GetModel("MLVCEncoder"), "x");
     mlvc::io::VideoFrameReader video_reader(input_video_path);
     const mlvc::io::VideoInfo& video_info = video_reader.info();
     mlvc::Check(video_info.width <= static_cast<int>(frame_spec.shape[3]) &&
@@ -89,9 +92,11 @@ int main(int argc, char** argv) {
       ++frame_index;
     }
     const auto end = std::chrono::steady_clock::now();
-    const double total_ms = std::chrono::duration<double, std::milli>(end - begin).count();
+    const double total_ms =
+        std::chrono::duration<double, std::milli>(end - begin).count();
     const double fps =
-        frame_index > 0 ? (1000.0 * static_cast<double>(frame_index) / total_ms) : 0.0;
+        frame_index > 0 ? (1000.0 * static_cast<double>(frame_index) / total_ms)
+                        : 0.0;
     {
       std::ofstream info(output_frame_dir / "source_info.txt");
       mlvc::Check(info.good(), "failed to open source info output");

@@ -1,4 +1,4 @@
-#include <mlvc/application/progress.h>
+#include "mlvc/application/progress.h"
 
 #include <algorithm>
 #include <iomanip>
@@ -53,7 +53,8 @@ std::string BuildBar(std::optional<double> fraction) {
 
 ProgressReporter::ProgressReporter(std::string label)
     : label_(std::move(label)),
-      last_render_(std::chrono::steady_clock::now() - kProgressUpdateInterval) {}
+      last_render_(std::chrono::steady_clock::now() - kProgressUpdateInterval) {
+}
 
 ProgressReporter::~ProgressReporter() {
   if (rendered_) {
@@ -61,7 +62,9 @@ ProgressReporter::~ProgressReporter() {
   }
 }
 
-void ProgressReporter::Update(const ProgressMetrics& metrics) { Render(metrics, false); }
+void ProgressReporter::Update(const ProgressMetrics& metrics) {
+  Render(metrics, false);
+}
 
 void ProgressReporter::Finish(const ProgressMetrics& metrics) {
   Render(metrics, true);
@@ -90,10 +93,14 @@ void ProgressReporter::Render(const ProgressMetrics& metrics, bool force) {
     line << '/' << *metrics.total_frames;
   }
   line << " frames";
-  line << " fps=" << std::fixed << std::setprecision(2) << metrics.processing_fps;
-  line << " frame_bpp=" << std::fixed << std::setprecision(4) << metrics.frame_bpp;
-  line << " avg_bpp=" << std::fixed << std::setprecision(4) << metrics.average_bpp;
-  line << " kbps=" << std::fixed << std::setprecision(2) << metrics.source_fps_kbps;
+  line << " fps=" << std::fixed << std::setprecision(2)
+       << metrics.processing_fps;
+  line << " frame_bpp=" << std::fixed << std::setprecision(4)
+       << metrics.frame_bpp;
+  line << " avg_bpp=" << std::fixed << std::setprecision(4)
+       << metrics.average_bpp;
+  line << " kbps=" << std::fixed << std::setprecision(2)
+       << metrics.source_fps_kbps;
 
   const std::string rendered_line = line.str();
   if (force && rendered_ && rendered_line == last_line_) {
@@ -112,30 +119,37 @@ void ProgressReporter::Render(const ProgressMetrics& metrics, bool force) {
 double ProcessingFps(int frames, std::chrono::steady_clock::time_point start) {
   const auto now = std::chrono::steady_clock::now();
   const double seconds =
-      std::chrono::duration_cast<std::chrono::duration<double>>(now - start).count();
+      std::chrono::duration_cast<std::chrono::duration<double>>(now - start)
+          .count();
   return seconds > 0.0 ? static_cast<double>(frames) / seconds : 0.0;
 }
 
 double FrameBpp(uint64_t frame_bytes, int width, int height) {
-  const uint64_t pixels = static_cast<uint64_t>(width) * static_cast<uint64_t>(height);
-  return pixels > 0 ? static_cast<double>(frame_bytes * 8) / static_cast<double>(pixels) : 0.0;
+  const uint64_t pixels =
+      static_cast<uint64_t>(width) * static_cast<uint64_t>(height);
+  return pixels > 0 ? static_cast<double>(frame_bytes * 8) /
+                          static_cast<double>(pixels)
+                    : 0.0;
 }
 
 double AverageBpp(uint64_t total_bytes, int frames, int width, int height) {
   if (frames <= 0) {
     return 0.0;
   }
-  const uint64_t pixels = static_cast<uint64_t>(width) * static_cast<uint64_t>(height);
-  return pixels > 0 ? static_cast<double>(total_bytes * 8) /
-                          static_cast<double>(pixels * static_cast<uint64_t>(frames))
-                    : 0.0;
+  const uint64_t pixels =
+      static_cast<uint64_t>(width) * static_cast<uint64_t>(height);
+  return pixels > 0
+             ? static_cast<double>(total_bytes * 8) /
+                   static_cast<double>(pixels * static_cast<uint64_t>(frames))
+             : 0.0;
 }
 
 double SourceFpsKbps(uint64_t total_bytes, int frames, double source_fps) {
   if (frames <= 0 || source_fps <= 0.0) {
     return 0.0;
   }
-  const double bits_per_frame = static_cast<double>(total_bytes * 8) / static_cast<double>(frames);
+  const double bits_per_frame =
+      static_cast<double>(total_bytes * 8) / static_cast<double>(frames);
   return bits_per_frame * source_fps / 1000.0;
 }
 

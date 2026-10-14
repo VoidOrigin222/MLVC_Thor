@@ -19,16 +19,18 @@ namespace mlvc {
 namespace {
 
 constexpr std::array<uint32_t, 64> kSha256K = {
-    0x428a2f98u, 0x71374491u, 0xb5c0fbcfu, 0xe9b5dba5u, 0x3956c25bu, 0x59f111f1u,
-    0x923f82a4u, 0xab1c5ed5u, 0xd807aa98u, 0x12835b01u, 0x243185beu, 0x550c7dc3u,
-    0x72be5d74u, 0x80deb1feu, 0x9bdc06a7u, 0xc19bf174u, 0xe49b69c1u, 0xefbe4786u,
-    0x0fc19dc6u, 0x240ca1ccu, 0x2de92c6fu, 0x4a7484aau, 0x5cb0a9dcu, 0x76f988dau,
-    0x983e5152u, 0xa831c66du, 0xb00327c8u, 0xbf597fc7u, 0xc6e00bf3u, 0xd5a79147u,
-    0x06ca6351u, 0x14292967u, 0x27b70a85u, 0x2e1b2138u, 0x4d2c6dfcu, 0x53380d13u,
-    0x650a7354u, 0x766a0abbu, 0x81c2c92eu, 0x92722c85u, 0xa2bfe8a1u, 0xa81a664bu,
-    0xc24b8b70u, 0xc76c51a3u, 0xd192e819u, 0xd6990624u, 0xf40e3585u, 0x106aa070u,
-    0x19a4c116u, 0x1e376c08u, 0x2748774cu, 0x34b0bcb5u, 0x391c0cb3u, 0x4ed8aa4au,
-    0x5b9cca4fu, 0x682e6ff3u, 0x748f82eeu, 0x78a5636fu, 0x84c87814u, 0x8cc70208u,
+    0x428a2f98u, 0x71374491u, 0xb5c0fbcfu, 0xe9b5dba5u, 0x3956c25bu,
+    0x59f111f1u, 0x923f82a4u, 0xab1c5ed5u, 0xd807aa98u, 0x12835b01u,
+    0x243185beu, 0x550c7dc3u, 0x72be5d74u, 0x80deb1feu, 0x9bdc06a7u,
+    0xc19bf174u, 0xe49b69c1u, 0xefbe4786u, 0x0fc19dc6u, 0x240ca1ccu,
+    0x2de92c6fu, 0x4a7484aau, 0x5cb0a9dcu, 0x76f988dau, 0x983e5152u,
+    0xa831c66du, 0xb00327c8u, 0xbf597fc7u, 0xc6e00bf3u, 0xd5a79147u,
+    0x06ca6351u, 0x14292967u, 0x27b70a85u, 0x2e1b2138u, 0x4d2c6dfcu,
+    0x53380d13u, 0x650a7354u, 0x766a0abbu, 0x81c2c92eu, 0x92722c85u,
+    0xa2bfe8a1u, 0xa81a664bu, 0xc24b8b70u, 0xc76c51a3u, 0xd192e819u,
+    0xd6990624u, 0xf40e3585u, 0x106aa070u, 0x19a4c116u, 0x1e376c08u,
+    0x2748774cu, 0x34b0bcb5u, 0x391c0cb3u, 0x4ed8aa4au, 0x5b9cca4fu,
+    0x682e6ff3u, 0x748f82eeu, 0x78a5636fu, 0x84c87814u, 0x8cc70208u,
     0x90befffau, 0xa4506cebu, 0xbef9a3f7u, 0xc67178f2u};
 
 uint32_t RotR(uint32_t value, unsigned count) {
@@ -44,8 +46,10 @@ void Sha256Block(const uint8_t* block, std::array<uint32_t, 8>* state) {
                static_cast<uint32_t>(block[i * 4 + 3]);
   }
   for (std::size_t i = 16; i < words.size(); ++i) {
-    const uint32_t s0 = RotR(words[i - 15], 7) ^ RotR(words[i - 15], 18) ^ (words[i - 15] >> 3);
-    const uint32_t s1 = RotR(words[i - 2], 17) ^ RotR(words[i - 2], 19) ^ (words[i - 2] >> 10);
+    const uint32_t s0 =
+        RotR(words[i - 15], 7) ^ RotR(words[i - 15], 18) ^ (words[i - 15] >> 3);
+    const uint32_t s1 =
+        RotR(words[i - 2], 17) ^ RotR(words[i - 2], 19) ^ (words[i - 2] >> 10);
     words[i] = words[i - 16] + s0 + words[i - 7] + s1;
   }
   uint32_t a = (*state)[0], b = (*state)[1], c = (*state)[2], d = (*state)[3];
@@ -75,8 +79,9 @@ void Sha256Block(const uint8_t* block, std::array<uint32_t, 8>* state) {
 }
 
 std::array<uint8_t, 32> Sha256(const std::vector<uint8_t>& input) {
-  std::array<uint32_t, 8> state = {0x6a09e667u, 0xbb67ae85u, 0x3c6ef372u, 0xa54ff53au,
-                                    0x510e527fu, 0x9b05688cu, 0x1f83d9abu, 0x5be0cd19u};
+  std::array<uint32_t, 8> state = {0x6a09e667u, 0xbb67ae85u, 0x3c6ef372u,
+                                   0xa54ff53au, 0x510e527fu, 0x9b05688cu,
+                                   0x1f83d9abu, 0x5be0cd19u};
   std::array<uint8_t, 64> block{};
   std::size_t block_size = 0;
   for (uint8_t byte : input) {
@@ -88,11 +93,13 @@ std::array<uint8_t, 32> Sha256(const std::vector<uint8_t>& input) {
   }
   block[block_size++] = 0x80;
   if (block_size > 56) {
-    std::fill(block.begin() + static_cast<std::ptrdiff_t>(block_size), block.end(), 0);
+    std::fill(block.begin() + static_cast<std::ptrdiff_t>(block_size),
+              block.end(), 0);
     Sha256Block(block.data(), &state);
     block_size = 0;
   }
-  std::fill(block.begin() + static_cast<std::ptrdiff_t>(block_size), block.begin() + 56, 0);
+  std::fill(block.begin() + static_cast<std::ptrdiff_t>(block_size),
+            block.begin() + 56, 0);
   const uint64_t bit_length = static_cast<uint64_t>(input.size()) * 8u;
   for (unsigned i = 0; i < 8; ++i) {
     block[56 + i] = static_cast<uint8_t>(bit_length >> (56u - i * 8u));
@@ -101,7 +108,8 @@ std::array<uint8_t, 32> Sha256(const std::vector<uint8_t>& input) {
   std::array<uint8_t, 32> digest{};
   for (std::size_t i = 0; i < state.size(); ++i) {
     for (unsigned shift = 0; shift < 4; ++shift) {
-      digest[i * 4 + shift] = static_cast<uint8_t>(state[i] >> (24u - shift * 8u));
+      digest[i * 4 + shift] =
+          static_cast<uint8_t>(state[i] >> (24u - shift * 8u));
     }
   }
   return digest;
@@ -126,7 +134,8 @@ void AppendString(std::vector<uint8_t>* bytes, const std::string& value) {
   bytes->insert(bytes->end(), value.begin(), value.end());
 }
 
-void AppendTensorSpecs(std::vector<uint8_t>* bytes, const std::vector<TensorSpec>& specs) {
+void AppendTensorSpecs(std::vector<uint8_t>* bytes,
+                       const std::vector<TensorSpec>& specs) {
   Check(specs.size() <= std::numeric_limits<uint32_t>::max(),
         "manifest tensor list is too large for bundle hash");
   AppendU32(bytes, static_cast<uint32_t>(specs.size()));
@@ -150,14 +159,17 @@ std::string ReadTextFile(const std::filesystem::path& path) {
   return buffer.str();
 }
 
-std::string ExtractStringField(const std::string& text, const std::string& key) {
+std::string ExtractStringField(const std::string& text,
+                               const std::string& key) {
   const std::regex pattern("\"" + key + "\"\\s*:\\s*\"([^\"]*)\"");
   std::smatch match;
-  Check(std::regex_search(text, match, pattern), "missing string field: " + key);
+  Check(std::regex_search(text, match, pattern),
+        "missing string field: " + key);
   return match[1].str();
 }
 
-std::string ExtractOptionalStringField(const std::string& text, const std::string& key) {
+std::string ExtractOptionalStringField(const std::string& text,
+                                       const std::string& key) {
   const std::regex pattern("\"" + key + "\"\\s*:\\s*\"([^\"]*)\"");
   std::smatch match;
   if (!std::regex_search(text, match, pattern)) {
@@ -176,7 +188,8 @@ std::string ExtractModelName(const std::string& text) {
 uint64_t ExtractUIntField(const std::string& text, const std::string& key) {
   const std::regex pattern("\"" + key + "\"\\s*:\\s*([0-9]+)");
   std::smatch match;
-  Check(std::regex_search(text, match, pattern), "missing integer field: " + key);
+  Check(std::regex_search(text, match, pattern),
+        "missing integer field: " + key);
   return static_cast<uint64_t>(std::stoull(match[1].str()));
 }
 
@@ -214,7 +227,8 @@ std::vector<std::string> ExtractRuntimeArtifactBlocks(const std::string& text) {
   const std::size_t key_pos = text.find(key);
   if (key_pos == std::string::npos) return {};
   const std::size_t array_start = text.find('[', key_pos + key.size());
-  Check(array_start != std::string::npos, "manifest runtime_artifacts is not an array");
+  Check(array_start != std::string::npos,
+        "manifest runtime_artifacts is not an array");
 
   std::vector<std::string> blocks;
   int depth = 0;
@@ -241,45 +255,54 @@ std::string Sha256Hex(const std::vector<uint8_t>& bytes) {
   const auto digest = Sha256(bytes);
   std::ostringstream formatted;
   formatted << std::hex << std::setfill('0');
-  for (uint8_t byte : digest) formatted << std::setw(2) << static_cast<unsigned>(byte);
+  for (uint8_t byte : digest)
+    formatted << std::setw(2) << static_cast<unsigned>(byte);
   return formatted.str();
 }
 
-std::filesystem::path ResolveArtifactPath(const ModelManifest& manifest,
-                                          const RuntimeArtifactRecord& artifact) {
-  return artifact.file.is_absolute() ? artifact.file : manifest.directory() / artifact.file;
+std::filesystem::path ResolveArtifactPath(
+    const ModelManifest& manifest, const RuntimeArtifactRecord& artifact) {
+  return artifact.file.is_absolute() ? artifact.file
+                                     : manifest.directory() / artifact.file;
 }
 
 void ValidateRuntimeArtifactSet(const ModelManifest& manifest) {
-  const std::set<std::string> required = {
-      "metadata.json", "gaussian_pmf.json", "bit_estimator_pmf.json"};
+  const std::set<std::string> required = {"metadata.json", "gaussian_pmf.json",
+                                          "bit_estimator_pmf.json"};
   std::set<std::string> found;
   for (const RuntimeArtifactRecord& artifact : manifest.runtime_artifacts()) {
-    Check(!artifact.name.empty(), "manifest runtime artifact name must not be empty");
+    Check(!artifact.name.empty(),
+          "manifest runtime artifact name must not be empty");
     Check(found.insert(artifact.name).second,
           "duplicated manifest runtime artifact: " + artifact.name);
   }
   for (const std::string& name : required) {
-    Check(found.find(name) != found.end(), "manifest missing runtime artifact: " + name);
+    Check(found.find(name) != found.end(),
+          "manifest missing runtime artifact: " + name);
   }
 }
 
-std::vector<std::string> ExtractOptionalStringArrayField(const std::string& text,
-                                                         const std::string& key) {
+std::vector<std::string> ExtractOptionalStringArrayField(
+    const std::string& text, const std::string& key) {
   const std::string quoted_key = "\"" + key + "\"";
   const std::size_t key_pos = text.find(quoted_key);
   if (key_pos == std::string::npos) {
     return {};
   }
   const std::size_t array_start = text.find('[', key_pos);
-  Check(array_start != std::string::npos, "manifest array field is not an array: " + key);
+  Check(array_start != std::string::npos,
+        "manifest array field is not an array: " + key);
   const std::size_t array_end = text.find(']', array_start);
-  Check(array_end != std::string::npos, "unterminated manifest array field: " + key);
-  const std::string array_text = text.substr(array_start + 1, array_end - array_start - 1);
+  Check(array_end != std::string::npos,
+        "unterminated manifest array field: " + key);
+  const std::string array_text =
+      text.substr(array_start + 1, array_end - array_start - 1);
   const std::regex item_pattern("\"([^\"]*)\"");
   std::vector<std::string> values;
-  for (std::sregex_iterator it(array_text.begin(), array_text.end(), item_pattern), end; it != end;
-       ++it) {
+  for (std::sregex_iterator
+           it(array_text.begin(), array_text.end(), item_pattern),
+       end;
+       it != end; ++it) {
     values.push_back((*it)[1].str());
   }
   return values;
@@ -314,7 +337,8 @@ std::string ExtractArrayText(const std::string& text, const std::string& key) {
     return "";
   }
   const std::size_t array_start = text.find('[', key_pos);
-  Check(array_start != std::string::npos, "manifest array field is not an array: " + key);
+  Check(array_start != std::string::npos,
+        "manifest array field is not an array: " + key);
   int depth = 0;
   bool in_string = false;
   bool escaped = false;
@@ -350,19 +374,22 @@ std::vector<int64_t> ExtractShapeField(const std::string& text) {
   }
   const std::regex item_pattern("-?[0-9]+");
   std::vector<int64_t> values;
-  for (std::sregex_iterator it(array.begin(), array.end(), item_pattern), end; it != end; ++it) {
+  for (std::sregex_iterator it(array.begin(), array.end(), item_pattern), end;
+       it != end; ++it) {
     values.push_back(std::stoll((*it)[0].str()));
   }
   return values;
 }
 
-std::vector<TensorSpec> ExtractTensorSpecs(const std::string& text, const std::string& key) {
+std::vector<TensorSpec> ExtractTensorSpecs(const std::string& text,
+                                           const std::string& key) {
   const std::string array = ExtractArrayText(text, key);
   if (array.empty()) {
     return {};
   }
   std::vector<TensorSpec> specs;
-  for (const std::string& block : ExtractModelBlocks("{\"models\":" + array + "}")) {
+  for (const std::string& block :
+       ExtractModelBlocks("{\"models\":" + array + "}")) {
     TensorSpec spec;
     spec.name = ExtractStringField(block, "name");
     spec.dtype = ParseDataType(ExtractStringField(block, "dtype"));
@@ -401,7 +428,8 @@ SidecarRecord ParseSidecar(const std::string& text) {
     } else if (text[i] == '}') {
       --depth;
       if (depth == 0) {
-        const std::string block = text.substr(object_start, i - object_start + 1);
+        const std::string block =
+            text.substr(object_start, i - object_start + 1);
         SidecarRecord sidecar;
         sidecar.file = ExtractStringField(block, "file");
         sidecar.bytes = ExtractUIntField(block, "bytes");
@@ -440,18 +468,20 @@ ModelManifest ModelManifest::Load(const std::filesystem::path& manifest_path) {
   for (const std::string& block : ExtractModelBlocks(text)) {
     ModelRecord record;
     record.name = ExtractModelName(block);
-    Check(manifest.model_index_.find(record.name) == manifest.model_index_.end(),
-          "duplicated model name in manifest: " + record.name);
+    Check(
+        manifest.model_index_.find(record.name) == manifest.model_index_.end(),
+        "duplicated model name in manifest: " + record.name);
     record.frame_type = ExtractOptionalStringField(block, "frame_type");
     record.route = ExtractOptionalStringField(block, "route");
     record.backend = ExtractOptionalStringField(block, "backend");
     record.model = ExtractOptionalStringField(block, "file");
     if (record.model.empty()) {
-      record.model =
-          manifest.runtime_ == "acl" ? record.name + ".sim.om" : record.name + ".sim.onnx";
+      record.model = manifest.runtime_ == "acl" ? record.name + ".sim.om"
+                                                : record.name + ".sim.onnx";
     }
     record.onnx_model = ExtractOptionalStringField(block, "onnx_file");
-    record.optimized_onnx_model = ExtractOptionalStringField(block, "optimized_onnx_file");
+    record.optimized_onnx_model =
+        ExtractOptionalStringField(block, "optimized_onnx_file");
     record.atc_model = ExtractOptionalStringField(block, "atc_om_file");
     record.bytes = ExtractUIntField(block, "bytes");
     record.sha256 = ExtractStringField(block, "sha256");
@@ -494,12 +524,15 @@ const ModelRecord& ModelManifest::GetModel(const std::string& name) const {
   return models_.at(it->second);
 }
 
-const RuntimeArtifactRecord& ModelManifest::GetRuntimeArtifact(const std::string& name) const {
-  const auto it = std::find_if(runtime_artifacts_.begin(), runtime_artifacts_.end(),
-                               [&name](const RuntimeArtifactRecord& artifact) {
-                                 return artifact.name == name;
-                               });
-  Check(it != runtime_artifacts_.end(), "unknown runtime artifact in manifest: " + name);
+const RuntimeArtifactRecord& ModelManifest::GetRuntimeArtifact(
+    const std::string& name) const {
+  const auto it =
+      std::find_if(runtime_artifacts_.begin(), runtime_artifacts_.end(),
+                   [&name](const RuntimeArtifactRecord& artifact) {
+                     return artifact.name == name;
+                   });
+  Check(it != runtime_artifacts_.end(),
+        "unknown runtime artifact in manifest: " + name);
   return *it;
 }
 
@@ -507,7 +540,8 @@ void VerifyRuntimeArtifacts(const ModelManifest& manifest) {
   ValidateRuntimeArtifactSet(manifest);
   for (const RuntimeArtifactRecord& artifact : manifest.runtime_artifacts()) {
     Check(artifact.bytes <= 64u * 1024u * 1024u,
-          "manifest runtime artifact exceeds the verification size limit: " + artifact.name);
+          "manifest runtime artifact exceeds the verification size limit: " +
+              artifact.name);
     const std::filesystem::path path = ResolveArtifactPath(manifest, artifact);
     std::error_code error;
     Check(std::filesystem::is_regular_file(path, error) && !error,
@@ -518,18 +552,22 @@ void VerifyRuntimeArtifacts(const ModelManifest& manifest) {
     Check(actual_bytes == artifact.bytes,
           "manifest runtime artifact byte count mismatch: " + path.string());
     std::ifstream input(path, std::ios::binary);
-    Check(input.good(), "failed to open manifest runtime artifact: " + path.string());
+    Check(input.good(),
+          "failed to open manifest runtime artifact: " + path.string());
     const std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(input)),
                                      std::istreambuf_iterator<char>());
-    Check(!input.bad(), "failed to read manifest runtime artifact: " + path.string());
+    Check(!input.bad(),
+          "failed to read manifest runtime artifact: " + path.string());
     Check(bytes.size() == artifact.bytes,
-          "manifest runtime artifact size changed during verification: " + path.string());
+          "manifest runtime artifact size changed during verification: " +
+              path.string());
     Check(Sha256Hex(bytes) == artifact.sha256,
           "manifest runtime artifact sha256 mismatch: " + path.string());
   }
 }
 
-std::array<uint8_t, 32> ComputeModelBundleSha256(const ModelManifest& manifest) {
+std::array<uint8_t, 32> ComputeModelBundleSha256(
+    const ModelManifest& manifest) {
   // Length-prefix every field so that two different manifests cannot collide
   // merely because their textual fields happen to concatenate identically.
   std::vector<uint8_t> canonical;
@@ -547,7 +585,8 @@ std::array<uint8_t, 32> ComputeModelBundleSha256(const ModelManifest& manifest) 
     artifacts.push_back(&artifact);
   }
   std::sort(artifacts.begin(), artifacts.end(),
-            [](const RuntimeArtifactRecord* left, const RuntimeArtifactRecord* right) {
+            [](const RuntimeArtifactRecord* left,
+               const RuntimeArtifactRecord* right) {
               return left->name < right->name;
             });
   Check(artifacts.size() <= std::numeric_limits<uint32_t>::max(),

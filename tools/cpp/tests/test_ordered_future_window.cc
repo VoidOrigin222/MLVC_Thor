@@ -1,12 +1,12 @@
-#include <mlvc/application/pipeline/ordered_future_window.h>
-#include <mlvc/application/stream/encode/encode_schedule.h>
-#include <mlvc/core/status.h>
-
 #include <exception>
 #include <future>
 #include <iostream>
 #include <stdexcept>
 #include <vector>
+
+#include "mlvc/application/pipeline/ordered_future_window.h"
+#include "mlvc/application/stream/encode/encode_schedule.h"
+#include "mlvc/core/status.h"
 
 namespace {
 
@@ -37,8 +37,10 @@ void TestTwoSlotsRetireInOrderAndReuseReleasedSlot() {
 
   mlvc::Check(window.full() && window.size() == 2,
               "two-slot window must accept two in-flight tasks");
-  mlvc::Check(slots.size() == 2 && slots[0] != slots[1], "in-flight tasks must use distinct slots");
-  mlvc::Check(window.max_observed_size() == 2, "window must record maximum in-flight count");
+  mlvc::Check(slots.size() == 2 && slots[0] != slots[1],
+              "in-flight tasks must use distinct slots");
+  mlvc::Check(window.max_observed_size() == 2,
+              "window must record maximum in-flight count");
 
   second.set_value(22);
   first.set_value(11);
@@ -51,9 +53,11 @@ void TestTwoSlotsRetireInOrderAndReuseReleasedSlot() {
     third_slot = slot;
     return third.get_future();
   });
-  mlvc::Check(third_slot == slots[0], "only the retired task slot may be reused");
+  mlvc::Check(third_slot == slots[0],
+              "only the retired task slot may be reused");
   third.set_value(33);
-  mlvc::Check(window.PopFront() == 22, "second submitted result must retire next");
+  mlvc::Check(window.PopFront() == 22,
+              "second submitted result must retire next");
   mlvc::Check(window.PopFront() == 33, "reused-slot result must retire last");
   mlvc::Check(window.empty(), "window must be empty after all results retire");
 }
@@ -65,7 +69,8 @@ void TestOneSlotBehavior() {
     mlvc::Check(slot == 0, "single-slot window must use slot zero");
     return first.get_future();
   });
-  mlvc::Check(window.full(), "single-slot window must be full after one submit");
+  mlvc::Check(window.full(),
+              "single-slot window must be full after one submit");
   first.set_value(7);
   mlvc::Check(window.PopFront() == 7, "single-slot result mismatch");
 
@@ -84,7 +89,8 @@ void TestExceptionPropagatesWithoutLosingLaterResult() {
   std::promise<int> later;
   window.SubmitNext([&](std::size_t) { return failed.get_future(); });
   window.SubmitNext([&](std::size_t) { return later.get_future(); });
-  failed.set_exception(std::make_exception_ptr(std::runtime_error("expected failure")));
+  failed.set_exception(
+      std::make_exception_ptr(std::runtime_error("expected failure")));
   later.set_value(19);
 
   bool propagated = false;
@@ -94,7 +100,8 @@ void TestExceptionPropagatesWithoutLosingLaterResult() {
     propagated = std::string(error.what()) == "expected failure";
   }
   mlvc::Check(propagated, "oldest task exception must propagate");
-  mlvc::Check(window.PopFront() == 19, "later result must remain ordered after an exception");
+  mlvc::Check(window.PopFront() == 19,
+              "later result must remain ordered after an exception");
 }
 
 void TestEncodePendingWindowRetiresOnlyWhenCapacityIsExceeded() {

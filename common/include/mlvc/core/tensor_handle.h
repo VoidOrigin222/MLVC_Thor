@@ -80,7 +80,9 @@ class TensorHandle {
   bool pinned_cpu_dirty() const { return pinned_cpu_dirty_; }
   bool acl_dirty() const { return acl_dirty_; }
   bool ready_event_recorded() const { return ready_event_recorded_; }
-  const std::string& last_materialization_reason() const { return last_materialization_reason_; }
+  const std::string& last_materialization_reason() const {
+    return last_materialization_reason_;
+  }
 
   TensorView CpuView() const;
   TensorView PinnedCpuView() const;
@@ -94,7 +96,8 @@ class TensorHandle {
   void MarkAclValid();
 
   TensorCopyResult EnsureAcl(void* stream = nullptr);
-  TensorCopyResult MaterializeToCpu(std::string_view reason, void* stream = nullptr);
+  TensorCopyResult MaterializeToCpu(std::string_view reason,
+                                    void* stream = nullptr);
 
   void RecordReady(void* stream);
   void WaitReady(void* stream) const;

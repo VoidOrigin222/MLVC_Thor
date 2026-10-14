@@ -1,10 +1,10 @@
-#include "mlvc/transport/udp_pacer.h"
-
 #include <chrono>
 #include <cstdint>
 #include <iostream>
 #include <stdexcept>
 #include <thread>
+
+#include "mlvc/transport/udp_pacer.h"
 
 int main() {
   try {
@@ -21,7 +21,8 @@ int main() {
     // budget directly so this unit test does not sleep for wall-clock time.
     if (total < std::chrono::milliseconds(1'700) ||
         total > std::chrono::milliseconds(2'500)) {
-      throw std::runtime_error("pacer delay budget is outside the configured rate");
+      throw std::runtime_error(
+          "pacer delay budget is outside the configured rate");
     }
 
     bool rejected_oversized = false;
@@ -31,7 +32,8 @@ int main() {
       rejected_oversized = true;
     }
     if (!rejected_oversized) {
-      throw std::runtime_error("pacer accepted a packet larger than max_burst_bytes");
+      throw std::runtime_error(
+          "pacer accepted a packet larger than max_burst_bytes");
     }
 
     pacer.UpdateRate(0);

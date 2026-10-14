@@ -18,25 +18,30 @@ constexpr int kScaleLevel = 128;
 std::vector<int16_t> BuildIndexesEncoder(const std::vector<int8_t>& symbols,
                                          const std::vector<float>& scales,
                                          std::optional<float> force_zero_thres);
-void BuildIndexesEncoderInto(const std::vector<int8_t>& symbols, const std::vector<float>& scales,
-                             std::optional<float> force_zero_thres, std::vector<int16_t>* encoded);
+void BuildIndexesEncoderInto(const std::vector<int8_t>& symbols,
+                             const std::vector<float>& scales,
+                             std::optional<float> force_zero_thres,
+                             std::vector<int16_t>* encoded);
 std::vector<uint8_t> BuildIndexesDecoder(const std::vector<float>& scales,
                                          std::optional<float> force_zero_thres,
                                          std::vector<uint8_t>* skip_condition);
 void BuildIndexesDecoderInto(const std::vector<float>& scales,
-                             std::optional<float> force_zero_thres, std::vector<uint8_t>* indexes,
+                             std::optional<float> force_zero_thres,
+                             std::vector<uint8_t>* indexes,
                              std::vector<uint8_t>* skip_condition);
 class EntropyEncoder {
  public:
-  EntropyEncoder(const RuntimeSidecar& sidecar, const std::string& prefix, bool use_two_parts,
-                 int z_channel_override = -1);
+  EntropyEncoder(const RuntimeSidecar& sidecar, const std::string& prefix,
+                 bool use_two_parts, int z_channel_override = -1);
 
   void Reserve(std::size_t max_y_parts, std::size_t max_y_symbols_per_part,
                std::size_t max_encoded_stream_bytes);
   void Reset();
   void EncodeZ(std::vector<int8_t> symbols, int qp, int height, int width);
-  void EncodeZView(const std::vector<int8_t>& symbols, int qp, int height, int width);
-  void EncodeY(const std::vector<int8_t>& symbols, const std::vector<float>& scales,
+  void EncodeZView(const std::vector<int8_t>& symbols, int qp, int height,
+                   int width);
+  void EncodeY(const std::vector<int8_t>& symbols,
+               const std::vector<float>& scales,
                std::optional<float> force_zero_thres);
   void EncodeYIndexesView(const std::vector<int16_t>& indexes);
   std::vector<uint8_t> Flush();
@@ -56,22 +61,25 @@ class EntropyEncoder {
 
 class EntropyDecoder {
  public:
-  EntropyDecoder(const RuntimeSidecar& sidecar, const std::string& prefix, bool use_two_parts,
-                 int z_channel_override = -1);
+  EntropyDecoder(const RuntimeSidecar& sidecar, const std::string& prefix,
+                 bool use_two_parts, int z_channel_override = -1);
 
   void Reserve(std::size_t max_y_symbols, std::size_t max_stream_bytes);
   void SetStream(const std::vector<uint8_t>& stream);
   std::vector<int8_t> DecodeZ(int qp, int height, int width);
   void DecodeZInto(int qp, int height, int width, std::vector<int8_t>* output);
-  std::vector<int8_t> DecodeZ(std::size_t total_size, int qp, int height, int width);
+  std::vector<int8_t> DecodeZ(std::size_t total_size, int qp, int height,
+                              int width);
   void DecodeZInto(std::size_t total_size, int qp, int height, int width,
                    std::vector<int8_t>* output);
   std::vector<int8_t> DecodeY(const std::vector<float>& scales,
                               std::optional<float> force_zero_thres);
-  void DecodeYInto(const std::vector<float>& scales, std::optional<float> force_zero_thres,
+  void DecodeYInto(const std::vector<float>& scales,
+                   std::optional<float> force_zero_thres,
                    std::vector<int8_t>* output);
   std::vector<int8_t> DecodeYIndexes(const std::vector<uint8_t>& indexes);
-  void DecodeYIndexesInto(const std::vector<uint8_t>& indexes, std::vector<int8_t>* output);
+  void DecodeYIndexesInto(const std::vector<uint8_t>& indexes,
+                          std::vector<int8_t>* output);
 
  private:
   RansDecoderCore decoder0_;

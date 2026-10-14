@@ -1,27 +1,26 @@
 #ifndef MLVC_APPLICATION_INPUT_FRAME_INPUT_QUEUE_H_
 #define MLVC_APPLICATION_INPUT_FRAME_INPUT_QUEUE_H_
 
-#include <mlvc/application/input/frame_buffer_pool.h>
-#include <mlvc/codec/tensor_data.h>
-#include <mlvc/io/frame_source.h>
-
 #include <chrono>
 #include <condition_variable>
 #include <cstddef>
 #include <deque>
 #include <exception>
 #include <filesystem>
-#include <future>
 #include <functional>
+#include <future>
 #include <memory>
 #include <mutex>
 #include <optional>
 #include <thread>
 #include <vector>
 
+#include "mlvc/application/input/frame_buffer_pool.h"
+#include "mlvc/codec/tensor_data.h"
 #include "mlvc/framework/codec_graph_executor.h"
 #include "mlvc/framework/profiler.h"
 #include "mlvc/framework/thread_pool.h"
+#include "mlvc/io/frame_source.h"
 
 namespace mlvc::app {
 
@@ -62,15 +61,17 @@ class AsyncFrameInputQueue {
     std::size_t max_acquired_frames = 0;
   };
 
-  AsyncFrameInputQueue(int frames_to_attempt, int configured_frame_num,
-                       const std::filesystem::path& input_video_path,
-                       const std::filesystem::path& input_frame_dir,
-                       std::optional<mlvc::io::CameraCaptureOptions> camera_options,
-                       aclrtContext context,
-                       const mlvc::TensorSpec& frame_spec, int width, int height,
-                       FrameBufferPool* arena, mlvc::Profiler* profiler,
-                       mlvc::CodecGraphExecutor* graph_executor,
-                       MotionInputPrepareFunction motion_prepare = {});
+  AsyncFrameInputQueue(
+      int frames_to_attempt, int configured_frame_num,
+      const std::filesystem::path& input_video_path,
+      const std::filesystem::path& input_frame_dir,
+      std::optional<mlvc::io::CameraCaptureOptions> camera_options,
+      aclrtContext context, const mlvc::TensorSpec& frame_spec, int width,
+      int height, FrameBufferPool* arena, mlvc::Profiler* profiler,
+      mlvc::CodecGraphExecutor* graph_executor,
+      MotionInputPrepareFunction motion_prepare = {}, double target_fps = 0.0,
+      bool device_resident = false,
+      std::string video_decode_backend = mlvc::io::kDefaultVideoDecodeBackend);
 
   AsyncFrameInputQueue(const AsyncFrameInputQueue&) = delete;
   AsyncFrameInputQueue& operator=(const AsyncFrameInputQueue&) = delete;

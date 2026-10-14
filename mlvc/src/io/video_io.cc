@@ -1,37 +1,39 @@
-#include <mlvc/io/video_io.h>
-#include <mlvc/io/fp16_yuv444_to_nv12.h>
-#include <mlvc/io/dvpp_jpeg_decoder.h>
+#include "mlvc/io/video_io.h"
 
-#include <algorithm>
-#include <cctype>
-#include <chrono>
-#include <cmath>
-#include <cstdint>
-#include <csignal>
-#include <cstring>
-#include <iomanip>
-#include <iostream>
-#include <condition_variable>
-#include <deque>
-#include <exception>
-#include <functional>
-#include <limits>
-#include <mutex>
-#include <optional>
-#include <opencv2/core.hpp>
-#include <opencv2/imgcodecs.hpp>
-#include <opencv2/imgproc.hpp>
-#include <opencv2/videoio.hpp>
-#include <acl/ops/acl_dvpp.h>
-#include <sstream>
-#include <string>
-#include <thread>
-#include <vector>
 #include <fcntl.h>
 #include <linux/videodev2.h>
 #include <sys/ioctl.h>
 #include <sys/mman.h>
 #include <unistd.h>
+
+#include <algorithm>
+#include <cctype>
+#include <chrono>
+#include <cmath>
+#include <condition_variable>
+#include <csignal>
+#include <cstdint>
+#include <cstring>
+#include <deque>
+#include <exception>
+#include <functional>
+#include <iomanip>
+#include <iostream>
+#include <limits>
+#include <mutex>
+#include <optional>
+#include <sstream>
+#include <string>
+#include <thread>
+#include <vector>
+
+#include "mlvc/io/dvpp_jpeg_decoder.h"
+#include "mlvc/io/fp16_yuv444_to_nv12.h"
+#include <acl/ops/acl_dvpp.h>
+#include <opencv2/core.hpp>
+#include <opencv2/imgcodecs.hpp>
+#include <opencv2/imgproc.hpp>
+#include <opencv2/videoio.hpp>
 
 extern "C" {
 #include <libavcodec/avcodec.h>
@@ -42,25 +44,27 @@ extern "C" {
 #include <libavutil/rational.h>
 }
 
-#include "mlvc/core/status.h"
 #include "mlvc/core/buffer.h"
-#include "mlvc/runtime/acl_runtime.h"
-#include "mlvc/io/fp16_yuv444_to_nv12.h"
+#include "mlvc/core/status.h"
 #include "mlvc/io/dvpp_h264_encoder.h"
+#include "mlvc/runtime/acl_runtime.h"
 
 namespace mlvc::io {
 namespace codec = mlvc::codec;
 namespace {
 
 // Strip JPEGD stride padding without changing any visible pixel values.
-void CopyVisibleNv12(const void* source, std::size_t bytes, const Nv12Layout& layout,
-                     std::vector<uint8_t>* output) {
-  Check(source != nullptr && output != nullptr && layout.width > 0 && layout.height > 0 &&
-            layout.width % 2 == 0 && layout.height % 2 == 0 &&
-            layout.width_stride >= layout.width && layout.height_stride >= layout.height,
+void CopyVisibleNv12(const void* source, std::size_t bytes,
+                     const Nv12Layout& layout, std::vector<uint8_t>* output) {
+  Check(source != nullptr && output != nullptr && layout.width > 0 &&
+            layout.height > 0 && layout.width % 2 == 0 &&
+            layout.height % 2 == 0 && layout.width_stride >= layout.width &&
+            layout.height_stride >= layout.height,
         "camera motion NV12 layout is invalid");
-  Check(bytes >= Nv12BufferSize(layout), "camera motion NV12 storage is too short");
-  const Nv12Layout packed{layout.width, layout.height, layout.width, layout.height};
+  Check(bytes >= Nv12BufferSize(layout),
+        "camera motion NV12 storage is too short");
+  const Nv12Layout packed{layout.width, layout.height, layout.width,
+                          layout.height};
   output->resize(Nv12BufferSize(packed));
   const auto* input = static_cast<const uint8_t*>(source);
   const auto source_stride = static_cast<std::size_t>(layout.width_stride);
@@ -68,7 +72,8 @@ void CopyVisibleNv12(const void* source, std::size_t bytes, const Nv12Layout& la
   const auto source_uv = source_stride * layout.height_stride;
   const auto target_uv = target_stride * layout.height;
   for (int row = 0; row < layout.height; ++row)
-    std::memcpy(output->data() + row * target_stride, input + row * source_stride, target_stride);
+    std::memcpy(output->data() + row * target_stride,
+                input + row * source_stride, target_stride);
   for (int row = 0; row < layout.height / 2; ++row)
     std::memcpy(output->data() + target_uv + row * target_stride,
                 input + source_uv + row * source_stride, target_stride);
@@ -88,11 +93,16 @@ class V4l2MjpegCapture {
     FrameLease() = default;
     FrameLease(const uint8_t* data, std::size_t bytes, uint32_t sequence,
                std::function<void()> requeue)
-        : data_(data), bytes_(bytes), sequence_(sequence), requeue_(std::move(requeue)) {}
+        : data_(data),
+          bytes_(bytes),
+          sequence_(sequence),
+          requeue_(std::move(requeue)) {}
     FrameLease(const FrameLease&) = delete;
     FrameLease& operator=(const FrameLease&) = delete;
     FrameLease(FrameLease&& other) noexcept
-        : data_(other.data_), bytes_(other.bytes_), sequence_(other.sequence_),
+        : data_(other.data_),
+          bytes_(other.bytes_),
+          sequence_(other.sequence_),
           requeue_(std::move(other.requeue_)) {
       other.data_ = nullptr;
       other.bytes_ = 0;
@@ -139,7 +149,8 @@ class V4l2MjpegCapture {
   V4l2MjpegCapture(const std::filesystem::path& device,
                    const CameraCaptureOptions& options) {
     Check(options.width > 0 && options.height > 0 &&
-              std::isfinite(options.fps) && options.fps > 0.0 && options.fps <= 240.0,
+              std::isfinite(options.fps) && options.fps > 0.0 &&
+              options.fps <= 240.0,
           "invalid camera dimensions or frame rate");
     fd_ = open(device.c_str(), O_RDWR | O_NONBLOCK);
     Check(fd_ >= 0, "failed to open camera: " + device.string());
@@ -149,15 +160,18 @@ class V4l2MjpegCapture {
       const uint32_t caps = (capability.capabilities & V4L2_CAP_DEVICE_CAPS)
                                 ? capability.device_caps
                                 : capability.capabilities;
-      Check((caps & V4L2_CAP_VIDEO_CAPTURE) != 0 && (caps & V4L2_CAP_STREAMING) != 0,
+      Check((caps & V4L2_CAP_VIDEO_CAPTURE) != 0 &&
+                (caps & V4L2_CAP_STREAMING) != 0,
             "camera must support V4L2 video capture and streaming");
       v4l2_format format{};
       format.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
       format.fmt.pix.width = static_cast<uint32_t>(options.width);
       format.fmt.pix.height = static_cast<uint32_t>(options.height);
-      Check(options.pixel_format.size() == 4, "camera pixel format must be four characters");
-      format.fmt.pix.pixelformat = v4l2_fourcc(options.pixel_format[0], options.pixel_format[1],
-                                               options.pixel_format[2], options.pixel_format[3]);
+      Check(options.pixel_format.size() == 4,
+            "camera pixel format must be four characters");
+      format.fmt.pix.pixelformat =
+          v4l2_fourcc(options.pixel_format[0], options.pixel_format[1],
+                      options.pixel_format[2], options.pixel_format[3]);
       format.fmt.pix.field = V4L2_FIELD_ANY;
       Ioctl(VIDIOC_S_FMT, &format, "VIDIOC_S_FMT");
       width_ = static_cast<int>(format.fmt.pix.width);
@@ -174,8 +188,10 @@ class V4l2MjpegCapture {
       const auto& interval = parameters.parm.capture.timeperframe;
       Check(interval.numerator != 0 && interval.denominator != 0,
             "camera returned an invalid frame interval");
-      const double actual_fps = static_cast<double>(interval.denominator) / interval.numerator;
-      Check(std::abs(actual_fps - options.fps) <= std::max(0.5, options.fps * 0.02),
+      const double actual_fps =
+          static_cast<double>(interval.denominator) / interval.numerator;
+      Check(std::abs(actual_fps - options.fps) <=
+                std::max(0.5, options.fps * 0.02),
             "camera did not accept the requested frame rate");
       v4l2_requestbuffers request{};
       request.count = 4;
@@ -191,8 +207,9 @@ class V4l2MjpegCapture {
         buffer.index = index;
         Ioctl(VIDIOC_QUERYBUF, &buffer, "VIDIOC_QUERYBUF");
         buffers_[index].length = buffer.length;
-        buffers_[index].address = mmap(nullptr, buffer.length, PROT_READ | PROT_WRITE, MAP_SHARED,
-                                       fd_, buffer.m.offset);
+        buffers_[index].address =
+            mmap(nullptr, buffer.length, PROT_READ | PROT_WRITE, MAP_SHARED,
+                 fd_, buffer.m.offset);
         Check(buffers_[index].address != MAP_FAILED, "camera mmap failed");
         Ioctl(VIDIOC_QBUF, &buffer, "VIDIOC_QBUF");
       }
@@ -219,12 +236,16 @@ class V4l2MjpegCapture {
           usleep(5000);
           continue;
         }
-        throw Error(std::string("VIDIOC_DQBUF failed: ") + std::strerror(errno));
+        throw Error(std::string("VIDIOC_DQBUF failed: ") +
+                    std::strerror(errno));
       }
-      Check(buffer.index < buffers_.size(), "camera returned an invalid buffer index");
-      Check(buffer.bytesused > 0 && buffer.bytesused <= buffers_[buffer.index].length,
+      Check(buffer.index < buffers_.size(),
+            "camera returned an invalid buffer index");
+      Check(buffer.bytesused > 0 &&
+                buffer.bytesused <= buffers_[buffer.index].length,
             "camera returned an invalid MJPEG buffer length");
-      const auto* data = static_cast<const uint8_t*>(buffers_[buffer.index].address);
+      const auto* data =
+          static_cast<const uint8_t*>(buffers_[buffer.index].address);
       const uint32_t index = buffer.index;
       return FrameLease(data, buffer.bytesused, buffer.sequence,
                         [this, index] { Requeue(index); });
@@ -271,12 +292,15 @@ class V4l2MjpegCapture {
   std::vector<V4l2Buffer> buffers_;
 };
 
-class AclFrameBufferPool : public std::enable_shared_from_this<AclFrameBufferPool> {
+class AclFrameBufferPool
+    : public std::enable_shared_from_this<AclFrameBufferPool> {
  public:
-  AclFrameBufferPool(aclrtContext context, std::size_t bytes, std::size_t count, bool device)
+  AclFrameBufferPool(aclrtContext context, std::size_t bytes, std::size_t count,
+                     bool device)
       : context_(context), bytes_(bytes), device_(device) {
     Check(count > 0, "camera FP16 output pool must not be empty");
-    CheckAcl(aclrtSetCurrentContext(context_), "aclrtSetCurrentContext camera output pool");
+    CheckAcl(aclrtSetCurrentContext(context_),
+             "aclrtSetCurrentContext camera output pool");
     buffers_.reserve(count);
     try {
       for (std::size_t index = 0; index < count; ++index) {
@@ -285,15 +309,18 @@ class AclFrameBufferPool : public std::enable_shared_from_this<AclFrameBufferPoo
           CheckAcl(aclrtMalloc(&buffer, bytes_, ACL_MEM_MALLOC_NORMAL_ONLY),
                    "aclrtMalloc camera NV12 output pool");
         } else {
-          CheckAcl(aclrtMallocHost(&buffer, bytes_), "aclrtMallocHost camera FP16 output pool");
+          CheckAcl(aclrtMallocHost(&buffer, bytes_),
+                   "aclrtMallocHost camera FP16 output pool");
         }
         buffers_.push_back(buffer);
         free_.push_back(index);
       }
     } catch (...) {
       for (void* buffer : buffers_) {
-        if (device_) (void)aclrtFree(buffer);
-        else (void)aclrtFreeHost(buffer);
+        if (device_)
+          (void)aclrtFree(buffer);
+        else
+          (void)aclrtFreeHost(buffer);
       }
       buffers_.clear();
       throw;
@@ -304,8 +331,10 @@ class AclFrameBufferPool : public std::enable_shared_from_this<AclFrameBufferPoo
     (void)aclrtSetCurrentContext(context_);
     for (void* buffer : buffers_) {
       if (buffer != nullptr) {
-        if (device_) (void)aclrtFree(buffer);
-        else (void)aclrtFreeHost(buffer);
+        if (device_)
+          (void)aclrtFree(buffer);
+        else
+          (void)aclrtFreeHost(buffer);
       }
     }
   }
@@ -317,9 +346,9 @@ class AclFrameBufferPool : public std::enable_shared_from_this<AclFrameBufferPoo
     free_.pop_front();
     void* buffer = buffers_[index];
     lock.unlock();
-    auto lease = std::shared_ptr<void>(buffer, [pool = shared_from_this(), index](void*) {
-      pool->Release(index);
-    });
+    auto lease = std::shared_ptr<void>(
+        buffer,
+        [pool = shared_from_this(), index](void*) { pool->Release(index); });
     return {buffer, std::move(lease)};
   }
 
@@ -344,13 +373,16 @@ class AclFrameBufferPool : public std::enable_shared_from_this<AclFrameBufferPoo
 class CameraRtspPipeline {
  public:
   CameraRtspPipeline(aclrtContext context, const CameraCaptureOptions& options)
-      : context_(context), width_(options.width), height_(options.height),
+      : context_(context),
+        width_(options.width),
+        height_(options.height),
         queue_capacity_(options.rtsp_queue_capacity) {
-    Check(!options.rtsp_url.empty(), "camera RTSP output URL must not be empty");
+    Check(!options.rtsp_url.empty(),
+          "camera RTSP output URL must not be empty");
     Check(queue_capacity_ > 0, "camera RTSP queue capacity must be positive");
     publisher_ = std::make_unique<RtspVideoPublisher>(
-        options.rtsp_url, options.fps, options.width, options.height, "ultrafast", 18,
-        queue_capacity_, options.rtsp_transport, false);
+        options.rtsp_url, options.fps, options.width, options.height,
+        "ultrafast", 18, queue_capacity_, options.rtsp_transport, false);
     worker_ = std::thread([this] { WorkerMain(); });
   }
 
@@ -365,7 +397,8 @@ class CameraRtspPipeline {
   }
 
   void Enqueue(DvppJpegDecodedFrame frame) {
-    Check(frame.device_data() != nullptr, "camera RTSP received an empty NV12 surface");
+    Check(frame.device_data() != nullptr,
+          "camera RTSP received an empty NV12 surface");
     std::lock_guard<std::mutex> lock(mutex_);
     if (worker_error_ != nullptr || stopping_ || closed_) return;
     if (queue_.size() >= queue_capacity_) {
@@ -425,7 +458,8 @@ class CameraRtspPipeline {
  private:
   void WorkerMain() {
     try {
-      CheckAcl(aclrtSetCurrentContext(context_), "aclrtSetCurrentContext camera RTSP worker");
+      CheckAcl(aclrtSetCurrentContext(context_),
+               "aclrtSetCurrentContext camera RTSP worker");
       for (;;) {
         DvppJpegDecodedFrame frame;
         {
@@ -436,23 +470,30 @@ class CameraRtspPipeline {
           queue_.pop_front();
         }
         std::vector<uint8_t> padded_nv12(frame.bytes());
-        CheckAcl(aclrtMemcpy(padded_nv12.data(), padded_nv12.size(), frame.device_data(),
-                             frame.bytes(), ACL_MEMCPY_DEVICE_TO_HOST),
+        CheckAcl(aclrtMemcpy(padded_nv12.data(), padded_nv12.size(),
+                             frame.device_data(), frame.bytes(),
+                             ACL_MEMCPY_DEVICE_TO_HOST),
                  "copy camera NV12 to host for RTSP encoder");
-        const std::size_t output_y_bytes = static_cast<std::size_t>(width_) * height_;
+        const std::size_t output_y_bytes =
+            static_cast<std::size_t>(width_) * height_;
         std::vector<uint8_t> packed_nv12(output_y_bytes + output_y_bytes / 2);
         const std::size_t source_y_bytes =
-            static_cast<std::size_t>(frame.width_stride()) * frame.height_stride();
+            static_cast<std::size_t>(frame.width_stride()) *
+            frame.height_stride();
         for (int row = 0; row < height_; ++row) {
-          std::memcpy(packed_nv12.data() + static_cast<std::size_t>(row) * width_,
-                      padded_nv12.data() + static_cast<std::size_t>(row) * frame.width_stride(),
-                      width_);
+          std::memcpy(
+              packed_nv12.data() + static_cast<std::size_t>(row) * width_,
+              padded_nv12.data() +
+                  static_cast<std::size_t>(row) * frame.width_stride(),
+              width_);
         }
         uint8_t* output_uv = packed_nv12.data() + output_y_bytes;
         const uint8_t* source_uv = padded_nv12.data() + source_y_bytes;
         for (int row = 0; row < height_ / 2; ++row) {
-          std::memcpy(output_uv + static_cast<std::size_t>(row) * width_,
-                      source_uv + static_cast<std::size_t>(row) * frame.width_stride(), width_);
+          std::memcpy(
+              output_uv + static_cast<std::size_t>(row) * width_,
+              source_uv + static_cast<std::size_t>(row) * frame.width_stride(),
+              width_);
         }
         publisher_->WriteNv12Frame(std::move(packed_nv12));
         std::lock_guard<std::mutex> lock(mutex_);
@@ -489,8 +530,9 @@ constexpr float kKg = 0.7152F;
 constexpr float kKb = 0.0722F;
 
 std::string ToLower(std::string value) {
-  std::transform(value.begin(), value.end(), value.begin(),
-                 [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+  std::transform(
+      value.begin(), value.end(), value.begin(),
+      [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
   return value;
 }
 
@@ -500,8 +542,10 @@ uint8_t ClampToU8(float value) {
 }
 
 cv::Mat TensorToBgrMat(const codec::TensorData& tensor, int width, int height) {
-  Check(tensor.dtype == DataType::kFloat16, "decoded video output expects fp16 tensor");
-  Check(tensor.shape.rank() == 4 && tensor.shape.dim(0) == 1 && tensor.shape.dim(1) == 3,
+  Check(tensor.dtype == DataType::kFloat16,
+        "decoded video output expects fp16 tensor");
+  Check(tensor.shape.rank() == 4 && tensor.shape.dim(0) == 1 &&
+            tensor.shape.dim(1) == 3,
         "decoded video output expects NCHW frame tensor");
   Check(tensor.shape.dim(2) >= height && tensor.shape.dim(3) >= width,
         "decoded frame tensor is smaller than requested video size");
@@ -510,14 +554,16 @@ cv::Mat TensorToBgrMat(const codec::TensorData& tensor, int width, int height) {
   const int padded_width = static_cast<int>(tensor.shape.dim(3));
   const auto* input = reinterpret_cast<const uint16_t*>(tensor.bytes.data());
   cv::Mat frame(height, width, CV_8UC3);
-  const std::size_t channel_stride = static_cast<std::size_t>(padded_height * padded_width);
+  const std::size_t channel_stride =
+      static_cast<std::size_t>(padded_height * padded_width);
   for (int y = 0; y < height; ++y) {
     auto* row = frame.ptr<cv::Vec3b>(y);
     for (int x = 0; x < width; ++x) {
       const std::size_t offset = static_cast<std::size_t>(y * padded_width + x);
       const float y_value = codec::HalfBitsToFloat(input[offset]);
       const float cb = codec::HalfBitsToFloat(input[channel_stride + offset]);
-      const float cr = codec::HalfBitsToFloat(input[2 * channel_stride + offset]);
+      const float cr =
+          codec::HalfBitsToFloat(input[2 * channel_stride + offset]);
       const float r = y_value + (2.0F - 2.0F * kKr) * (cr - 0.5F);
       const float b = y_value + (2.0F - 2.0F * kKb) * (cb - 0.5F);
       const float g = (y_value - kKr * r - kKb * b) / kKg;
@@ -527,14 +573,14 @@ cv::Mat TensorToBgrMat(const codec::TensorData& tensor, int width, int height) {
   return frame;
 }
 
-void BgrToFp16Yuv444(const cv::Mat& frame, int width, int height, int padded_width,
-                     int padded_height, uint16_t* output) {
+void BgrToFp16Yuv444(const cv::Mat& frame, int width, int height,
+                     int padded_width, int padded_height, uint16_t* output) {
   Check(frame.type() == CV_8UC3 && frame.cols == width && frame.rows == height,
         "decoded camera frame has unexpected format or dimensions");
   Check(padded_width >= width && padded_height >= height && output != nullptr,
         "camera frame exceeds model input tensor shape");
-  const std::size_t channel_stride =
-      static_cast<std::size_t>(padded_height) * static_cast<std::size_t>(padded_width);
+  const std::size_t channel_stride = static_cast<std::size_t>(padded_height) *
+                                     static_cast<std::size_t>(padded_width);
   cv::parallel_for_(cv::Range(0, padded_height), [&](const cv::Range& rows) {
     for (int y = rows.start; y < rows.end; ++y) {
       const auto* row = frame.ptr<cv::Vec3b>(std::min(y, height - 1));
@@ -546,10 +592,13 @@ void BgrToFp16Yuv444(const cv::Mat& frame, int width, int height, int padded_wid
         const float luma = kKr * r + kKg * g + kKb * b;
         const float cb = 0.5F * (b - luma) / (1.0F - kKb) + 0.5F;
         const float cr = 0.5F * (r - luma) / (1.0F - kKr) + 0.5F;
-        const std::size_t offset = static_cast<std::size_t>(y) * padded_width + x;
+        const std::size_t offset =
+            static_cast<std::size_t>(y) * padded_width + x;
         output[offset] = static_cast<uint16_t>(codec::FloatToHalfBits(luma));
-        output[channel_stride + offset] = static_cast<uint16_t>(codec::FloatToHalfBits(cb));
-        output[2 * channel_stride + offset] = static_cast<uint16_t>(codec::FloatToHalfBits(cr));
+        output[channel_stride + offset] =
+            static_cast<uint16_t>(codec::FloatToHalfBits(cb));
+        output[2 * channel_stride + offset] =
+            static_cast<uint16_t>(codec::FloatToHalfBits(cr));
       }
     }
   });
@@ -568,8 +617,9 @@ std::string ShellQuote(const std::filesystem::path& path) {
   return quoted;
 }
 
-std::string BuildFfmpegCommand(const std::filesystem::path& output_path, double fps, int width,
-                               int height, int crf, const std::string& bitrate,
+std::string BuildFfmpegCommand(const std::filesystem::path& output_path,
+                               double fps, int width, int height, int crf,
+                               const std::string& bitrate,
                                const std::string& preset) {
   std::ostringstream command;
   command << "ffmpeg -y -hide_banner -loglevel error"
@@ -579,12 +629,13 @@ std::string BuildFfmpegCommand(const std::filesystem::path& output_path, double 
   if (bitrate.empty() || ToLower(bitrate) == "none") {
     command << " -crf " << crf;
   } else {
-    command << " -b:v " << bitrate << " -maxrate " << bitrate << " -bufsize 5000k";
+    command << " -b:v " << bitrate << " -maxrate " << bitrate
+            << " -bufsize 5000k";
   }
-  command << " -pix_fmt yuv420p -movflags +faststart " << ShellQuote(output_path);
+  command << " -pix_fmt yuv420p -movflags +faststart "
+          << ShellQuote(output_path);
   return command.str();
 }
-
 
 }  // namespace
 
@@ -633,12 +684,13 @@ std::vector<std::pair<const uint8_t*, std::size_t>> FindAnnexBNals(
     const std::vector<uint8_t>& frame) {
   std::vector<std::pair<const uint8_t*, std::size_t>> nals;
   auto start_code = [&frame](std::size_t offset) -> std::size_t {
-    if (offset + 3 <= frame.size() && frame[offset] == 0 && frame[offset + 1] == 0 &&
-        frame[offset + 2] == 1) {
+    if (offset + 3 <= frame.size() && frame[offset] == 0 &&
+        frame[offset + 1] == 0 && frame[offset + 2] == 1) {
       return 3;
     }
-    if (offset + 4 <= frame.size() && frame[offset] == 0 && frame[offset + 1] == 0 &&
-        frame[offset + 2] == 0 && frame[offset + 3] == 1) {
+    if (offset + 4 <= frame.size() && frame[offset] == 0 &&
+        frame[offset + 1] == 0 && frame[offset + 2] == 0 &&
+        frame[offset + 3] == 1) {
       return 4;
     }
     return 0;
@@ -653,7 +705,8 @@ std::vector<std::pair<const uint8_t*, std::size_t>> FindAnnexBNals(
     }
     if (start != frame.size()) {
       const std::size_t nal_begin = start + start_size;
-      if (i > nal_begin) nals.emplace_back(frame.data() + nal_begin, i - nal_begin);
+      if (i > nal_begin)
+        nals.emplace_back(frame.data() + nal_begin, i - nal_begin);
     }
     start = i;
     start_size = code_size;
@@ -665,8 +718,9 @@ std::vector<std::pair<const uint8_t*, std::size_t>> FindAnnexBNals(
       nals.emplace_back(frame.data() + nal_begin, frame.size() - nal_begin);
     }
   }
-  const bool annexb_prefix = frame.size() >= 3 && frame[0] == 0 && frame[1] == 0 &&
-                             (frame[2] == 1 || (frame.size() >= 4 && frame[2] == 0 && frame[3] == 1));
+  const bool annexb_prefix =
+      frame.size() >= 3 && frame[0] == 0 && frame[1] == 0 &&
+      (frame[2] == 1 || (frame.size() >= 4 && frame[2] == 0 && frame[3] == 1));
   if (annexb_prefix) return nals;
   nals.clear();
   // DVPP may provide length-prefixed AVCC rather than Annex-B NAL units.
@@ -677,9 +731,15 @@ std::vector<std::pair<const uint8_t*, std::size_t>> FindAnnexBNals(
                               (static_cast<uint32_t>(frame[offset + 2]) << 8) |
                               static_cast<uint32_t>(frame[offset + 3]);
     offset += 4;
-    if (nal_size == 0 || nal_size > frame.size() - offset) { nals.clear(); break; }
+    if (nal_size == 0 || nal_size > frame.size() - offset) {
+      nals.clear();
+      break;
+    }
     const uint8_t nal_type = frame[offset] & 0x1f;
-    if (nal_type == 0 || nal_type > 23) { nals.clear(); break; }
+    if (nal_type == 0 || nal_type > 23) {
+      nals.clear();
+      break;
+    }
     nals.emplace_back(frame.data() + offset, nal_size);
     offset += nal_size;
   }
@@ -704,8 +764,8 @@ std::vector<uint8_t> BuildAvccExtradata(const std::vector<uint8_t>& frame) {
       pps_size = nal.second;
     }
   }
-  if (sps == nullptr || pps == nullptr || sps_size > 0xffff || pps_size > 0xffff ||
-      sps_size < 4) {
+  if (sps == nullptr || pps == nullptr || sps_size > 0xffff ||
+      pps_size > 0xffff || sps_size < 4) {
     return {};
   }
   std::vector<uint8_t> extradata(11 + sps_size + pps_size);
@@ -747,17 +807,20 @@ std::vector<uint8_t> ConvertAnnexBToAvcc(const std::vector<uint8_t>& frame) {
   return converted;
 }
 
-void SetDirectH264Extradata(AVStream* stream, const std::vector<uint8_t>& frame) {
+void SetDirectH264Extradata(AVStream* stream,
+                            const std::vector<uint8_t>& frame) {
   const std::vector<uint8_t> extradata = BuildAvccExtradata(frame);
   if (extradata.empty()) return;
   stream->codecpar->extradata = static_cast<uint8_t*>(
       av_mallocz(extradata.size() + AV_INPUT_BUFFER_PADDING_SIZE));
-  Check(stream->codecpar->extradata != nullptr, "allocate RTSP H.264 extradata");
+  Check(stream->codecpar->extradata != nullptr,
+        "allocate RTSP H.264 extradata");
   std::memcpy(stream->codecpar->extradata, extradata.data(), extradata.size());
   stream->codecpar->extradata_size = static_cast<int>(extradata.size());
 }
 
-cv::Mat ConvertTensorToBgr(const codec::TensorData& tensor, int width, int height) {
+cv::Mat ConvertTensorToBgr(const codec::TensorData& tensor, int width,
+                           int height) {
   return TensorToBgrMat(tensor, width, height);
 }
 
@@ -769,29 +832,34 @@ bool IsCameraDevicePath(const std::filesystem::path& path) {
 class VideoFrameReader::Impl {
  public:
   Impl(const std::filesystem::path& input_path,
-       const std::optional<CameraCaptureOptions>& camera_options, aclrtContext context) {
+       const std::optional<CameraCaptureOptions>& camera_options,
+       aclrtContext context) {
     if (camera_options.has_value()) {
       context_ = context;
       motion_nv12_ = camera_options->motion_nv12;
       if (motion_nv12_) {
         Check(camera_options->width > 0 && camera_options->height > 0 &&
-                  camera_options->width % 2 == 0 && camera_options->height % 2 == 0,
+                  camera_options->width % 2 == 0 &&
+                  camera_options->height % 2 == 0,
               "camera motion NV12 requires positive even visible dimensions");
         (void)Nv12BufferSize({camera_options->width, camera_options->height,
-                             camera_options->width, camera_options->height});
+                              camera_options->width, camera_options->height});
       }
       Check(IsCameraDevicePath(input_path),
             "camera input must be a V4L2 device path such as /dev/video0");
-      camera_capture_ = std::make_unique<V4l2MjpegCapture>(input_path, *camera_options);
+      camera_capture_ =
+          std::make_unique<V4l2MjpegCapture>(input_path, *camera_options);
       info_width_ = camera_capture_->width();
       info_height_ = camera_capture_->height();
-      Check(context != nullptr, "camera input requires an ACL context for DVPP JPEG decode");
+      Check(context != nullptr,
+            "camera input requires an ACL context for DVPP JPEG decode");
       DvppJpegDecodeConfig decode_config;
       decode_config.width = camera_capture_->width();
       decode_config.height = camera_capture_->height();
       jpeg_decoder_ = std::make_unique<DvppJpegDecoder>(context, decode_config);
       if (!camera_options->rtsp_url.empty()) {
-        rtsp_pipeline_ = std::make_unique<CameraRtspPipeline>(context, *camera_options);
+        rtsp_pipeline_ =
+            std::make_unique<CameraRtspPipeline>(context, *camera_options);
       }
       Check(camera_options->width > 0 && camera_options->height > 0 &&
                 camera_options->fps > 0.0 && std::isfinite(camera_options->fps),
@@ -800,8 +868,10 @@ class VideoFrameReader::Impl {
         replay_frames_.reserve(camera_options->preload_frames);
         for (std::size_t i = 0; i < camera_options->preload_frames; ++i) {
           auto lease = camera_capture_->Read();
-          Check(lease.has_value(), "camera ended while preloading benchmark frames");
-          replay_frames_.emplace_back(lease->data(), lease->data() + lease->bytes());
+          Check(lease.has_value(),
+                "camera ended while preloading benchmark frames");
+          replay_frames_.emplace_back(lease->data(),
+                                      lease->data() + lease->bytes());
           lease->Release();
         }
       }
@@ -810,7 +880,8 @@ class VideoFrameReader::Impl {
     } else {
       capture_.open(input_path.string());
     }
-    Check(capture_.isOpened(), "failed to open input video: " + input_path.string());
+    Check(capture_.isOpened(),
+          "failed to open input video: " + input_path.string());
   }
 
   ~Impl() {
@@ -857,27 +928,37 @@ class VideoFrameReader::Impl {
                 << " preload_frames=" << replay_frames_.size()
                 << " capture_ms=" << capture_ms_ / camera_frames_
                 << " jpegd_device_ms=" << jpegd_ms_ / camera_frames_
-                << " nv12_d2h_ms=" << nv12_d2h_ms_ / std::max<uint64_t>(1, converted_frames_)
-                << " cpu_nv12_bgr_ms=" << cpu_nv12_bgr_ms_ / std::max<uint64_t>(1, converted_frames_)
-                << " cpu_bgr_fp16_ms=" << cpu_bgr_fp16_ms_ / std::max<uint64_t>(1, converted_frames_)
-                << " aipp_nv12_pad_ms=" << aipp_pad_ms_ / std::max<uint64_t>(1, converted_frames_)
+                << " nv12_d2h_ms="
+                << nv12_d2h_ms_ / std::max<uint64_t>(1, converted_frames_)
+                << " cpu_nv12_bgr_ms="
+                << cpu_nv12_bgr_ms_ / std::max<uint64_t>(1, converted_frames_)
+                << " cpu_bgr_fp16_ms="
+                << cpu_bgr_fp16_ms_ / std::max<uint64_t>(1, converted_frames_)
+                << " aipp_nv12_pad_ms="
+                << aipp_pad_ms_ / std::max<uint64_t>(1, converted_frames_)
                 << " v4l2_sequence_gaps=" << v4l2_sequence_gaps_
                 << " jpeg_decode_errors=" << jpeg_decode_errors_
                 << " camera_motion_copy_ms="
-                << camera_motion_copy_ms_ / std::max<uint64_t>(1, camera_motion_copy_frames_)
+                << camera_motion_copy_ms_ /
+                       std::max<uint64_t>(1, camera_motion_copy_frames_)
                 << " camera_motion_copy_total_ms=" << camera_motion_copy_ms_
                 << " camera_motion_copy_frames=" << camera_motion_copy_frames_
                 << " camera_queue_max_depth=" << camera_queue_max_depth_
                 << " camera_queue_full_waits=" << camera_queue_full_waits_
-                << " camera_queue_full_wait_total_ms=" << camera_queue_full_wait_total_ms_
-                << " camera_queue_full_wait_max_ms=" << camera_queue_full_wait_max_ms_
+                << " camera_queue_full_wait_total_ms="
+                << camera_queue_full_wait_total_ms_
+                << " camera_queue_full_wait_max_ms="
+                << camera_queue_full_wait_max_ms_
                 << " tensor_queue_max_depth=" << tensor_queue_max_depth_
                 << " tensor_queue_full_waits=" << tensor_queue_full_waits_
-                << " tensor_queue_full_wait_total_ms=" << tensor_queue_full_wait_total_ms_
-                << " tensor_queue_full_wait_max_ms=" << tensor_queue_full_wait_max_ms_
-                << " rtsp_frames=" << (rtsp_pipeline_ != nullptr ? rtsp_pipeline_->frames() : 0)
+                << " tensor_queue_full_wait_total_ms="
+                << tensor_queue_full_wait_total_ms_
+                << " tensor_queue_full_wait_max_ms="
+                << tensor_queue_full_wait_max_ms_ << " rtsp_frames="
+                << (rtsp_pipeline_ != nullptr ? rtsp_pipeline_->frames() : 0)
                 << " rtsp_dropped="
-                << (rtsp_pipeline_ != nullptr ? rtsp_pipeline_->dropped_frames() : 0)
+                << (rtsp_pipeline_ != nullptr ? rtsp_pipeline_->dropped_frames()
+                                              : 0)
                 << std::endl;
     }
     closed_ = true;
@@ -893,11 +974,14 @@ class VideoFrameReader::Impl {
             const bool was_full = camera_queue_.size() >= kCameraQueueCapacity;
             const auto wait_begin = std::chrono::steady_clock::now();
             camera_cv_.wait(lock, [this] {
-              return camera_stop_ || camera_queue_.size() < kCameraQueueCapacity;
+              return camera_stop_ ||
+                     camera_queue_.size() < kCameraQueueCapacity;
             });
             if (was_full) {
-              const double wait_ms = std::chrono::duration<double, std::milli>(
-                  std::chrono::steady_clock::now() - wait_begin).count();
+              const double wait_ms =
+                  std::chrono::duration<double, std::milli>(
+                      std::chrono::steady_clock::now() - wait_begin)
+                      .count();
               ++camera_queue_full_waits_;
               camera_queue_full_wait_total_ms_ += wait_ms;
               camera_queue_full_wait_max_ms_ =
@@ -932,13 +1016,15 @@ class VideoFrameReader::Impl {
           const auto jpegd_begin = std::chrono::steady_clock::now();
           DvppJpegDecodedFrame nv12;
           try {
-            nv12 = replay != nullptr
-                       ? jpeg_decoder_->DecodeDevice(replay->data(), replay->size())
-                       : jpeg_decoder_->DecodeDevice(jpeg->data(), jpeg->bytes());
+            nv12 = replay != nullptr ? jpeg_decoder_->DecodeDevice(
+                                           replay->data(), replay->size())
+                                     : jpeg_decoder_->DecodeDevice(
+                                           jpeg->data(), jpeg->bytes());
           } catch (const std::exception& decode_error) {
             if (jpeg.has_value()) jpeg->Release();
             const std::string message = decode_error.what();
-            if (message.find("acldvppJpegPredictDecSize") == std::string::npos) {
+            if (message.find("acldvppJpegPredictDecSize") ==
+                std::string::npos) {
               throw;
             }
             {
@@ -955,14 +1041,18 @@ class VideoFrameReader::Impl {
           const auto jpegd_end = std::chrono::steady_clock::now();
           {
             std::lock_guard<std::mutex> stats_lock(stats_mutex_);
-            capture_ms_ += std::chrono::duration<double, std::milli>(capture_end - capture_begin).count();
-            jpegd_ms_ += std::chrono::duration<double, std::milli>(jpegd_end - jpegd_begin).count();
+            capture_ms_ += std::chrono::duration<double, std::milli>(
+                               capture_end - capture_begin)
+                               .count();
+            jpegd_ms_ += std::chrono::duration<double, std::milli>(jpegd_end -
+                                                                   jpegd_begin)
+                             .count();
             ++camera_frames_;
             if (camera_frames_ % 900 == 0) {
               std::cerr << "camera_progress frames=" << camera_frames_
                         << " v4l2_sequence_gaps=" << v4l2_sequence_gaps_
-                        << " camera_queue_full_waits=" << camera_queue_full_waits_
-                        << std::endl;
+                        << " camera_queue_full_waits="
+                        << camera_queue_full_waits_ << std::endl;
             }
           }
           if (rtsp_pipeline_ != nullptr) rtsp_pipeline_->Enqueue(nv12);
@@ -970,7 +1060,8 @@ class VideoFrameReader::Impl {
             std::lock_guard<std::mutex> lock(camera_mutex_);
             if (camera_stop_) return;
             camera_queue_.push_back(std::move(nv12));
-            camera_queue_max_depth_ = std::max(camera_queue_max_depth_, camera_queue_.size());
+            camera_queue_max_depth_ =
+                std::max(camera_queue_max_depth_, camera_queue_.size());
           }
           camera_cv_.notify_all();
         }
@@ -986,7 +1077,8 @@ class VideoFrameReader::Impl {
   DvppJpegDecodedFrame PopCameraNv12() {
     std::unique_lock<std::mutex> lock(camera_mutex_);
     camera_cv_.wait(lock, [this] {
-      return camera_stop_ || camera_eof_ || camera_error_ != nullptr || !camera_queue_.empty();
+      return camera_stop_ || camera_eof_ || camera_error_ != nullptr ||
+             !camera_queue_.empty();
     });
     if (camera_error_ != nullptr) std::rethrow_exception(camera_error_);
     if (camera_queue_.empty()) return {};
@@ -1003,17 +1095,21 @@ class VideoFrameReader::Impl {
     codec::TensorData result;
     result.shape = mlvc::TensorShape(frame_spec.shape);
     result.dtype = frame_spec.dtype;
-    const std::size_t output_bytes = result.shape.NumElements() * ElementSize(result.dtype);
-    CheckAcl(aclrtSetCurrentContext(context_), "aclrtSetCurrentContext camera CPU conversion");
+    const std::size_t output_bytes =
+        result.shape.NumElements() * ElementSize(result.dtype);
+    CheckAcl(aclrtSetCurrentContext(context_),
+             "aclrtSetCurrentContext camera CPU conversion");
     auto [host_output, output_owner] = fp16_output_pool_->Acquire();
     if (frame_spec.dtype == DataType::kUInt8) {
       const std::size_t y_source_bytes =
           static_cast<std::size_t>(nv12.width_stride()) * nv12.height_stride();
       const std::size_t y_target_bytes =
-          static_cast<std::size_t>(info_width_) * static_cast<std::size_t>(result.shape.dim(1) * 2 / 3);
-      const std::size_t uv_bytes =
-          static_cast<std::size_t>(info_width_) * static_cast<std::size_t>(info_height_ / 2);
-      Check(nv12.width_stride() == info_width_ && y_target_bytes >= y_source_bytes &&
+          static_cast<std::size_t>(info_width_) *
+          static_cast<std::size_t>(result.shape.dim(1) * 2 / 3);
+      const std::size_t uv_bytes = static_cast<std::size_t>(info_width_) *
+                                   static_cast<std::size_t>(info_height_ / 2);
+      Check(nv12.width_stride() == info_width_ &&
+                y_target_bytes >= y_source_bytes &&
                 output_bytes == y_target_bytes * 3 / 2,
             "AIPP camera NV12 tensor layout mismatch");
       const auto conversion_begin = std::chrono::steady_clock::now();
@@ -1021,18 +1117,27 @@ class VideoFrameReader::Impl {
                "initialize padded camera NV12");
       CheckAcl(aclrtMemset(host_output, y_target_bytes, 16, y_target_bytes),
                "initialize padded camera luma");
-      CheckAcl(aclrtMemcpy(host_output, static_cast<std::size_t>(info_width_) * info_height_,
-                           nv12.device_data(), static_cast<std::size_t>(info_width_) * info_height_,
-                           ACL_MEMCPY_DEVICE_TO_DEVICE), "copy camera luma for AIPP");
-      CheckAcl(aclrtMemcpy(static_cast<uint8_t*>(host_output) + y_target_bytes, uv_bytes,
-                           static_cast<const uint8_t*>(nv12.device_data()) + y_source_bytes,
-                           uv_bytes, ACL_MEMCPY_DEVICE_TO_DEVICE), "copy camera chroma for AIPP");
+      CheckAcl(aclrtMemcpy(host_output,
+                           static_cast<std::size_t>(info_width_) * info_height_,
+                           nv12.device_data(),
+                           static_cast<std::size_t>(info_width_) * info_height_,
+                           ACL_MEMCPY_DEVICE_TO_DEVICE),
+               "copy camera luma for AIPP");
+      CheckAcl(
+          aclrtMemcpy(
+              static_cast<uint8_t*>(host_output) + y_target_bytes, uv_bytes,
+              static_cast<const uint8_t*>(nv12.device_data()) + y_source_bytes,
+              uv_bytes, ACL_MEMCPY_DEVICE_TO_DEVICE),
+          "copy camera chroma for AIPP");
       const auto conversion_end = std::chrono::steady_clock::now();
-      result.AttachExternalBuffer(host_output, output_bytes, MemoryLocation::kAcl,
+      result.AttachExternalBuffer(host_output, output_bytes,
+                                  MemoryLocation::kAcl,
                                   std::move(output_owner));
       {
         std::lock_guard<std::mutex> stats_lock(stats_mutex_);
-        aipp_pad_ms_ += std::chrono::duration<double, std::milli>(conversion_end - conversion_begin).count();
+        aipp_pad_ms_ += std::chrono::duration<double, std::milli>(
+                            conversion_end - conversion_begin)
+                            .count();
         ++converted_frames_;
       }
       return result;
@@ -1040,13 +1145,15 @@ class VideoFrameReader::Impl {
     std::vector<uint8_t> host_nv12(nv12.bytes());
     const auto copy_begin = std::chrono::steady_clock::now();
     CheckAcl(aclrtMemcpy(host_nv12.data(), host_nv12.size(), nv12.device_data(),
-                         nv12.bytes(), ACL_MEMCPY_DEVICE_TO_HOST), "copy camera NV12 to CPU");
+                         nv12.bytes(), ACL_MEMCPY_DEVICE_TO_HOST),
+             "copy camera NV12 to CPU");
     const auto copy_end = std::chrono::steady_clock::now();
     cv::Mat y_view(info_height_, info_width_, CV_8UC1, host_nv12.data(),
                    nv12.width_stride());
-    cv::Mat uv_view(info_height_ / 2, info_width_ / 2, CV_8UC2,
-                    host_nv12.data() + nv12.width_stride() * nv12.height_stride(),
-                    nv12.width_stride());
+    cv::Mat uv_view(
+        info_height_ / 2, info_width_ / 2, CV_8UC2,
+        host_nv12.data() + nv12.width_stride() * nv12.height_stride(),
+        nv12.width_stride());
     const auto bgr_begin = std::chrono::steady_clock::now();
     cv::Mat bgr;
     cv::cvtColorTwoPlane(y_view, uv_view, bgr, cv::COLOR_YUV2BGR_NV12);
@@ -1056,22 +1163,33 @@ class VideoFrameReader::Impl {
                     static_cast<int>(result.shape.dim(2)),
                     static_cast<uint16_t*>(host_output));
     const auto conversion_end = std::chrono::steady_clock::now();
-    result.AttachExternalBuffer(host_output, output_bytes, MemoryLocation::kPinnedCpu,
+    result.AttachExternalBuffer(host_output, output_bytes,
+                                MemoryLocation::kPinnedCpu,
                                 std::move(output_owner));
     {
       std::lock_guard<std::mutex> stats_lock(stats_mutex_);
-      nv12_d2h_ms_ += std::chrono::duration<double, std::milli>(copy_end - copy_begin).count();
-      cpu_nv12_bgr_ms_ += std::chrono::duration<double, std::milli>(bgr_end - bgr_begin).count();
-      cpu_bgr_fp16_ms_ += std::chrono::duration<double, std::milli>(conversion_end - bgr_end).count();
+      nv12_d2h_ms_ +=
+          std::chrono::duration<double, std::milli>(copy_end - copy_begin)
+              .count();
+      cpu_nv12_bgr_ms_ +=
+          std::chrono::duration<double, std::milli>(bgr_end - bgr_begin)
+              .count();
+      cpu_bgr_fp16_ms_ +=
+          std::chrono::duration<double, std::milli>(conversion_end - bgr_end)
+              .count();
       ++converted_frames_;
     }
     if (motion_nv12_) {
       Check(motion_nv12 != nullptr, "camera motion proxy output is missing");
       const auto motion_copy_begin = std::chrono::steady_clock::now();
       CopyVisibleNv12(host_nv12.data(), host_nv12.size(),
-          {info_width_, info_height_, nv12.width_stride(), nv12.height_stride()}, motion_nv12);
-      const double motion_copy_ms = std::chrono::duration<double, std::milli>(
-          std::chrono::steady_clock::now() - motion_copy_begin).count();
+                      {info_width_, info_height_, nv12.width_stride(),
+                       nv12.height_stride()},
+                      motion_nv12);
+      const double motion_copy_ms =
+          std::chrono::duration<double, std::milli>(
+              std::chrono::steady_clock::now() - motion_copy_begin)
+              .count();
       std::lock_guard<std::mutex> stats_lock(stats_mutex_);
       camera_motion_copy_ms_ += motion_copy_ms;
       ++camera_motion_copy_frames_;
@@ -1088,17 +1206,19 @@ class VideoFrameReader::Impl {
     Check(!motion_nv12_ || frame_spec.dtype == DataType::kFloat16,
           "camera motion NV12 sidecar requires the FP16 main input path");
     const std::size_t output_bytes =
-        mlvc::TensorShape(frame_spec.shape).NumElements() * ElementSize(frame_spec.dtype);
-    fp16_output_pool_ = std::make_shared<AclFrameBufferPool>(context_, output_bytes,
-                                                             kFp16OutputPoolCapacity,
-                                                             frame_spec.dtype == DataType::kUInt8);
+        mlvc::TensorShape(frame_spec.shape).NumElements() *
+        ElementSize(frame_spec.dtype);
+    fp16_output_pool_ = std::make_shared<AclFrameBufferPool>(
+        context_, output_bytes, kFp16OutputPoolCapacity,
+        frame_spec.dtype == DataType::kUInt8);
     tensor_thread_ = std::thread([this, frame_spec] {
       try {
         for (;;) {
           DvppJpegDecodedFrame nv12 = PopCameraNv12();
           if (nv12.device_data() == nullptr) break;
           CameraTensor tensor;
-          tensor.tensor = ConvertCameraFrame(nv12, frame_spec, &tensor.motion_nv12);
+          tensor.tensor =
+              ConvertCameraFrame(nv12, frame_spec, &tensor.motion_nv12);
           std::unique_lock<std::mutex> lock(tensor_mutex_);
           const bool was_full = tensor_queue_.size() >= kTensorQueueCapacity;
           const auto wait_begin = std::chrono::steady_clock::now();
@@ -1106,15 +1226,19 @@ class VideoFrameReader::Impl {
             return tensor_stop_ || tensor_queue_.size() < kTensorQueueCapacity;
           });
           if (was_full) {
-            const double wait_ms = std::chrono::duration<double, std::milli>(
-                std::chrono::steady_clock::now() - wait_begin).count();
+            const double wait_ms =
+                std::chrono::duration<double, std::milli>(
+                    std::chrono::steady_clock::now() - wait_begin)
+                    .count();
             ++tensor_queue_full_waits_;
             tensor_queue_full_wait_total_ms_ += wait_ms;
-            tensor_queue_full_wait_max_ms_ = std::max(tensor_queue_full_wait_max_ms_, wait_ms);
+            tensor_queue_full_wait_max_ms_ =
+                std::max(tensor_queue_full_wait_max_ms_, wait_ms);
           }
           if (tensor_stop_) break;
           tensor_queue_.push_back(std::move(tensor));
-          tensor_queue_max_depth_ = std::max(tensor_queue_max_depth_, tensor_queue_.size());
+          tensor_queue_max_depth_ =
+              std::max(tensor_queue_max_depth_, tensor_queue_.size());
           lock.unlock();
           tensor_cv_.notify_all();
         }
@@ -1138,7 +1262,8 @@ class VideoFrameReader::Impl {
     if (tensor_error_ != nullptr) std::rethrow_exception(tensor_error_);
     if (tensor_queue_.empty()) return false;
     *tensor = std::move(tensor_queue_.front().tensor);
-    if (motion_nv12) *motion_nv12 = std::move(tensor_queue_.front().motion_nv12);
+    if (motion_nv12)
+      *motion_nv12 = std::move(tensor_queue_.front().motion_nv12);
     tensor_queue_.pop_front();
     lock.unlock();
     tensor_cv_.notify_all();
@@ -1203,11 +1328,14 @@ class VideoFrameReader::Impl {
 VideoFrameReader::VideoFrameReader(const std::filesystem::path& input_path)
     : impl_(std::make_unique<Impl>(input_path, std::nullopt, nullptr)) {
   info_.width = static_cast<int>(impl_->capture_.get(cv::CAP_PROP_FRAME_WIDTH));
-  info_.height = static_cast<int>(impl_->capture_.get(cv::CAP_PROP_FRAME_HEIGHT));
-  info_.frame_count = static_cast<int>(impl_->capture_.get(cv::CAP_PROP_FRAME_COUNT));
+  info_.height =
+      static_cast<int>(impl_->capture_.get(cv::CAP_PROP_FRAME_HEIGHT));
+  info_.frame_count =
+      static_cast<int>(impl_->capture_.get(cv::CAP_PROP_FRAME_COUNT));
   info_.fps = impl_->capture_.get(cv::CAP_PROP_FPS);
   if (info_.fps <= 0.0 || !std::isfinite(info_.fps)) info_.fps = 30.0;
-  Check(info_.width > 0 && info_.height > 0, "failed to read video size from input stream");
+  Check(info_.width > 0 && info_.height > 0,
+        "failed to read video size from input stream");
 }
 
 VideoFrameReader::VideoFrameReader(const std::filesystem::path& input_path,
@@ -1218,7 +1346,8 @@ VideoFrameReader::VideoFrameReader(const std::filesystem::path& input_path,
   info_.height = impl_->camera_capture_->height();
   info_.frame_count = 0;
   info_.fps = camera_options.fps;
-  Check(info_.width > 0 && info_.height > 0, "failed to read video size from input stream");
+  Check(info_.width > 0 && info_.height > 0,
+        "failed to read video size from input stream");
 }
 
 VideoFrameReader::~VideoFrameReader() = default;
@@ -1234,8 +1363,8 @@ bool VideoFrameReader::ReadFrameAsTensor(const mlvc::TensorSpec& frame_spec,
   Check(tensor != nullptr, "video frame tensor output is required");
   Check(!impl_->motion_nv12_ || motion_nv12 != nullptr,
         "enabled camera motion sidecar requires an output vector");
-  const bool aipp_camera = impl_->camera_capture_ != nullptr &&
-                           frame_spec.dtype == DataType::kUInt8;
+  const bool aipp_camera =
+      impl_->camera_capture_ != nullptr && frame_spec.dtype == DataType::kUInt8;
   Check(frame_spec.dtype == DataType::kFloat16 || aipp_camera,
         "video input tensor expects fp16 or camera AIPP uint8 frame spec");
   Check(frame_spec.shape.size() == 4 && frame_spec.shape[0] == 1 &&
@@ -1258,18 +1387,21 @@ bool VideoFrameReader::ReadFrameAsTensor(const mlvc::TensorSpec& frame_spec,
   } else if (!impl_->capture_.read(frame)) {
     return false;
   }
-  Check(frame.type() == CV_8UC3, "OpenCV returned an unsupported video frame type");
+  Check(frame.type() == CV_8UC3,
+        "OpenCV returned an unsupported video frame type");
 
   const int padded_height = static_cast<int>(frame_spec.shape[2]);
   const int padded_width = static_cast<int>(frame_spec.shape[3]);
   Check(info_.height <= padded_height && info_.width <= padded_width,
         "input video dimensions exceed the model frame tensor shape");
 
-  if (tensor->shape.dims() != frame_spec.shape || tensor->dtype != frame_spec.dtype) {
+  if (tensor->shape.dims() != frame_spec.shape ||
+      tensor->dtype != frame_spec.dtype) {
     *tensor = codec::MakeTensor(frame_spec.shape, frame_spec.dtype);
   }
   auto* output = reinterpret_cast<uint16_t*>(tensor->bytes.data());
-  const std::size_t channel_stride = static_cast<std::size_t>(padded_height * padded_width);
+  const std::size_t channel_stride =
+      static_cast<std::size_t>(padded_height * padded_width);
 
   for (int y = 0; y < padded_height; ++y) {
     const int source_y = std::min(y, info_.height - 1);
@@ -1280,21 +1412,27 @@ bool VideoFrameReader::ReadFrameAsTensor(const mlvc::TensorSpec& frame_spec,
       const float b = static_cast<float>(pixel[0]) / 255.0F;
       const float g = static_cast<float>(pixel[1]) / 255.0F;
       const float r = static_cast<float>(pixel[2]) / 255.0F;
-      const float y_value = std::min(std::max(kKr * r + kKg * g + kKb * b, 0.0F), 1.0F);
-      const float cb = std::min(std::max(0.5F * (b - y_value) / (1.0F - kKb) + 0.5F, 0.0F), 1.0F);
-      const float cr = std::min(std::max(0.5F * (r - y_value) / (1.0F - kKr) + 0.5F, 0.0F), 1.0F);
+      const float y_value =
+          std::min(std::max(kKr * r + kKg * g + kKb * b, 0.0F), 1.0F);
+      const float cb = std::min(
+          std::max(0.5F * (b - y_value) / (1.0F - kKb) + 0.5F, 0.0F), 1.0F);
+      const float cr = std::min(
+          std::max(0.5F * (r - y_value) / (1.0F - kKr) + 0.5F, 0.0F), 1.0F);
       const std::size_t offset = static_cast<std::size_t>(y * padded_width + x);
       output[offset] = static_cast<uint16_t>(codec::FloatToHalfBits(y_value));
-      output[channel_stride + offset] = static_cast<uint16_t>(codec::FloatToHalfBits(cb));
-      output[2 * channel_stride + offset] = static_cast<uint16_t>(codec::FloatToHalfBits(cr));
+      output[channel_stride + offset] =
+          static_cast<uint16_t>(codec::FloatToHalfBits(cb));
+      output[2 * channel_stride + offset] =
+          static_cast<uint16_t>(codec::FloatToHalfBits(cr));
     }
   }
   return true;
 }
 
 DecodedVideoWriter::DecodedVideoWriter(const std::filesystem::path& output_path,
-                                       const std::string& output_format, double fps, int width,
-                                       int height, int crf, const std::string& bitrate,
+                                       const std::string& output_format,
+                                       double fps, int width, int height,
+                                       int crf, const std::string& bitrate,
                                        const std::string& preset)
     : output_path_(output_path),
       output_format_(GuessDecodeOutputFormat(output_path, output_format)),
@@ -1308,14 +1446,16 @@ DecodedVideoWriter::DecodedVideoWriter(const std::filesystem::path& output_path,
     std::filesystem::create_directories(output_path_);
     return;
   }
-  Check(output_format_ == "mp4", "decoded video output format must be mp4 or png");
+  Check(output_format_ == "mp4",
+        "decoded video output format must be mp4 or png");
   if (!output_path_.parent_path().empty()) {
     std::filesystem::create_directories(output_path_.parent_path());
   }
-  const std::string command =
-      BuildFfmpegCommand(output_path_, fps_, width_, height_, crf_, bitrate_, preset_);
+  const std::string command = BuildFfmpegCommand(
+      output_path_, fps_, width_, height_, crf_, bitrate_, preset_);
   pipe_ = popen(command.c_str(), "w");
-  Check(pipe_ != nullptr, "failed to open ffmpeg pipe for decoded video output");
+  Check(pipe_ != nullptr,
+        "failed to open ffmpeg pipe for decoded video output");
 }
 
 DecodedVideoWriter::~DecodedVideoWriter() {
@@ -1326,13 +1466,16 @@ DecodedVideoWriter::~DecodedVideoWriter() {
   }
 }
 
-void DecodedVideoWriter::WriteTensorFrame(const codec::TensorData& tensor, int frame_index) {
+void DecodedVideoWriter::WriteTensorFrame(const codec::TensorData& tensor,
+                                          int frame_index) {
   const cv::Mat frame = TensorToBgrMat(tensor, width_, height_);
   if (output_format_ == "png") {
     std::ostringstream name;
-    name << "im" << std::setfill('0') << std::setw(5) << (frame_index + 1) << ".png";
+    name << "im" << std::setfill('0') << std::setw(5) << (frame_index + 1)
+         << ".png";
     const std::filesystem::path path = output_path_ / name.str();
-    Check(cv::imwrite(path.string(), frame), "failed to write PNG frame: " + path.string());
+    Check(cv::imwrite(path.string(), frame),
+          "failed to write PNG frame: " + path.string());
   } else {
     const std::size_t bytes = frame.total() * frame.elemSize();
     const std::size_t written = fwrite(frame.data, 1, bytes, pipe_);
@@ -1350,20 +1493,27 @@ void DecodedVideoWriter::Close() {
   Check(status == 0, "ffmpeg failed while writing decoded output video");
 }
 
-RtspVideoPublisher::RtspVideoPublisher(const std::string& url, double fps, int width, int height,
+RtspVideoPublisher::RtspVideoPublisher(const std::string& url, double fps,
+                                       int width, int height,
                                        const std::string& preset, int crf,
-                                       std::size_t queue_capacity, const std::string& transport,
+                                       std::size_t queue_capacity,
+                                       const std::string& transport,
                                        bool h264_copy)
-    : width_(width), height_(height), queue_capacity_(queue_capacity), h264_copy_(h264_copy) {
+    : width_(width),
+      height_(height),
+      queue_capacity_(queue_capacity),
+      h264_copy_(h264_copy) {
   Check(queue_capacity_ > 0, "RTSP output queue capacity must be positive");
   direct_state_ = std::make_unique<DirectState>();
   direct_state_->h264_copy = h264_copy_;
   direct_state_->transport = transport;
   direct_state_->input_time_base = FpsRational(fps);
   direct_state_->stream_time_base = AVRational{1, 90000};
-  CheckAv(avformat_alloc_output_context2(&direct_state_->format, nullptr, "rtsp", url.c_str()),
+  CheckAv(avformat_alloc_output_context2(&direct_state_->format, nullptr,
+                                         "rtsp", url.c_str()),
           "allocate RTSP output context");
-  Check(direct_state_->format != nullptr, "allocate RTSP output context returned null");
+  Check(direct_state_->format != nullptr,
+        "allocate RTSP output context returned null");
   direct_state_->stream = avformat_new_stream(direct_state_->format, nullptr);
   Check(direct_state_->stream != nullptr, "create RTSP video stream");
   direct_state_->stream->time_base = direct_state_->stream_time_base;
@@ -1378,27 +1528,30 @@ RtspVideoPublisher::RtspVideoPublisher(const std::string& url, double fps, int w
     if (codec == nullptr) codec = avcodec_find_encoder(AV_CODEC_ID_H264);
     Check(codec != nullptr, "find an H.264 encoder for direct RTSP publishing");
     direct_state_->encoder = avcodec_alloc_context3(codec);
-    Check(direct_state_->encoder != nullptr, "allocate direct RTSP H.264 encoder");
+    Check(direct_state_->encoder != nullptr,
+          "allocate direct RTSP H.264 encoder");
     direct_state_->encoder->width = width_;
     direct_state_->encoder->height = height_;
     direct_state_->encoder->pix_fmt = AV_PIX_FMT_NV12;
     direct_state_->encoder->time_base = direct_state_->input_time_base;
-    direct_state_->encoder->framerate = AVRational{direct_state_->input_time_base.den,
-                                                    direct_state_->input_time_base.num};
-    direct_state_->encoder->gop_size = std::max(1, static_cast<int>(std::lround(fps * 2.0)));
+    direct_state_->encoder->framerate = AVRational{
+        direct_state_->input_time_base.den, direct_state_->input_time_base.num};
+    direct_state_->encoder->gop_size =
+        std::max(1, static_cast<int>(std::lround(fps * 2.0)));
     direct_state_->encoder->max_b_frames = 0;
     // RTSP/AVC requires SPS/PPS in codecpar extradata (the SDP). Ask the
     // encoder to keep global headers separate from the packet payload.
     direct_state_->encoder->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
     if (direct_state_->encoder->priv_data != nullptr) {
-      av_opt_set(direct_state_->encoder->priv_data, "preset", preset.c_str(), 0);
+      av_opt_set(direct_state_->encoder->priv_data, "preset", preset.c_str(),
+                 0);
       av_opt_set(direct_state_->encoder->priv_data, "tune", "zerolatency", 0);
       av_opt_set_int(direct_state_->encoder->priv_data, "crf", crf, 0);
     }
     CheckAv(avcodec_open2(direct_state_->encoder, codec, nullptr),
             "open direct RTSP H.264 encoder");
     CheckAv(avcodec_parameters_from_context(direct_state_->stream->codecpar,
-                                             direct_state_->encoder),
+                                            direct_state_->encoder),
             "copy direct RTSP encoder parameters");
     direct_state_->stream->time_base = direct_state_->stream_time_base;
     direct_state_->header_written = false;
@@ -1432,28 +1585,34 @@ RtspVideoPublisher::RtspVideoPublisher(const std::string& url, double fps, int w
           cv_.notify_all();
         }
         if (!queued.h264.empty()) {
-
-          Check(direct_state_ != nullptr, "direct RTSP publisher state is missing");
+          Check(direct_state_ != nullptr,
+                "direct RTSP publisher state is missing");
           if (!direct_state_->header_written) {
             // Do not send the RTSP header until an access unit containing SPS
             // and PPS is available. Some VENC firmware emits those records
             // one frame after the first IDR.
-            const std::vector<uint8_t> extradata = BuildAvccExtradata(queued.h264);
+            const std::vector<uint8_t> extradata =
+                BuildAvccExtradata(queued.h264);
             if (extradata.empty()) continue;
             direct_state_->stream->codecpar->extradata = static_cast<uint8_t*>(
                 av_mallocz(extradata.size() + AV_INPUT_BUFFER_PADDING_SIZE));
-            Check(direct_state_->stream->codecpar->extradata != nullptr, "allocate RTSP H.264 extradata");
-            std::memcpy(direct_state_->stream->codecpar->extradata, extradata.data(), extradata.size());
-            direct_state_->stream->codecpar->extradata_size = static_cast<int>(extradata.size());
+            Check(direct_state_->stream->codecpar->extradata != nullptr,
+                  "allocate RTSP H.264 extradata");
+            std::memcpy(direct_state_->stream->codecpar->extradata,
+                        extradata.data(), extradata.size());
+            direct_state_->stream->codecpar->extradata_size =
+                static_cast<int>(extradata.size());
             AVDictionary* options = nullptr;
-            CheckAv(av_dict_set(&options, "rtsp_transport", direct_state_->transport.c_str(), 0),
+            CheckAv(av_dict_set(&options, "rtsp_transport",
+                                direct_state_->transport.c_str(), 0),
                     "set direct RTSP transport");
             CheckAv(avformat_write_header(direct_state_->format, &options),
                     "write RTSP stream header");
             av_dict_free(&options);
             direct_state_->header_written = true;
           }
-          const std::vector<uint8_t> avcc_payload = ConvertAnnexBToAvcc(queued.h264);
+          const std::vector<uint8_t> avcc_payload =
+              ConvertAnnexBToAvcc(queued.h264);
           AVPacket* packet = av_packet_alloc();
           Check(packet != nullptr, "allocate direct RTSP H.264 packet");
           CheckAv(av_new_packet(packet, static_cast<int>(avcc_payload.size())),
@@ -1478,8 +1637,9 @@ RtspVideoPublisher::RtspVideoPublisher(const std::string& url, double fps, int w
           frame->width = width_;
           frame->height = height_;
           frame->pts = direct_state_->next_frame_pts++;
-          CheckAv(av_image_fill_arrays(frame->data, frame->linesize, reusable.data(),
-                                       AV_PIX_FMT_NV12, width_, height_, 1),
+          CheckAv(av_image_fill_arrays(frame->data, frame->linesize,
+                                       reusable.data(), AV_PIX_FMT_NV12, width_,
+                                       height_, 1),
                   "map direct RTSP NV12 frame");
           CheckAv(avcodec_send_frame(direct_state_->encoder, frame),
                   "send direct RTSP NV12 frame");
@@ -1487,7 +1647,8 @@ RtspVideoPublisher::RtspVideoPublisher(const std::string& url, double fps, int w
           for (;;) {
             AVPacket* packet = av_packet_alloc();
             Check(packet != nullptr, "allocate direct RTSP encoded packet");
-            const int receive = avcodec_receive_packet(direct_state_->encoder, packet);
+            const int receive =
+                avcodec_receive_packet(direct_state_->encoder, packet);
             if (receive == AVERROR(EAGAIN) || receive == AVERROR_EOF) {
               av_packet_free(&packet);
               break;
@@ -1495,17 +1656,20 @@ RtspVideoPublisher::RtspVideoPublisher(const std::string& url, double fps, int w
             CheckAv(receive, "receive direct RTSP encoded packet");
             av_packet_rescale_ts(packet, direct_state_->encoder->time_base,
                                  direct_state_->stream->time_base);
-            if (packet->pts == AV_NOPTS_VALUE) packet->pts = direct_state_->next_frame_pts;
+            if (packet->pts == AV_NOPTS_VALUE)
+              packet->pts = direct_state_->next_frame_pts;
             if (packet->dts == AV_NOPTS_VALUE) packet->dts = packet->pts;
             if (packet->duration <= 0) {
-              packet->duration = av_rescale_q(1, direct_state_->encoder->time_base,
-                                              direct_state_->stream->time_base);
+              packet->duration =
+                  av_rescale_q(1, direct_state_->encoder->time_base,
+                               direct_state_->stream->time_base);
             }
             packet->stream_index = direct_state_->stream->index;
             // Keep libx264 Annex-B framing for FFmpeg RTSP/RTP packetization.
             CheckAv(av_interleaved_write_frame(direct_state_->format, packet),
                     "write direct RTSP encoded packet");
-            if (direct_state_->format->pb != nullptr) avio_flush(direct_state_->format->pb);
+            if (direct_state_->format->pb != nullptr)
+              avio_flush(direct_state_->format->pb);
             av_packet_free(&packet);
           }
         } else {
@@ -1517,10 +1681,12 @@ RtspVideoPublisher::RtspVideoPublisher(const std::string& url, double fps, int w
           frame->width = width_;
           frame->height = height_;
           frame->pts = direct_state_->next_frame_pts++;
-          Check(queued.nv12.size() == static_cast<std::size_t>(width_) * height_ * 3 / 2,
+          Check(queued.nv12.size() ==
+                    static_cast<std::size_t>(width_) * height_ * 3 / 2,
                 "direct RTSP NV12 frame has unexpected size");
-          CheckAv(av_image_fill_arrays(frame->data, frame->linesize, queued.nv12.data(),
-                                       AV_PIX_FMT_NV12, width_, height_, 1),
+          CheckAv(av_image_fill_arrays(frame->data, frame->linesize,
+                                       queued.nv12.data(), AV_PIX_FMT_NV12,
+                                       width_, height_, 1),
                   "map direct RTSP NV12 frame");
           CheckAv(avcodec_send_frame(direct_state_->encoder, frame),
                   "send direct RTSP NV12 frame");
@@ -1528,7 +1694,8 @@ RtspVideoPublisher::RtspVideoPublisher(const std::string& url, double fps, int w
           for (;;) {
             AVPacket* packet = av_packet_alloc();
             Check(packet != nullptr, "allocate direct RTSP encoded packet");
-            const int receive = avcodec_receive_packet(direct_state_->encoder, packet);
+            const int receive =
+                avcodec_receive_packet(direct_state_->encoder, packet);
             if (receive == AVERROR(EAGAIN) || receive == AVERROR_EOF) {
               av_packet_free(&packet);
               break;
@@ -1536,17 +1703,20 @@ RtspVideoPublisher::RtspVideoPublisher(const std::string& url, double fps, int w
             CheckAv(receive, "receive direct RTSP encoded packet");
             av_packet_rescale_ts(packet, direct_state_->encoder->time_base,
                                  direct_state_->stream->time_base);
-            if (packet->pts == AV_NOPTS_VALUE) packet->pts = direct_state_->next_frame_pts;
+            if (packet->pts == AV_NOPTS_VALUE)
+              packet->pts = direct_state_->next_frame_pts;
             if (packet->dts == AV_NOPTS_VALUE) packet->dts = packet->pts;
             if (packet->duration <= 0) {
-              packet->duration = av_rescale_q(1, direct_state_->encoder->time_base,
-                                              direct_state_->stream->time_base);
+              packet->duration =
+                  av_rescale_q(1, direct_state_->encoder->time_base,
+                               direct_state_->stream->time_base);
             }
             packet->stream_index = direct_state_->stream->index;
             // Keep libx264 Annex-B framing for FFmpeg RTSP/RTP packetization.
             CheckAv(av_interleaved_write_frame(direct_state_->format, packet),
                     "write direct RTSP encoded packet");
-            if (direct_state_->format->pb != nullptr) avio_flush(direct_state_->format->pb);
+            if (direct_state_->format->pb != nullptr)
+              avio_flush(direct_state_->format->pb);
             av_packet_free(&packet);
           }
         }
@@ -1581,10 +1751,12 @@ void RtspVideoPublisher::WriteTensorFrame(const codec::TensorData& tensor) {
   Check(direct_state_ != nullptr && !closed_, "RTSP publisher is closed");
   if (worker_error_ != nullptr) std::rethrow_exception(worker_error_);
   cv_.wait(lock, [this] {
-    return stopping_ || closed_ || worker_error_ != nullptr || queue_.size() < queue_capacity_;
+    return stopping_ || closed_ || worker_error_ != nullptr ||
+           queue_.size() < queue_capacity_;
   });
   if (worker_error_ != nullptr) std::rethrow_exception(worker_error_);
-  Check(direct_state_ != nullptr && !closed_ && !stopping_, "RTSP publisher is closed");
+  Check(direct_state_ != nullptr && !closed_ && !stopping_,
+        "RTSP publisher is closed");
   queue_.push_back(QueuedFrame{codec::CloneTensor(tensor), {}, {}});
   cv_.notify_one();
 }
@@ -1595,24 +1767,29 @@ void RtspVideoPublisher::WriteNv12Frame(std::vector<uint8_t> frame) {
   Check(direct_state_ != nullptr && !closed_, "RTSP publisher is closed");
   if (worker_error_ != nullptr) std::rethrow_exception(worker_error_);
   cv_.wait(lock, [this] {
-    return stopping_ || closed_ || worker_error_ != nullptr || queue_.size() < queue_capacity_;
+    return stopping_ || closed_ || worker_error_ != nullptr ||
+           queue_.size() < queue_capacity_;
   });
   if (worker_error_ != nullptr) std::rethrow_exception(worker_error_);
-  Check(direct_state_ != nullptr && !closed_ && !stopping_, "RTSP publisher is closed");
+  Check(direct_state_ != nullptr && !closed_ && !stopping_,
+        "RTSP publisher is closed");
   queue_.push_back(QueuedFrame{{}, std::move(frame), {}});
   cv_.notify_one();
 }
 
 void RtspVideoPublisher::WriteH264Frame(std::vector<uint8_t> frame) {
-  Check(h264_copy_, "H.264 bitstream can only be written to a copy-mode RTSP publisher");
+  Check(h264_copy_,
+        "H.264 bitstream can only be written to a copy-mode RTSP publisher");
   Check(!frame.empty(), "H.264 output frame must not be empty");
   std::unique_lock<std::mutex> lock(mutex_);
   Check(direct_state_ != nullptr && !closed_, "RTSP publisher is closed");
   cv_.wait(lock, [this] {
-    return stopping_ || closed_ || worker_error_ != nullptr || queue_.size() < queue_capacity_;
+    return stopping_ || closed_ || worker_error_ != nullptr ||
+           queue_.size() < queue_capacity_;
   });
   if (worker_error_ != nullptr) std::rethrow_exception(worker_error_);
-  Check(direct_state_ != nullptr && !closed_ && !stopping_, "RTSP publisher is closed");
+  Check(direct_state_ != nullptr && !closed_ && !stopping_,
+        "RTSP publisher is closed");
   queue_.push_back(QueuedFrame{{}, {}, std::move(frame)});
   cv_.notify_one();
 }
@@ -1638,7 +1815,8 @@ void RtspVideoPublisher::Close() {
       for (;;) {
         AVPacket* packet = av_packet_alloc();
         Check(packet != nullptr, "allocate direct RTSP flush packet");
-        const int receive = avcodec_receive_packet(direct_state_->encoder, packet);
+        const int receive =
+            avcodec_receive_packet(direct_state_->encoder, packet);
         if (receive == AVERROR(EAGAIN) || receive == AVERROR_EOF) {
           av_packet_free(&packet);
           break;
@@ -1662,8 +1840,8 @@ void RtspVideoPublisher::Close() {
 
 bool IsVideoPath(const std::filesystem::path& path) {
   const std::string extension = ToLower(path.extension().string());
-  return extension == ".mp4" || extension == ".mov" || extension == ".mkv" || extension == ".avi" ||
-         extension == ".webm";
+  return extension == ".mp4" || extension == ".mov" || extension == ".mkv" ||
+         extension == ".avi" || extension == ".webm";
 }
 
 std::string GuessDecodeOutputFormat(const std::filesystem::path& output_path,
@@ -1672,18 +1850,19 @@ std::string GuessDecodeOutputFormat(const std::filesystem::path& output_path,
     return ToLower(configured_format);
   }
   const std::string extension = ToLower(output_path.extension().string());
-  if (extension == ".mp4" || extension == ".mov" || extension == ".mkv" || extension == ".avi" ||
-      extension == ".webm") {
+  if (extension == ".mp4" || extension == ".mov" || extension == ".mkv" ||
+      extension == ".avi" || extension == ".webm") {
     return "mp4";
   }
   return "png";
 }
 
-void WriteTensorFrameAsPng(const codec::TensorData& tensor, int width, int height,
-                           const std::filesystem::path& path) {
+void WriteTensorFrameAsPng(const codec::TensorData& tensor, int width,
+                           int height, const std::filesystem::path& path) {
   std::filesystem::create_directories(path.parent_path());
   const cv::Mat frame = TensorToBgrMat(tensor, width, height);
-  Check(cv::imwrite(path.string(), frame), "failed to write PNG frame: " + path.string());
+  Check(cv::imwrite(path.string(), frame),
+        "failed to write PNG frame: " + path.string());
 }
 
 }  // namespace mlvc::io

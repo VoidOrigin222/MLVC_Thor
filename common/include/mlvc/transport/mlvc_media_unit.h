@@ -24,11 +24,13 @@ constexpr uint32_t kMlvcNoReference = 0xffffffffu;
 
 enum class MlvcSerial32Order { kSame, kNewer, kOlder, kAmbiguous };
 
-inline MlvcSerial32Order CompareMlvcSerial32(uint32_t candidate, uint32_t current) {
+inline MlvcSerial32Order CompareMlvcSerial32(uint32_t candidate,
+                                             uint32_t current) {
   const uint32_t distance = candidate - current;
   if (distance == 0) return MlvcSerial32Order::kSame;
   if (distance == 0x80000000u) return MlvcSerial32Order::kAmbiguous;
-  return distance < 0x80000000u ? MlvcSerial32Order::kNewer : MlvcSerial32Order::kOlder;
+  return distance < 0x80000000u ? MlvcSerial32Order::kNewer
+                                : MlvcSerial32Order::kOlder;
 }
 
 enum class MlvcMediaUnitType : uint8_t {

@@ -20,7 +20,8 @@ namespace mlvc {
 
 class ThreadPool final : public TaskExecutor {
  public:
-  explicit ThreadPool(std::size_t thread_count = 0, std::size_t max_queue_size = 0);
+  explicit ThreadPool(std::size_t thread_count = 0,
+                      std::size_t max_queue_size = 0);
   ~ThreadPool() override;
 
   ThreadPool(const ThreadPool&) = delete;

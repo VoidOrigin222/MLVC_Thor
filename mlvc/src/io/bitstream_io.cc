@@ -1,4 +1,4 @@
-#include <mlvc/io/bitstream_io.h>
+#include "mlvc/io/bitstream_io.h"
 
 #include <algorithm>
 #include <fstream>
@@ -11,26 +11,32 @@ namespace mlvc::io {
 
 class FileBitstreamInput::Impl {
  public:
-  explicit Impl(const std::filesystem::path& path) : input(path, std::ios::binary) {}
+  explicit Impl(const std::filesystem::path& path)
+      : input(path, std::ios::binary) {}
 
   std::ifstream input;
 };
 
-FileBitstreamInput::FileBitstreamInput(std::filesystem::path path) : path_(std::move(path)) {
+FileBitstreamInput::FileBitstreamInput(std::filesystem::path path)
+    : path_(std::move(path)) {
   {
     std::ifstream input(path_, std::ios::binary | std::ios::ate);
-    mlvc::Check(input.good(), "failed to open input bitstream: " + path_.string());
+    mlvc::Check(input.good(),
+                "failed to open input bitstream: " + path_.string());
     total_bytes_ = static_cast<uint64_t>(input.tellg());
   }
   impl_ = new Impl(path_);
-  mlvc::Check(impl_->input.good(), "failed to open input bitstream: " + path_.string());
+  mlvc::Check(impl_->input.good(),
+              "failed to open input bitstream: " + path_.string());
 }
 
 FileBitstreamInput::~FileBitstreamInput() { delete impl_; }
 
 std::istream& FileBitstreamInput::stream() { return impl_->input; }
 
-bool FileBitstreamInput::AtEnd() { return impl_->input.peek() == std::char_traits<char>::eof(); }
+bool FileBitstreamInput::AtEnd() {
+  return impl_->input.peek() == std::char_traits<char>::eof();
+}
 
 std::optional<std::streampos> FileBitstreamInput::Tell() {
   const std::streampos position = impl_->input.tellg();
@@ -40,12 +46,14 @@ std::optional<std::streampos> FileBitstreamInput::Tell() {
   return position;
 }
 
-std::optional<uint64_t> FileBitstreamInput::TotalBytes() const { return total_bytes_; }
+std::optional<uint64_t> FileBitstreamInput::TotalBytes() const {
+  return total_bytes_;
+}
 
 std::string FileBitstreamInput::Description() const { return path_.string(); }
 
-std::optional<BitstreamSummary> ScanBitstreamSummary(std::istream& input, int frame_num,
-                                                     std::optional<uint64_t> total_bytes) {
+std::optional<BitstreamSummary> ScanBitstreamSummary(
+    std::istream& input, int frame_num, std::optional<uint64_t> total_bytes) {
   mlvc::SpsHelper sps_helper;
   BitstreamSummary summary;
   while (input.peek() != std::char_traits<char>::eof()) {
@@ -79,7 +87,8 @@ std::optional<BitstreamSummary> ScanBitstreamSummary(std::istream& input, int fr
     summary.height = sps->height;
     (void)mlvc::ReadIpRemaining(input);
     const std::streampos unit_end = input.tellg();
-    summary.bytes += static_cast<uint64_t>(std::max<std::streamoff>(unit_end - unit_start, 0));
+    summary.bytes += static_cast<uint64_t>(
+        std::max<std::streamoff>(unit_end - unit_start, 0));
     ++summary.frames;
   }
   if (summary.frames == 0) {
@@ -88,8 +97,8 @@ std::optional<BitstreamSummary> ScanBitstreamSummary(std::istream& input, int fr
   return summary;
 }
 
-std::optional<BitstreamSummary> ScanBitstreamFile(const std::filesystem::path& input_path,
-                                                  int frame_num) {
+std::optional<BitstreamSummary> ScanBitstreamFile(
+    const std::filesystem::path& input_path, int frame_num) {
   std::ifstream input(input_path, std::ios::binary | std::ios::ate);
   if (!input.good()) {
     return std::nullopt;
@@ -99,7 +108,8 @@ std::optional<BitstreamSummary> ScanBitstreamFile(const std::filesystem::path& i
   return ScanBitstreamSummary(input, frame_num, total_bytes);
 }
 
-uint64_t StreamByteDistance(std::optional<std::streampos> begin, std::optional<std::streampos> end,
+uint64_t StreamByteDistance(std::optional<std::streampos> begin,
+                            std::optional<std::streampos> end,
                             uint64_t fallback) {
   if (!begin.has_value() || !end.has_value()) {
     return fallback;
@@ -107,7 +117,8 @@ uint64_t StreamByteDistance(std::optional<std::streampos> begin, std::optional<s
   return static_cast<uint64_t>(std::max<std::streamoff>(*end - *begin, 0));
 }
 
-void WriteBytesFile(const std::string& bytes, const std::filesystem::path& path) {
+void WriteBytesFile(const std::string& bytes,
+                    const std::filesystem::path& path) {
   std::filesystem::create_directories(path.parent_path());
   std::ofstream output(path, std::ios::binary);
   mlvc::Check(output.good(), "failed to open byte output: " + path.string());

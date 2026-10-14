@@ -1,14 +1,13 @@
 #include "mlvc/transport/udp_message_transport.h"
 
-#include <arpa/inet.h>
 #include <netdb.h>
 #include <sys/socket.h>
 #include <sys/time.h>
 #include <unistd.h>
 
 #include <algorithm>
-#include <atomic>
 #include <array>
+#include <atomic>
 #include <cerrno>
 #include <condition_variable>
 #include <cstring>
@@ -23,6 +22,7 @@
 
 #include "mlvc/core/status.h"
 #include "mlvc/transport/udp_pacer.h"
+#include <arpa/inet.h>
 
 namespace mlvc::transport {
 namespace {
@@ -34,7 +34,8 @@ constexpr std::size_t kHeaderBytes = 14;
 constexpr std::size_t kTailBytes = 2;
 constexpr std::size_t kIpv4UdpOverheadBytes = 28;
 constexpr std::size_t kPayloadBytes = 1024;
-constexpr std::size_t kMaxPacketBytes = kHeaderBytes + kPayloadBytes + kTailBytes;
+constexpr std::size_t kMaxPacketBytes =
+    kHeaderBytes + kPayloadBytes + kTailBytes;
 constexpr std::size_t kMaxMessageBytes = 128u * 1024u * 1024u;
 constexpr std::size_t kMaxQueuedSendMessages = 64;
 constexpr std::size_t kMaxQueuedReceiveMessages = 2048;
@@ -46,16 +47,22 @@ uint16_t ReadU16(const uint8_t* data) {
 }
 
 uint32_t ReadU32(const uint8_t* data) {
-  return static_cast<uint32_t>(data[0]) | (static_cast<uint32_t>(data[1]) << 8) |
-         (static_cast<uint32_t>(data[2]) << 16) | (static_cast<uint32_t>(data[3]) << 24);
+  return static_cast<uint32_t>(data[0]) |
+         (static_cast<uint32_t>(data[1]) << 8) |
+         (static_cast<uint32_t>(data[2]) << 16) |
+         (static_cast<uint32_t>(data[3]) << 24);
 }
 
-void CheckPacket(const uint8_t* packet, std::size_t size, const std::string& context) {
-  mlvc::Check(size >= kHeaderBytes + kTailBytes, "truncated " + context + " UDP packet");
-  mlvc::Check(packet[0] == kMagic0 && packet[1] == kMagic1, "invalid " + context + " UDP magic");
+void CheckPacket(const uint8_t* packet, std::size_t size,
+                 const std::string& context) {
+  mlvc::Check(size >= kHeaderBytes + kTailBytes,
+              "truncated " + context + " UDP packet");
+  mlvc::Check(packet[0] == kMagic0 && packet[1] == kMagic1,
+              "invalid " + context + " UDP magic");
   mlvc::Check(packet[size - 2] == kTail0 && packet[size - 1] == kTail1,
               "invalid " + context + " UDP tail");
-  mlvc::Check(packet[13] == 0, "invalid " + context + " UDP reserved header byte");
+  mlvc::Check(packet[13] == 0,
+              "invalid " + context + " UDP reserved header byte");
   const uint16_t payload_size = ReadU16(packet + 6);
   mlvc::Check(size == kHeaderBytes + payload_size + kTailBytes,
               context + " UDP payload length mismatch");
@@ -66,14 +73,17 @@ struct Address {
   socklen_t length = 0;
 };
 
-Address ResolveAddress(const std::string& host, uint16_t port, const std::string& context) {
+Address ResolveAddress(const std::string& host, uint16_t port,
+                       const std::string& context) {
   addrinfo hints{};
   hints.ai_family = AF_INET;
   hints.ai_socktype = SOCK_DGRAM;
   addrinfo* result = nullptr;
   const std::string service = std::to_string(port);
-  mlvc::Check(getaddrinfo(host.c_str(), service.c_str(), &hints, &result) == 0 && result,
-              "failed to resolve " + context + " UDP destination");
+  mlvc::Check(
+      getaddrinfo(host.c_str(), service.c_str(), &hints, &result) == 0 &&
+          result,
+      "failed to resolve " + context + " UDP destination");
   Address address;
   std::memcpy(&address.storage, result->ai_addr, result->ai_addrlen);
   address.length = static_cast<socklen_t>(result->ai_addrlen);
@@ -91,7 +101,8 @@ struct UdpMessageSender::Impl {
     std::chrono::steady_clock::time_point enqueued_at;
   };
 
-  explicit Impl(const std::string& host, uint16_t port, std::string context, UdpSendOptions options)
+  explicit Impl(const std::string& host, uint16_t port, std::string context,
+                UdpSendOptions options)
       : address(ResolveAddress(host, port, context)),
         error_context(std::move(context)),
         max_queue_bytes(options.max_queue_bytes),
@@ -99,9 +110,12 @@ struct UdpMessageSender::Impl {
         pacing_rate_bps(options.pacing_rate_bps),
         pacer(options.pacing_rate_bps, options.max_burst_bytes),
         before_send(std::move(options.before_send)) {
-    mlvc::Check(max_queue_bytes > 0, error_context + " max queue bytes must be positive");
-    mlvc::Check(options.max_burst_bytes >= kMaxPacketBytes + kIpv4UdpOverheadBytes,
-                error_context + " max burst bytes must be at least one full UDP packet");
+    mlvc::Check(max_queue_bytes > 0,
+                error_context + " max queue bytes must be positive");
+    mlvc::Check(
+        options.max_burst_bytes >= kMaxPacketBytes + kIpv4UdpOverheadBytes,
+        error_context +
+            " max burst bytes must be at least one full UDP packet");
     socket = ::socket(AF_INET, SOCK_DGRAM, 0);
     mlvc::Check(socket >= 0, "failed to create " + error_context + " socket");
     send_thread = std::thread([this] { SendLoop(); });
@@ -112,8 +126,8 @@ struct UdpMessageSender::Impl {
     try {
       Flush();
     } catch (const std::exception& e) {
-      std::cerr << "Warning: " << error_context << " flush failed during cleanup: " << e.what()
-                << std::endl;
+      std::cerr << "Warning: " << error_context
+                << " flush failed during cleanup: " << e.what() << std::endl;
     }
     {
       std::lock_guard<std::mutex> lock(queue_mutex);
@@ -129,20 +143,26 @@ struct UdpMessageSender::Impl {
   }
 
   void Send(const std::vector<uint8_t>& message, uint8_t channel) {
-    mlvc::Check(!message.empty(), "cannot send an empty " + error_context + " message");
-    mlvc::Check(message.size() <= kMaxMessageBytes, error_context + " message is too large");
-    const std::size_t packet_count = (message.size() + kPayloadBytes - 1) / kPayloadBytes;
+    mlvc::Check(!message.empty(),
+                "cannot send an empty " + error_context + " message");
+    mlvc::Check(message.size() <= kMaxMessageBytes,
+                error_context + " message is too large");
+    const std::size_t packet_count =
+        (message.size() + kPayloadBytes - 1) / kPayloadBytes;
     mlvc::Check(packet_count <= std::numeric_limits<uint16_t>::max(),
                 error_context + " message has too many fragments");
     const std::size_t wire_bytes =
-        message.size() + packet_count * (kHeaderBytes + kTailBytes + kIpv4UdpOverheadBytes);
+        message.size() +
+        packet_count * (kHeaderBytes + kTailBytes + kIpv4UdpOverheadBytes);
     mlvc::Check(wire_bytes <= max_queue_bytes,
                 error_context + " message exceeds configured send queue bytes");
     if (pacing_rate_bps > 0 && max_queue_delay_ms > 0) {
       const long double message_delay_us =
           static_cast<long double>(wire_bytes) * 8000000.0L / pacing_rate_bps;
-      mlvc::Check(message_delay_us <= static_cast<long double>(max_queue_delay_ms) * 1000.0L,
-                  error_context + " message exceeds configured maximum queue delay");
+      mlvc::Check(
+          message_delay_us <=
+              static_cast<long double>(max_queue_delay_ms) * 1000.0L,
+          error_context + " message exceeds configured maximum queue delay");
     }
     std::unique_lock<std::mutex> lock(queue_mutex);
     if (send_error != nullptr) {
@@ -151,12 +171,15 @@ struct UdpMessageSender::Impl {
     mlvc::Check(!stopping, error_context + " is stopping");
     queue_cv.wait(lock, [this, wire_bytes] {
       if (send_error != nullptr || stopping) return true;
-      if (queued_bytes > max_queue_bytes || wire_bytes > max_queue_bytes - queued_bytes)
+      if (queued_bytes > max_queue_bytes ||
+          wire_bytes > max_queue_bytes - queued_bytes)
         return false;
       if (max_queue_delay_ms == 0 || pacing_rate_bps == 0) return true;
-      const long double estimated_us = static_cast<long double>(queued_bytes + wire_bytes) *
-                                       8000000.0L / pacing_rate_bps;
-      return estimated_us <= static_cast<long double>(max_queue_delay_ms) * 1000.0L;
+      const long double estimated_us =
+          static_cast<long double>(queued_bytes + wire_bytes) * 8000000.0L /
+          pacing_rate_bps;
+      return estimated_us <=
+             static_cast<long double>(max_queue_delay_ms) * 1000.0L;
     });
     if (send_error != nullptr) std::rethrow_exception(send_error);
     mlvc::Check(!stopping, error_context + " is stopping");
@@ -168,8 +191,9 @@ struct UdpMessageSender::Impl {
 
   void Flush() {
     std::unique_lock<std::mutex> lock(queue_mutex);
-    queue_cv.wait(lock,
-                  [this] { return (send_queue.empty() && !sending) || send_error != nullptr; });
+    queue_cv.wait(lock, [this] {
+      return (send_queue.empty() && !sending) || send_error != nullptr;
+    });
     if (send_error != nullptr) {
       std::rethrow_exception(send_error);
     }
@@ -190,11 +214,14 @@ struct UdpMessageSender::Impl {
       }
       queue_cv.notify_all();
       try {
-        const auto queue_delay = std::chrono::duration_cast<std::chrono::microseconds>(
-            std::chrono::steady_clock::now() - pending.enqueued_at);
-        max_queue_delay_us.store(std::max<uint64_t>(max_queue_delay_us.load(),
-                                                    static_cast<uint64_t>(queue_delay.count())));
-        queue_delay_total_us.fetch_add(static_cast<uint64_t>(queue_delay.count()));
+        const auto queue_delay =
+            std::chrono::duration_cast<std::chrono::microseconds>(
+                std::chrono::steady_clock::now() - pending.enqueued_at);
+        max_queue_delay_us.store(
+            std::max<uint64_t>(max_queue_delay_us.load(),
+                               static_cast<uint64_t>(queue_delay.count())));
+        queue_delay_total_us.fetch_add(
+            static_cast<uint64_t>(queue_delay.count()));
         queue_delay_samples.fetch_add(1);
         SendMessageNow(pending.message, pending.channel);
         {
@@ -217,17 +244,19 @@ struct UdpMessageSender::Impl {
   }
 
   void SendMessageNow(const std::vector<uint8_t>& message, uint8_t channel) {
-    const std::size_t packet_count = (message.size() + kPayloadBytes - 1) / kPayloadBytes;
+    const std::size_t packet_count =
+        (message.size() + kPayloadBytes - 1) / kPayloadBytes;
     mlvc::Check(packet_count <= std::numeric_limits<uint16_t>::max(),
                 error_context + " message has too many fragments");
     mlvc::Check(message.size() <= std::numeric_limits<uint32_t>::max(),
                 error_context + " message is too large");
     const uint32_t total_size = static_cast<uint32_t>(message.size());
     std::array<uint8_t, kMaxPacketBytes> packet{};
-    for (std::size_t packet_index = 0; packet_index < packet_count; ++packet_index) {
+    for (std::size_t packet_index = 0; packet_index < packet_count;
+         ++packet_index) {
       const std::size_t offset = packet_index * kPayloadBytes;
-      const uint16_t payload_size =
-          static_cast<uint16_t>(std::min(kPayloadBytes, message.size() - offset));
+      const uint16_t payload_size = static_cast<uint16_t>(
+          std::min(kPayloadBytes, message.size() - offset));
       packet[0] = kMagic0;
       packet[1] = kMagic1;
       packet[2] = static_cast<uint8_t>(packet_index);
@@ -242,11 +271,13 @@ struct UdpMessageSender::Impl {
       packet[11] = static_cast<uint8_t>(total_size >> 24);
       packet[12] = channel;
       packet[13] = 0;
-      std::memcpy(packet.data() + kHeaderBytes, message.data() + offset, payload_size);
+      std::memcpy(packet.data() + kHeaderBytes, message.data() + offset,
+                  payload_size);
       packet[kHeaderBytes + payload_size] = kTail0;
       packet[kHeaderBytes + payload_size + 1] = kTail1;
       const auto packet_size = kHeaderBytes + payload_size + kTailBytes;
-      const std::size_t estimated_wire_packet_size = packet_size + kIpv4UdpOverheadBytes;
+      const std::size_t estimated_wire_packet_size =
+          packet_size + kIpv4UdpOverheadBytes;
       const auto delay = pacer.ConsumeAndGetDelay(estimated_wire_packet_size);
       if (delay.count() > 0) std::this_thread::sleep_for(delay);
       if (before_send) before_send();
@@ -255,15 +286,17 @@ struct UdpMessageSender::Impl {
                          reinterpret_cast<const sockaddr*>(&address.storage),
                          address.length) == static_cast<ssize_t>(packet_size),
                   "failed to send " + error_context + " UDP packet");
-      const auto blocked = std::chrono::duration_cast<std::chrono::microseconds>(
-          std::chrono::steady_clock::now() - send_begin);
+      const auto blocked =
+          std::chrono::duration_cast<std::chrono::microseconds>(
+              std::chrono::steady_clock::now() - send_begin);
       socket_block_us.fetch_add(static_cast<uint64_t>(blocked.count()));
       wire_bytes_sent.fetch_add(estimated_wire_packet_size);
       packets_sent.fetch_add(1);
-      const uint64_t burst = delay.count() > 0
-                                 ? estimated_wire_packet_size
-                                 : burst_bytes.fetch_add(estimated_wire_packet_size) +
-                                       estimated_wire_packet_size;
+      const uint64_t burst =
+          delay.count() > 0
+              ? estimated_wire_packet_size
+              : burst_bytes.fetch_add(estimated_wire_packet_size) +
+                    estimated_wire_packet_size;
       if (delay.count() > 0) burst_bytes.store(estimated_wire_packet_size);
       uint64_t previous = max_burst_bytes_observed.load();
       while (burst > previous &&
@@ -299,12 +332,15 @@ struct UdpMessageSender::Impl {
 };
 
 UdpMessageSender::UdpMessageSender(const std::string& host, uint16_t port,
-                                   std::string error_context, UdpSendOptions options)
-    : impl_(std::make_unique<Impl>(host, port, std::move(error_context), options)) {}
+                                   std::string error_context,
+                                   UdpSendOptions options)
+    : impl_(std::make_unique<Impl>(host, port, std::move(error_context),
+                                   options)) {}
 
 UdpMessageSender::~UdpMessageSender() = default;
 
-void UdpMessageSender::Send(const std::vector<uint8_t>& message, uint8_t channel) {
+void UdpMessageSender::Send(const std::vector<uint8_t>& message,
+                            uint8_t channel) {
   impl_->Send(message, channel);
 }
 
@@ -317,27 +353,32 @@ UdpTransportStats UdpMessageSender::Stats() const {
   stats.max_burst_bytes = impl_->max_burst_bytes_observed.load();
   stats.max_queue_delay_us = impl_->max_queue_delay_us.load();
   const uint64_t samples = impl_->queue_delay_samples.load();
-  stats.average_queue_delay_us = samples == 0 ? 0 : impl_->queue_delay_total_us.load() / samples;
+  stats.average_queue_delay_us =
+      samples == 0 ? 0 : impl_->queue_delay_total_us.load() / samples;
   stats.socket_block_us = impl_->socket_block_us.load();
   return stats;
 }
 
 struct UdpMessageReceiver::Impl {
-  explicit Impl(uint16_t port, std::string context) : error_context(std::move(context)) {
+  explicit Impl(uint16_t port, std::string context)
+      : error_context(std::move(context)) {
     socket = ::socket(AF_INET, SOCK_DGRAM, 0);
     mlvc::Check(socket >= 0, "failed to create " + error_context + " socket");
     int reuse = 1;
     setsockopt(socket, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
     const int receive_buffer = 8 * 1024 * 1024;
-    setsockopt(socket, SOL_SOCKET, SO_RCVBUF, &receive_buffer, sizeof(receive_buffer));
+    setsockopt(socket, SOL_SOCKET, SO_RCVBUF, &receive_buffer,
+               sizeof(receive_buffer));
     timeval receive_timeout{};
     receive_timeout.tv_sec = kReceiveTimeoutSeconds;
-    setsockopt(socket, SOL_SOCKET, SO_RCVTIMEO, &receive_timeout, sizeof(receive_timeout));
+    setsockopt(socket, SOL_SOCKET, SO_RCVTIMEO, &receive_timeout,
+               sizeof(receive_timeout));
     sockaddr_in address{};
     address.sin_family = AF_INET;
     address.sin_addr.s_addr = htonl(INADDR_ANY);
     address.sin_port = htons(port);
-    mlvc::Check(bind(socket, reinterpret_cast<const sockaddr*>(&address), sizeof(address)) == 0,
+    mlvc::Check(bind(socket, reinterpret_cast<const sockaddr*>(&address),
+                     sizeof(address)) == 0,
                 "failed to bind " + error_context + " port");
     receive_thread = std::thread([this] { ReceiveLoop(); });
   }
@@ -359,12 +400,14 @@ struct UdpMessageReceiver::Impl {
 
   std::vector<uint8_t> Receive() {
     std::unique_lock<std::mutex> lock(queue_mutex);
-    queue_cv.wait(
-        lock, [this] { return stopping || receive_error != nullptr || !message_queue.empty(); });
+    queue_cv.wait(lock, [this] {
+      return stopping || receive_error != nullptr || !message_queue.empty();
+    });
     if (receive_error != nullptr) {
       std::rethrow_exception(receive_error);
     }
-    mlvc::Check(!message_queue.empty(), error_context + " stopped before receiving a message");
+    mlvc::Check(!message_queue.empty(),
+                error_context + " stopped before receiving a message");
     queued_receive_bytes -= message_queue.front().size();
     std::vector<uint8_t> message = std::move(message_queue.front());
     message_queue.pop_front();
@@ -383,13 +426,15 @@ struct UdpMessageReceiver::Impl {
           }
         }
         std::vector<uint8_t> message = ReceiveMessage();
-        mlvc::Check(message.size() <= kMaxQueuedReceiveBytes,
-                    error_context + " message exceeds receive queue byte limit");
+        mlvc::Check(
+            message.size() <= kMaxQueuedReceiveBytes,
+            error_context + " message exceeds receive queue byte limit");
         std::unique_lock<std::mutex> lock(queue_mutex);
         queue_cv.wait(lock, [this, &message] {
           return stopping ||
                  (message_queue.size() < kMaxQueuedReceiveMessages &&
-                  message.size() <= kMaxQueuedReceiveBytes - queued_receive_bytes);
+                  message.size() <=
+                      kMaxQueuedReceiveBytes - queued_receive_bytes);
         });
         if (stopping) return;
         queued_receive_bytes += message.size();
@@ -415,16 +460,20 @@ struct UdpMessageReceiver::Impl {
     bool assembling = false;
     std::array<uint8_t, kMaxPacketBytes> packet{};
     for (;;) {
-      const ssize_t bytes = recvfrom(socket, packet.data(), packet.size(), 0, nullptr, nullptr);
+      const ssize_t bytes =
+          recvfrom(socket, packet.data(), packet.size(), 0, nullptr, nullptr);
       if (bytes < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
         if (assembling) {
-          throw mlvc::Error(error_context +
-                            " UDP message timed out; packet loss or reordering detected");
+          throw mlvc::Error(
+              error_context +
+              " UDP message timed out; packet loss or reordering detected");
         }
         continue;
       }
-      mlvc::Check(bytes >= 0, "failed to receive " + error_context + " UDP packet");
-      CheckPacket(packet.data(), static_cast<std::size_t>(bytes), error_context);
+      mlvc::Check(bytes >= 0,
+                  "failed to receive " + error_context + " UDP packet");
+      CheckPacket(packet.data(), static_cast<std::size_t>(bytes),
+                  error_context);
       const uint16_t packet_index = ReadU16(packet.data() + 2);
       const uint16_t total_packets = ReadU16(packet.data() + 4);
       const uint16_t payload_size = ReadU16(packet.data() + 6);
@@ -434,17 +483,21 @@ struct UdpMessageReceiver::Impl {
       mlvc::Check(total_size != 0 && total_size <= kMaxMessageBytes,
                   "invalid " + error_context + " UDP message size");
       const std::size_t expected_packet_count =
-          (static_cast<std::size_t>(total_size) + kPayloadBytes - 1) / kPayloadBytes;
-      mlvc::Check(expected_packet_count <= std::numeric_limits<uint16_t>::max() &&
-                      total_packets == expected_packet_count,
-                  "invalid " + error_context + " UDP fragment count for message size");
-      const std::size_t offset = static_cast<std::size_t>(packet_index) * kPayloadBytes;
-      const std::size_t expected_payload_size =
-          std::min(kPayloadBytes, static_cast<std::size_t>(total_size) - offset);
+          (static_cast<std::size_t>(total_size) + kPayloadBytes - 1) /
+          kPayloadBytes;
+      mlvc::Check(
+          expected_packet_count <= std::numeric_limits<uint16_t>::max() &&
+              total_packets == expected_packet_count,
+          "invalid " + error_context + " UDP fragment count for message size");
+      const std::size_t offset =
+          static_cast<std::size_t>(packet_index) * kPayloadBytes;
+      const std::size_t expected_payload_size = std::min(
+          kPayloadBytes, static_cast<std::size_t>(total_size) - offset);
       mlvc::Check(payload_size == expected_payload_size,
                   "invalid " + error_context + " UDP fragment payload size");
       if (packet_index == 0) {
-        if (!assembling || total_packets != expected_packets || total_size != expected_size) {
+        if (!assembling || total_packets != expected_packets ||
+            total_size != expected_size) {
           expected_packets = total_packets;
           expected_size = total_size;
           assembled.assign(expected_size, 0);
@@ -452,8 +505,8 @@ struct UdpMessageReceiver::Impl {
           received_count = 0;
           assembling = true;
         }
-      } else if (total_packets != expected_packets || total_size != expected_size ||
-                 received.empty()) {
+      } else if (total_packets != expected_packets ||
+                 total_size != expected_size || received.empty()) {
         continue;
       }
       if (total_packets != expected_packets || total_size != expected_size) {
@@ -462,11 +515,13 @@ struct UdpMessageReceiver::Impl {
       mlvc::Check(offset + payload_size <= assembled.size(),
                   error_context + " UDP fragment exceeds message");
       if (received[packet_index]) {
-        mlvc::Check(std::memcmp(assembled.data() + offset, packet.data() + kHeaderBytes,
-                                payload_size) == 0,
-                    "conflicting duplicate " + error_context + " UDP fragment");
+        mlvc::Check(
+            std::memcmp(assembled.data() + offset, packet.data() + kHeaderBytes,
+                        payload_size) == 0,
+            "conflicting duplicate " + error_context + " UDP fragment");
       } else {
-        std::memcpy(assembled.data() + offset, packet.data() + kHeaderBytes, payload_size);
+        std::memcpy(assembled.data() + offset, packet.data() + kHeaderBytes,
+                    payload_size);
         received[packet_index] = true;
         ++received_count;
       }

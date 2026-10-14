@@ -37,7 +37,8 @@ class RuntimeSidecar {
   int q_index_count() const;
   int ShiftedQp(int base_qp, int frame_adaptation_index) const;
   const uint16_t* QScaleData(const std::string& name, int qp) const;
-  std::shared_ptr<CdfGroup> MakeCdfGroupForPrefix(const std::string& prefix, bool z_table) const;
+  std::shared_ptr<CdfGroup> MakeCdfGroupForPrefix(const std::string& prefix,
+                                                  bool z_table) const;
 
  private:
   std::map<std::string, SidecarArray> arrays_;

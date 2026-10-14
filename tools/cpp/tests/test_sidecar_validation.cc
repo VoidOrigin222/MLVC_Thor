@@ -1,6 +1,3 @@
-#include <mlvc/core/status.h>
-#include <mlvc/entropy/sidecar.h>
-
 #include <cstdint>
 #include <cstring>
 #include <filesystem>
@@ -9,15 +6,18 @@
 #include <string>
 #include <vector>
 
+#include "mlvc/core/status.h"
+#include "mlvc/entropy/sidecar.h"
+
 namespace {
 template <typename T>
 void Put(std::vector<uint8_t>* out, T value) {
   const auto* bytes = reinterpret_cast<const uint8_t*>(&value);
   out->insert(out->end(), bytes, bytes + sizeof(T));
 }
-void PutArray(std::vector<uint8_t>* out, const std::string& name, uint32_t dtype,
-              const std::vector<int64_t>& shape, uint64_t declared_bytes,
-              const std::vector<uint8_t>& bytes) {
+void PutArray(std::vector<uint8_t>* out, const std::string& name,
+              uint32_t dtype, const std::vector<int64_t>& shape,
+              uint64_t declared_bytes, const std::vector<uint8_t>& bytes) {
   Put<uint32_t>(out, static_cast<uint32_t>(name.size()));
   out->insert(out->end(), name.begin(), name.end());
   Put<uint32_t>(out, dtype);
@@ -26,7 +26,8 @@ void PutArray(std::vector<uint8_t>* out, const std::string& name, uint32_t dtype
   Put<uint64_t>(out, declared_bytes);
   out->insert(out->end(), bytes.begin(), bytes.end());
 }
-void Write(const std::filesystem::path& path, const std::vector<uint8_t>& bytes) {
+void Write(const std::filesystem::path& path,
+           const std::vector<uint8_t>& bytes) {
   std::ofstream output(path, std::ios::binary | std::ios::trunc);
   output.write(reinterpret_cast<const char*>(bytes.data()),
                static_cast<std::streamsize>(bytes.size()));
@@ -65,7 +66,8 @@ int main() {
     PutArray(&bytes, "force_zero_thres", 1, {1}, sizeof(value), scalar);
     Write(valid, bytes);
     const auto loaded = mlvc::RuntimeSidecar::Load(valid);
-    mlvc::Check(loaded.force_zero_thres() == value, "valid sidecar failed to load");
+    mlvc::Check(loaded.force_zero_thres() == value,
+                "valid sidecar failed to load");
 
     auto qp_bytes = Base(2);
     PutArray(&qp_bytes, "q_shift", 2, {1}, 4, Int32Bytes({100}));
@@ -74,9 +76,12 @@ int main() {
     const auto qp_path = root / "mlvc_sidecar_qp.bin";
     Write(qp_path, qp_bytes);
     const auto qp_sidecar = mlvc::RuntimeSidecar::Load(qp_path);
-    mlvc::Check(qp_sidecar.q_index_count() == 8, "sidecar QP row count mismatch");
-    mlvc::Check(qp_sidecar.ShiftedQp(2, 0) == 7, "shifted QP was not clamped to sidecar rows");
-    mlvc::Check(qp_sidecar.ShiftedQp(-100, 0) == 0, "negative shifted QP was not clamped");
+    mlvc::Check(qp_sidecar.q_index_count() == 8,
+                "sidecar QP row count mismatch");
+    mlvc::Check(qp_sidecar.ShiftedQp(2, 0) == 7,
+                "shifted QP was not clamped to sidecar rows");
+    mlvc::Check(qp_sidecar.ShiftedQp(-100, 0) == 0,
+                "negative shifted QP was not clamped");
     Reject([&] { (void)qp_sidecar.ShiftedQp(0, -1); },
            "negative frame adaptation index accepted");
 

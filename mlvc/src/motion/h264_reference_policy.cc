@@ -1,4 +1,4 @@
-#include <mlvc/motion/h264_reference_policy.h>
+#include "mlvc/motion/h264_reference_policy.h"
 
 #include <algorithm>
 #include <climits>
@@ -18,7 +18,8 @@ class Bits {
     unsigned zeros = 0;
     for (std::size_t i = 0; i < bytes; ++i) {
       if (zeros >= 2 && source[i] == 3) {
-        Require(i + 1 < bytes && source[i + 1] <= 3, "invalid H.264 emulation-prevention byte");
+        Require(i + 1 < bytes && source[i + 1] <= 3,
+                "invalid H.264 emulation-prevention byte");
         zeros = 0;
         continue;
       }
@@ -27,7 +28,8 @@ class Bits {
     }
   }
   unsigned Read(unsigned count = 1) {
-    Require(count <= 32 && bit_ + count <= data_.size() * 8, "truncated H.264 reference syntax");
+    Require(count <= 32 && bit_ + count <= data_.size() * 8,
+            "truncated H.264 reference syntax");
     unsigned value = 0;
     for (unsigned i = 0; i < count; ++i, ++bit_) {
       value = (value << 1) | ((data_[bit_ / 8] >> (7 - bit_ % 8)) & 1);
@@ -44,7 +46,8 @@ class Bits {
   }
   int Se() {
     const unsigned value = Ue();
-    return value & 1 ? static_cast<int>((value + 1) / 2) : -static_cast<int>(value / 2);
+    return value & 1 ? static_cast<int>((value + 1) / 2)
+                     : -static_cast<int>(value / 2);
   }
   void ScalingList(int size) {
     int last = 8;
@@ -54,23 +57,27 @@ class Bits {
       if (next != 0) last = next;
     }
   }
+
  private:
   std::vector<uint8_t> data_;
   std::size_t bit_ = 0;
 };
 
-std::size_t StartCode(const uint8_t* data, std::size_t bytes, std::size_t from) {
+std::size_t StartCode(const uint8_t* data, std::size_t bytes,
+                      std::size_t from) {
   for (std::size_t i = from; i + 2 < bytes; ++i) {
     if (data[i] == 0 && data[i + 1] == 0 && data[i + 2] == 1) return i;
     if (i + 3 < bytes && data[i] == 0 && data[i + 1] == 0 && data[i + 2] == 0 &&
-        data[i + 3] == 1) return i;
+        data[i + 3] == 1)
+      return i;
   }
   return bytes;
 }
 
 }  // namespace
 
-void H264ReferencePolicy::Inspect(const uint8_t* data, std::size_t bytes, bool keyframe) {
+void H264ReferencePolicy::Inspect(const uint8_t* data, std::size_t bytes,
+                                  bool keyframe) {
   Require(data && bytes > 0 && bytes <= static_cast<std::size_t>(INT_MAX),
           "empty or oversized H.264 proxy access unit");
   std::size_t start = StartCode(data, bytes, 0);
@@ -84,29 +91,33 @@ void H264ReferencePolicy::Inspect(const uint8_t* data, std::size_t bytes, bool k
     const std::size_t next = StartCode(data, bytes, nal + 1);
     const unsigned type = data[nal] & 31;
     Require((data[nal] & 128) == 0, "invalid H.264 forbidden-zero bit");
-    Require(type < 2 || type > 4, "motion proxy does not support partitioned H.264 slices");
-    Require(type != 20 && type != 21, "motion proxy does not support MVC H.264 slices");
+    Require(type < 2 || type > 4,
+            "motion proxy does not support partitioned H.264 slices");
+    Require(type != 20 && type != 21,
+            "motion proxy does not support MVC H.264 slices");
     const unsigned reference_idc = (data[nal] >> 5) & 3;
     Bits bits(data + nal + 1, next - nal - 1);
     if (type == 7) {
       Sps sps;
       const unsigned profile = bits.Read(8);
-      bits.Read(8); // constraints
-      bits.Read(8); // level
+      bits.Read(8);  // constraints
+      bits.Read(8);  // level
       const unsigned id = bits.Ue();
       Require(id <= 31, "invalid H.264 SPS identifier");
-      if (profile == 100 || profile == 110 || profile == 122 || profile == 244 || profile == 44 ||
-          profile == 83 || profile == 86 || profile == 118 || profile == 128 || profile == 138 ||
+      if (profile == 100 || profile == 110 || profile == 122 ||
+          profile == 244 || profile == 44 || profile == 83 || profile == 86 ||
+          profile == 118 || profile == 128 || profile == 138 ||
           profile == 139 || profile == 134 || profile == 135) {
         sps.chroma_format = bits.Ue();
         Require(sps.chroma_format <= 3, "unsupported H.264 chroma syntax");
         if (sps.chroma_format == 3) sps.separate_color_plane = bits.Read();
-        bits.Ue(); // bit_depth_luma_minus8
-        bits.Ue(); // bit_depth_chroma_minus8
-        bits.Read(); // qpprime_y_zero_transform_bypass_flag
+        bits.Ue();    // bit_depth_luma_minus8
+        bits.Ue();    // bit_depth_chroma_minus8
+        bits.Read();  // qpprime_y_zero_transform_bypass_flag
         if (bits.Read()) {
           const int count = sps.chroma_format == 3 ? 12 : 8;
-          for (int i = 0; i < count; ++i) if (bits.Read()) bits.ScalingList(i < 6 ? 16 : 64);
+          for (int i = 0; i < count; ++i)
+            if (bits.Read()) bits.ScalingList(i < 6 ? 16 : 64);
         }
       }
       sps.frame_num_bits = bits.Ue() + 4;
@@ -118,16 +129,19 @@ void H264ReferencePolicy::Inspect(const uint8_t* data, std::size_t bytes, bool k
         Require(sps.poc_bits <= 16, "invalid H.264 POC width");
       } else if (sps.poc_type == 1) {
         sps.delta_poc_always_zero = bits.Read();
-        bits.Se(); bits.Se();
+        bits.Se();
+        bits.Se();
         const unsigned cycle = bits.Ue();
         Require(cycle <= 255, "invalid H.264 POC cycle");
         for (unsigned i = 0; i < cycle; ++i) bits.Se();
       }
-      bits.Ue(); // max_num_ref_frames is DPB capacity, not active count
-      bits.Read(); // gaps_in_frame_num_value_allowed_flag
-      bits.Ue(); bits.Ue(); // dimensions in macroblocks
+      bits.Ue();    // max_num_ref_frames is DPB capacity, not active count
+      bits.Read();  // gaps_in_frame_num_value_allowed_flag
+      bits.Ue();
+      bits.Ue();  // dimensions in macroblocks
       sps.frame_mbs_only = bits.Read();
-      Require(sps.frame_mbs_only, "motion proxy requires progressive H.264 frames");
+      Require(sps.frame_mbs_only,
+              "motion proxy requires progressive H.264 frames");
       sps_[id] = sps;
     } else if (type == 8) {
       const unsigned id = bits.Ue();
@@ -135,25 +149,32 @@ void H264ReferencePolicy::Inspect(const uint8_t* data, std::size_t bytes, bool k
       Pps pps;
       pps.sps_id = bits.Ue();
       Require(pps.sps_id <= 31, "invalid H.264 PPS sequence identifier");
-      bits.Read(); // entropy_coding_mode_flag
+      bits.Read();  // entropy_coding_mode_flag
       pps.bottom_poc_present = bits.Read();
-      Require(bits.Ue() == 0, "motion proxy does not support H.264 slice groups");
+      Require(bits.Ue() == 0,
+              "motion proxy does not support H.264 slice groups");
       pps.default_l0 = bits.Ue() + 1;
-      bits.Ue(); // num_ref_idx_l1_default_active_minus1
+      bits.Ue();  // num_ref_idx_l1_default_active_minus1
       pps.weighted_pred = bits.Read();
-      bits.Read(2); // weighted_bipred_idc
-      bits.Se(); bits.Se(); bits.Se();
-      bits.Read(); bits.Read();
+      bits.Read(2);  // weighted_bipred_idc
+      bits.Se();
+      bits.Se();
+      bits.Se();
+      bits.Read();
+      bits.Read();
       pps.redundant_pic_count = bits.Read();
       pps_[id] = pps;
     } else if (type == 1 || type == 5) {
       ++slices;
-      Require(type == (keyframe ? 5U : 1U), "motion proxy keyframes must be IDR pictures");
+      Require(type == (keyframe ? 5U : 1U),
+              "motion proxy keyframes must be IDR pictures");
       Require(reference_idc > 0,
-              "motion proxy frames must retain the immediately preceding reference");
-      bits.Ue(); // first_mb_in_slice
+              "motion proxy frames must retain the immediately preceding "
+              "reference");
+      bits.Ue();  // first_mb_in_slice
       const unsigned slice_type = bits.Ue() % 5;
-      Require(slice_type == (keyframe ? 2U : 0U), "motion proxy requires I/P-only slice syntax");
+      Require(slice_type == (keyframe ? 2U : 0U),
+              "motion proxy requires I/P-only slice syntax");
       const unsigned pps_id = bits.Ue();
       Require(pps_.count(pps_id), "H.264 slice references an unknown PPS");
       const Pps& pps = pps_.at(pps_id);
@@ -161,13 +182,14 @@ void H264ReferencePolicy::Inspect(const uint8_t* data, std::size_t bytes, bool k
       const Sps& sps = sps_.at(pps.sps_id);
       if (sps.separate_color_plane) bits.Read(2);
       const unsigned frame_num = bits.Read(sps.frame_num_bits);
-      Require(keyframe ? frame_num == 0 : have_reference_ && frame_num == next_frame_num_,
+      Require(keyframe ? frame_num == 0
+                       : have_reference_ && frame_num == next_frame_num_,
               "H.264 proxy reference frame numbers are not consecutive");
       if (slices == 1) picture_frame_num = frame_num;
       Require(frame_num == picture_frame_num,
               "H.264 access unit contains different picture numbers");
       frame_num_modulus = 1U << sps.frame_num_bits;
-      if (type == 5) bits.Ue(); // idr_pic_id
+      if (type == 5) bits.Ue();  // idr_pic_id
       if (sps.poc_type == 0) {
         bits.Read(sps.poc_bits);
         if (pps.bottom_poc_present) bits.Se();
@@ -179,22 +201,34 @@ void H264ReferencePolicy::Inspect(const uint8_t* data, std::size_t bytes, bool k
       if (slice_type == 0) {
         unsigned active_l0 = pps.default_l0;
         if (bits.Read()) active_l0 = bits.Ue() + 1;
-        Require(active_l0 == 1, "H.264 proxy P slice uses more than one active reference");
-        Require(bits.Read() == 0, "H.264 proxy modifies the previous-frame reference list");
+        Require(active_l0 == 1,
+                "H.264 proxy P slice uses more than one active reference");
+        Require(bits.Read() == 0,
+                "H.264 proxy modifies the previous-frame reference list");
         if (pps.weighted_pred) {
-          bits.Ue(); // luma_log2_weight_denom
-          const bool chroma = !sps.separate_color_plane && sps.chroma_format != 0;
+          bits.Ue();  // luma_log2_weight_denom
+          const bool chroma =
+              !sps.separate_color_plane && sps.chroma_format != 0;
           if (chroma) bits.Ue();
-          if (bits.Read()) { bits.Se(); bits.Se(); }
-          if (chroma && bits.Read()) for (int i = 0; i < 2; ++i) { bits.Se(); bits.Se(); }
+          if (bits.Read()) {
+            bits.Se();
+            bits.Se();
+          }
+          if (chroma && bits.Read())
+            for (int i = 0; i < 2; ++i) {
+              bits.Se();
+              bits.Se();
+            }
         }
       }
       if (type == 5) {
-        bits.Read(); // no_output_of_prior_pics_flag
-        Require(bits.Read() == 0, "H.264 proxy IDR must not be a long-term reference");
+        bits.Read();  // no_output_of_prior_pics_flag
+        Require(bits.Read() == 0,
+                "H.264 proxy IDR must not be a long-term reference");
       } else {
         Require(bits.Read() == 0,
-                "H.264 proxy uses adaptive reference marking; previous-frame policy unverified");
+                "H.264 proxy uses adaptive reference marking; previous-frame "
+                "policy unverified");
       }
     }
     start = next;

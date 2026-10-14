@@ -31,7 +31,8 @@ struct UdpSendOptions {
 // messages; MLVC-specific serialization belongs in mlvc/io.
 class UdpMessageSender {
  public:
-  UdpMessageSender(const std::string& host, uint16_t port, std::string error_context = "UDP sender",
+  UdpMessageSender(const std::string& host, uint16_t port,
+                   std::string error_context = "UDP sender",
                    UdpSendOptions options = {});
   ~UdpMessageSender();
 
@@ -49,7 +50,8 @@ class UdpMessageSender {
 
 class UdpMessageReceiver {
  public:
-  explicit UdpMessageReceiver(uint16_t port, std::string error_context = "UDP receiver");
+  explicit UdpMessageReceiver(uint16_t port,
+                              std::string error_context = "UDP receiver");
   ~UdpMessageReceiver();
 
   UdpMessageReceiver(const UdpMessageReceiver&) = delete;

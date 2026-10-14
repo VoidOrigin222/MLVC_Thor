@@ -7,7 +7,8 @@
 
 namespace mlvc::motion {
 
-// Same fields and units as FFmpeg AVMotionVector, independent of FFmpeg headers.
+// Same fields and units as FFmpeg AVMotionVector, independent of FFmpeg
+// headers.
 struct MotionVector {
   int32_t source = -1;
   uint8_t w = 0;
@@ -27,7 +28,8 @@ struct Translation {
 
 // Half-cell ties round toward zero. Overflow and nonfinite inputs throw.
 int8_t NearestFeatureCell(double displacement);
-Translation EstimateTranslation(const std::vector<MotionVector>& vectors, bool gop_start);
+Translation EstimateTranslation(const std::vector<MotionVector>& vectors,
+                                bool gop_start);
 
 }  // namespace mlvc::motion
 

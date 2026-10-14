@@ -1,4 +1,4 @@
-#include <mlvc/application/pipeline/codec_frame_pipeline.h>
+#include "mlvc/application/pipeline/codec_frame_pipeline.h"
 
 #include <algorithm>
 
@@ -18,7 +18,8 @@ void PreparedFrameProducer::Produce() {
       InputFrame frame = input_queue_.Pop();
       if (frame.eof) break;
       auto packet = std::make_shared<PreparedFramePacket>(&input_queue_, frame);
-      Check(frame.frame != nullptr, "prepared frame producer received an empty frame");
+      Check(frame.frame != nullptr,
+            "prepared frame producer received an empty frame");
       if (!AddData(std::move(packet))) break;
     }
     pipeline_.CloseInput();
@@ -45,7 +46,8 @@ void CallbackDataConsumer::Consume() {
       const auto begin = std::chrono::steady_clock::now();
       const bool received = pipeline_.GetOutput(&data);
       const double elapsed = std::chrono::duration<double, std::milli>(
-          std::chrono::steady_clock::now() - begin).count();
+                                 std::chrono::steady_clock::now() - begin)
+                                 .count();
       wait_ms_ += elapsed;
       wait_max_ms_ = std::max(wait_max_ms_, elapsed);
       if (!received) break;

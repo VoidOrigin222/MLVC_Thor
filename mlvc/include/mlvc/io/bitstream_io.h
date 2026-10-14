@@ -46,13 +46,15 @@ class FileBitstreamInput final : public BitstreamInput {
   Impl* impl_ = nullptr;
 };
 
-std::optional<BitstreamSummary> ScanBitstreamSummary(std::istream& input, int frame_num,
-                                                     std::optional<uint64_t> total_bytes);
-std::optional<BitstreamSummary> ScanBitstreamFile(const std::filesystem::path& input_path,
-                                                  int frame_num);
-uint64_t StreamByteDistance(std::optional<std::streampos> begin, std::optional<std::streampos> end,
+std::optional<BitstreamSummary> ScanBitstreamSummary(
+    std::istream& input, int frame_num, std::optional<uint64_t> total_bytes);
+std::optional<BitstreamSummary> ScanBitstreamFile(
+    const std::filesystem::path& input_path, int frame_num);
+uint64_t StreamByteDistance(std::optional<std::streampos> begin,
+                            std::optional<std::streampos> end,
                             uint64_t fallback);
-void WriteBytesFile(const std::string& bytes, const std::filesystem::path& path);
+void WriteBytesFile(const std::string& bytes,
+                    const std::filesystem::path& path);
 
 }  // namespace mlvc::io
 

@@ -1,11 +1,3 @@
-#include <mlvc/codec/tensor_data.h>
-#include <mlvc/core/status.h>
-#include <mlvc/io/dvpp_h264_encoder.h>
-#include <mlvc/io/fp16_yuv444_to_nv12.h>
-#include <mlvc/runtime/acl_runtime.h>
-
-#include <acl/ops/acl_dvpp.h>
-
 #include <chrono>
 #include <cstdint>
 #include <filesystem>
@@ -13,6 +5,13 @@
 #include <iostream>
 #include <string>
 #include <vector>
+
+#include "mlvc/codec/tensor_data.h"
+#include "mlvc/core/status.h"
+#include "mlvc/io/dvpp_h264_encoder.h"
+#include "mlvc/io/fp16_yuv444_to_nv12.h"
+#include "mlvc/runtime/acl_runtime.h"
+#include <acl/ops/acl_dvpp.h>
 
 namespace {
 
@@ -33,15 +32,24 @@ Options ParseOptions(int argc, char** argv) {
     const std::string arg = argv[i];
     mlvc::Check(i + 1 < argc, "missing value for " + arg);
     const std::string value = argv[++i];
-    if (arg == "--input-fp16") options.input_fp16 = value;
-    else if (arg == "--output-h264") options.output_h264 = value;
-    else if (arg == "--width") options.width = std::stoi(value);
-    else if (arg == "--height") options.height = std::stoi(value);
-    else if (arg == "--padded-width") options.padded_width = std::stoi(value);
-    else if (arg == "--padded-height") options.padded_height = std::stoi(value);
-    else if (arg == "--device") options.device = std::stoi(value);
-    else if (arg == "--frames") options.frames = std::stoi(value);
-    else throw mlvc::Error("unknown option: " + arg);
+    if (arg == "--input-fp16")
+      options.input_fp16 = value;
+    else if (arg == "--output-h264")
+      options.output_h264 = value;
+    else if (arg == "--width")
+      options.width = std::stoi(value);
+    else if (arg == "--height")
+      options.height = std::stoi(value);
+    else if (arg == "--padded-width")
+      options.padded_width = std::stoi(value);
+    else if (arg == "--padded-height")
+      options.padded_height = std::stoi(value);
+    else if (arg == "--device")
+      options.device = std::stoi(value);
+    else if (arg == "--frames")
+      options.frames = std::stoi(value);
+    else
+      throw mlvc::Error("unknown option: " + arg);
   }
   mlvc::Check(!options.input_fp16.empty(), "--input-fp16 is required");
   mlvc::Check(!options.output_h264.empty(), "--output-h264 is required");
@@ -50,7 +58,8 @@ Options ParseOptions(int argc, char** argv) {
 }
 
 bool HasAnnexBStartCode(const std::vector<uint8_t>& bytes) {
-  return bytes.size() >= 4 && bytes[0] == 0 && bytes[1] == 0 && bytes[2] == 0 && bytes[3] == 1;
+  return bytes.size() >= 4 && bytes[0] == 0 && bytes[1] == 0 && bytes[2] == 0 &&
+         bytes[3] == 1;
 }
 
 }  // namespace
@@ -58,7 +67,8 @@ bool HasAnnexBStartCode(const std::vector<uint8_t>& bytes) {
 int main(int argc, char** argv) {
   try {
     const Options options = ParseOptions(argc, argv);
-    const mlvc::io::Nv12Layout layout{options.width, options.height, options.padded_width,
+    const mlvc::io::Nv12Layout layout{options.width, options.height,
+                                      options.padded_width,
                                       options.padded_height};
     const mlvc::codec::TensorData input = mlvc::codec::ReadTensorFile(
         options.input_fp16, {1, 3, options.padded_height, options.padded_width},
@@ -75,13 +85,15 @@ int main(int argc, char** argv) {
     mlvc::io::DvppH264Encoder encoder(runtime.context(), config);
 
     void* nv12_device = nullptr;
-    mlvc::CheckAcl(acldvppMalloc(&nv12_device, nv12.size()), "acldvppMalloc H.264 input");
-    mlvc::CheckAcl(aclrtMemcpy(nv12_device, nv12.size(), nv12.data(), nv12.size(),
-                               ACL_MEMCPY_HOST_TO_DEVICE),
+    mlvc::CheckAcl(acldvppMalloc(&nv12_device, nv12.size()),
+                   "acldvppMalloc H.264 input");
+    mlvc::CheckAcl(aclrtMemcpy(nv12_device, nv12.size(), nv12.data(),
+                               nv12.size(), ACL_MEMCPY_HOST_TO_DEVICE),
                    "aclrtMemcpy H.264 input");
     aclrtEvent ready = nullptr;
     mlvc::CheckAcl(aclrtCreateEvent(&ready), "aclrtCreateEvent H.264 input");
-    mlvc::CheckAcl(aclrtRecordEvent(ready, runtime.stream()), "aclrtRecordEvent H.264 input");
+    mlvc::CheckAcl(aclrtRecordEvent(ready, runtime.stream()),
+                   "aclrtRecordEvent H.264 input");
     std::vector<uint8_t> h264;
     const auto encode_start = std::chrono::steady_clock::now();
     for (int frame = 0; frame < options.frames; ++frame) {
@@ -90,7 +102,9 @@ int main(int argc, char** argv) {
       h264.insert(h264.end(), frame_h264.begin(), frame_h264.end());
     }
     const double encode_seconds =
-        std::chrono::duration<double>(std::chrono::steady_clock::now() - encode_start).count();
+        std::chrono::duration<double>(std::chrono::steady_clock::now() -
+                                      encode_start)
+            .count();
     mlvc::CheckAcl(aclrtDestroyEvent(ready), "aclrtDestroyEvent H.264 input");
     mlvc::CheckAcl(acldvppFree(nv12_device), "acldvppFree H.264 input");
     mlvc::Check(!h264.empty() && HasAnnexBStartCode(h264),

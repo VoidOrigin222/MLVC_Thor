@@ -1,8 +1,8 @@
 #ifndef MLVC_RUNTIME_MODEL_MANIFEST_H_
 #define MLVC_RUNTIME_MODEL_MANIFEST_H_
 
-#include <filesystem>
 #include <array>
+#include <filesystem>
 #include <initializer_list>
 #include <map>
 #include <string>
@@ -61,14 +61,18 @@ class ModelManifest {
   const std::vector<RuntimeArtifactRecord>& runtime_artifacts() const {
     return runtime_artifacts_;
   }
-  std::vector<RuntimeArtifactRecord>& runtime_artifacts() { return runtime_artifacts_; }
+  std::vector<RuntimeArtifactRecord>& runtime_artifacts() {
+    return runtime_artifacts_;
+  }
   const std::vector<ModelRecord>& models() const { return models_; }
   std::vector<ModelRecord>& models() { return models_; }
   bool HasModel(const std::string& name) const;
   const ModelRecord* FindModel(const std::string& name) const;
-  const ModelRecord* FindFusionCandidate(std::initializer_list<std::string_view> replaces) const;
+  const ModelRecord* FindFusionCandidate(
+      std::initializer_list<std::string_view> replaces) const;
   const ModelRecord& GetModel(const std::string& name) const;
-  const RuntimeArtifactRecord& GetRuntimeArtifact(const std::string& name) const;
+  const RuntimeArtifactRecord& GetRuntimeArtifact(
+      const std::string& name) const;
 
  private:
   std::filesystem::path path_;

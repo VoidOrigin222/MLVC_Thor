@@ -1,4 +1,4 @@
-#include <mlvc/io/frame_source.h>
+#include "mlvc/io/frame_source.h"
 
 #include <string>
 #include <utility>
@@ -8,10 +8,13 @@
 namespace mlvc::io {
 namespace codec = mlvc::codec;
 
-FrameSource::FrameSource(int configured_frame_num, std::filesystem::path input_video_path,
-                         std::filesystem::path input_frame_dir, mlvc::TensorSpec frame_spec,
+FrameSource::FrameSource(int configured_frame_num,
+                         std::filesystem::path input_video_path,
+                         std::filesystem::path input_frame_dir,
+                         mlvc::TensorSpec frame_spec,
                          std::optional<CameraCaptureOptions> camera_options,
-                         aclrtContext context)
+                         aclrtContext context, double target_fps,
+                         bool device_resident, std::string video_decode_backend)
     : configured_frame_num_(configured_frame_num),
       input_frame_dir_(std::move(input_frame_dir)),
       frame_spec_(std::move(frame_spec)) {
@@ -19,8 +22,16 @@ FrameSource::FrameSource(int configured_frame_num, std::filesystem::path input_v
     if (camera_options.has_value()) {
       video_reader_.emplace(input_video_path, *camera_options, context);
     } else {
+#ifdef MLVC_TENSORRT
+      video_reader_.emplace(input_video_path, video_decode_backend);
+#else
       video_reader_.emplace(input_video_path);
+#endif
     }
+#ifdef MLVC_TENSORRT
+    video_reader_->SetTargetFps(target_fps);
+    video_reader_->SetDeviceResident(device_resident);
+#endif
   }
 }
 

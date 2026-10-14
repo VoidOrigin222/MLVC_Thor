@@ -1,19 +1,8 @@
 #ifndef MLVC_APPLICATION_STREAM_MLVC_INTERNAL_H_
 #define MLVC_APPLICATION_STREAM_MLVC_INTERNAL_H_
 
-#include <mlvc/application/stream/mlvc_stream.h>
-#include <mlvc/codec/detail/frame/reference_state.h>
-#include <mlvc/codec/detail/stage/stage_runner.h>
-#include <mlvc/codec/detail/stage/stage_runtime_state.h>
-#include <mlvc/codec/detail/stage/stage_types.h>
-#include <mlvc/codec/tensor_data.h>
-#include <mlvc/framework/profiler.h>
-#include <mlvc/io/mlvc_bitstream.h>
-#include <mlvc/io/video_io.h>
-#include <mlvc/runtime/model_manifest.h>
-
-#include <chrono>
 #include <algorithm>
+#include <chrono>
 #include <cstdint>
 #include <filesystem>
 #include <future>
@@ -21,6 +10,17 @@
 #include <optional>
 #include <string>
 #include <vector>
+
+#include "mlvc/application/stream/mlvc_stream.h"
+#include "mlvc/codec/detail/frame/reference_state.h"
+#include "mlvc/codec/detail/stage/stage_runner.h"
+#include "mlvc/codec/detail/stage/stage_runtime_state.h"
+#include "mlvc/codec/detail/stage/stage_types.h"
+#include "mlvc/codec/tensor_data.h"
+#include "mlvc/framework/profiler.h"
+#include "mlvc/io/mlvc_bitstream.h"
+#include "mlvc/io/video_io.h"
+#include "mlvc/runtime/model_manifest.h"
 
 namespace mlvc::codec {
 
@@ -44,7 +44,11 @@ struct LatencyStats {
   uint64_t count = 0;
   double total_ms = 0.0;
   double max_ms = 0.0;
-  void Add(double ms) { ++count; total_ms += ms; max_ms = std::max(max_ms, ms); }
+  void Add(double ms) {
+    ++count;
+    total_ms += ms;
+    max_ms = std::max(max_ms, ms);
+  }
   double average_ms() const { return count ? total_ms / count : 0.0; }
 };
 
@@ -61,21 +65,29 @@ void SetInt32TensorValue(TensorData* tensor, int32_t value);
 TensorData MakeInt32ScalarTensor(int32_t value);
 SourceInfo ReadSourceInfo(const std::filesystem::path& frame_dir);
 bool HasMlvcModels(const mlvc::ModelManifest& manifest);
-SourceFrameGeometry ResolveSourceGeometry(const std::filesystem::path& input_video_path,
-                                          const std::filesystem::path& input_frame_dir,
-                                          const std::optional<mlvc::io::CameraCaptureOptions>&
-                                              camera_options,
-                                          aclrtContext context,
-                                          const mlvc::TensorSpec& frame_spec, double* fps);
-void ConfigureRuntimeState(mlvc::codec::StageOutputWorkspace* stage_output_workspace,
-                           mlvc::StageRuntime& runtime, bool enable_stage_fusion);
-StageInput BuildReferenceFeatureInput(const ReferenceState& state, const TensorData& zero_feature);
-StageInput BuildWarpedReferenceFeatureInput(ReferenceState* state, const TensorData& zero_feature,
-                                           int kx, int ky, TensorData* scratch);
-void PrepareWarpResetReference(mlvc::StageModelSet* models, ReferenceState* state,
-                               const std::vector<int64_t>& frame_shape, bool is_i_frame,
-                               mlvc::Profiler* profiler);
-void SaveWarpResetFrame(const RunOutput& output, ReferenceState* state, mlvc::Profiler* profiler);
+SourceFrameGeometry ResolveSourceGeometry(
+    const std::filesystem::path& input_video_path,
+    const std::filesystem::path& input_frame_dir,
+    const std::optional<mlvc::io::CameraCaptureOptions>& camera_options,
+    aclrtContext context, const mlvc::TensorSpec& frame_spec, double* fps,
+    double target_fps = 0.0,
+    const std::string& video_decode_backend =
+        mlvc::io::kDefaultVideoDecodeBackend);
+void ConfigureRuntimeState(
+    mlvc::codec::StageOutputWorkspace* stage_output_workspace,
+    mlvc::StageRuntime& runtime, bool enable_stage_fusion);
+StageInput BuildReferenceFeatureInput(const ReferenceState& state,
+                                      const TensorData& zero_feature);
+StageInput BuildWarpedReferenceFeatureInput(ReferenceState* state,
+                                            const TensorData& zero_feature,
+                                            int kx, int ky,
+                                            TensorData* scratch);
+void PrepareWarpResetReference(mlvc::StageModelSet* models,
+                               ReferenceState* state,
+                               const std::vector<int64_t>& frame_shape,
+                               bool is_i_frame, mlvc::Profiler* profiler);
+void SaveWarpResetFrame(const RunOutput& output, ReferenceState* state,
+                        mlvc::Profiler* profiler);
 // Explicit opt-in diagnostic; callers invoke only in translation warp mode.
 void TraceWarpReferenceState(int frame_index, ReferenceState* state);
 void UpdateReferenceFeature(const RunOutput& output, ReferenceState* state,
@@ -103,4 +115,4 @@ class ScopedRuntimeState {
 
 }  // namespace mlvc::codec
 
-#endif  // MLVC_APPLICATION_STREAM_MLVC_INTERNAL_H
+#endif  // MLVC_APPLICATION_STREAM_MLVC_INTERNAL_H_

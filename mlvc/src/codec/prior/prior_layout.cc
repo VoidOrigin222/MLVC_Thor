@@ -1,15 +1,16 @@
-#include <mlvc/codec/detail/prior/prior_layout.h>
-#include <mlvc/codec/tensor_data.h>
-#include <mlvc/framework/profile_range.h>
+#include "mlvc/codec/detail/prior/prior_layout.h"
 
 #include <cstddef>
 #include <vector>
 
+#include "mlvc/codec/tensor_data.h"
 #include "mlvc/core/status.h"
+#include "mlvc/framework/profile_range.h"
 
 namespace mlvc::codec {
 
-int Offset4(int channel, int y, int x, int /*channels*/, int height, int width) {
+int Offset4(int channel, int y, int x, int /*channels*/, int height,
+            int width) {
   return ((channel * height) + y) * width + x;
 }
 
@@ -31,8 +32,8 @@ int MicroMask2(int mask_index, int chunk, int y, int x) {
   return patterns[mask_index][chunk][y & 1][x & 1];
 }
 
-void SinglePart4x(const std::vector<float>& full, int mask_index, int channels, int height,
-                  int width, std::vector<float>* part) {
+void SinglePart4x(const std::vector<float>& full, int mask_index, int channels,
+                  int height, int width, std::vector<float>* part) {
   MLVC_PROFILE_RANGE_FUNCTION();
   const int part_channels = channels / 4;
   part->resize(static_cast<std::size_t>(part_channels * height * width));
@@ -42,7 +43,8 @@ void SinglePart4x(const std::vector<float>& full, int mask_index, int channels, 
         float value = 0.0f;
         for (int chunk = 0; chunk < 4; ++chunk) {
           if (MicroMask4(mask_index, chunk, y, x) != 0) {
-            value += full[Offset4(chunk * part_channels + c, y, x, channels, height, width)];
+            value += full[Offset4(chunk * part_channels + c, y, x, channels,
+                                  height, width)];
           }
         }
         (*part)[Offset4(c, y, x, part_channels, height, width)] = value;
@@ -51,8 +53,8 @@ void SinglePart4x(const std::vector<float>& full, int mask_index, int channels, 
   }
 }
 
-void SinglePart2x(const std::vector<float>& full, int mask_index, int channels, int height,
-                  int width, std::vector<float>* part) {
+void SinglePart2x(const std::vector<float>& full, int mask_index, int channels,
+                  int height, int width, std::vector<float>* part) {
   MLVC_PROFILE_RANGE_FUNCTION();
   const int part_channels = channels / 2;
   part->resize(static_cast<std::size_t>(part_channels * height * width));
@@ -62,7 +64,8 @@ void SinglePart2x(const std::vector<float>& full, int mask_index, int channels, 
         float value = 0.0f;
         for (int chunk = 0; chunk < 2; ++chunk) {
           if (MicroMask2(mask_index, chunk, y, x) != 0) {
-            value += full[Offset4(chunk * part_channels + c, y, x, channels, height, width)];
+            value += full[Offset4(chunk * part_channels + c, y, x, channels,
+                                  height, width)];
           }
         }
         (*part)[Offset4(c, y, x, part_channels, height, width)] = value;
@@ -71,19 +74,21 @@ void SinglePart2x(const std::vector<float>& full, int mask_index, int channels, 
   }
 }
 
-void RestoreY4x(const std::vector<int8_t>& y_symbols, const std::vector<float>& means,
-                int mask_index, int channels, int height, int width, std::vector<float>* output) {
+void RestoreY4x(const std::vector<int8_t>& y_symbols,
+                const std::vector<float>& means, int mask_index, int channels,
+                int height, int width, std::vector<float>* output) {
   MLVC_PROFILE_RANGE_FUNCTION();
   const int part_channels = channels / 4;
   for (int c = 0; c < part_channels; ++c) {
     for (int y = 0; y < height; ++y) {
       for (int x = 0; x < width; ++x) {
-        const float symbol =
-            static_cast<float>(y_symbols[Offset4(c, y, x, part_channels, height, width)]);
+        const float symbol = static_cast<float>(
+            y_symbols[Offset4(c, y, x, part_channels, height, width)]);
         for (int chunk = 0; chunk < 4; ++chunk) {
           if (MicroMask4(mask_index, chunk, y, x) != 0) {
             const int out_channel = chunk * part_channels + c;
-            const int index = Offset4(out_channel, y, x, channels, height, width);
+            const int index =
+                Offset4(out_channel, y, x, channels, height, width);
             (*output)[index] = RoundToFp16(symbol + means[index]);
           }
         }
@@ -92,19 +97,21 @@ void RestoreY4x(const std::vector<int8_t>& y_symbols, const std::vector<float>& 
   }
 }
 
-void RestoreY2x(const std::vector<int8_t>& y_symbols, const std::vector<float>& means,
-                int mask_index, int channels, int height, int width, std::vector<float>* output) {
+void RestoreY2x(const std::vector<int8_t>& y_symbols,
+                const std::vector<float>& means, int mask_index, int channels,
+                int height, int width, std::vector<float>* output) {
   MLVC_PROFILE_RANGE_FUNCTION();
   const int part_channels = channels / 2;
   for (int c = 0; c < part_channels; ++c) {
     for (int y = 0; y < height; ++y) {
       for (int x = 0; x < width; ++x) {
-        const float symbol =
-            static_cast<float>(y_symbols[Offset4(c, y, x, part_channels, height, width)]);
+        const float symbol = static_cast<float>(
+            y_symbols[Offset4(c, y, x, part_channels, height, width)]);
         for (int chunk = 0; chunk < 2; ++chunk) {
           if (MicroMask2(mask_index, chunk, y, x) != 0) {
             const int out_channel = chunk * part_channels + c;
-            const int index = Offset4(out_channel, y, x, channels, height, width);
+            const int index =
+                Offset4(out_channel, y, x, channels, height, width);
             (*output)[index] = RoundToFp16(symbol + means[index]);
           }
         }

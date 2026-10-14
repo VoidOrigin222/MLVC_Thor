@@ -52,9 +52,11 @@ std::size_t TensorShape::NumElements() const {
   if (dims_.empty()) {
     return 0;
   }
-  return std::accumulate(
-      dims_.begin(), dims_.end(), static_cast<std::size_t>(1),
-      [](std::size_t product, int64_t dim) { return product * static_cast<std::size_t>(dim); });
+  return std::accumulate(dims_.begin(), dims_.end(),
+                         static_cast<std::size_t>(1),
+                         [](std::size_t product, int64_t dim) {
+                           return product * static_cast<std::size_t>(dim);
+                         });
 }
 
 std::vector<int64_t> TensorShape::ContiguousStrides() const {
@@ -65,7 +67,8 @@ std::vector<int64_t> TensorShape::ContiguousStrides() const {
   return strides;
 }
 
-TensorView::TensorView(void* data, TensorShape shape, DataType dtype, MemoryLocation location)
+TensorView::TensorView(void* data, TensorShape shape, DataType dtype,
+                       MemoryLocation location)
     : data_(data),
       owned_shape_(std::move(shape)),
       shape_(&owned_shape_),
@@ -120,8 +123,8 @@ TensorView& TensorView::operator=(TensorView&& other) noexcept {
   return *this;
 }
 
-TensorView TensorView::Borrowed(void* data, const TensorShape* shape, DataType dtype,
-                                MemoryLocation location) {
+TensorView TensorView::Borrowed(void* data, const TensorShape* shape,
+                                DataType dtype, MemoryLocation location) {
   Check(shape != nullptr, "borrowed tensor view shape must not be null");
   TensorView view;
   view.data_ = data;

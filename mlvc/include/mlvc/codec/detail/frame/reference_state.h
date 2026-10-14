@@ -1,14 +1,22 @@
 #ifndef MLVC_CODEC_DETAIL_REFERENCE_STATE_H_
 #define MLVC_CODEC_DETAIL_REFERENCE_STATE_H_
 
-#include <mlvc/codec/tensor_data.h>
-#include <mlvc/core/tensor_handle.h>
-
 #include <optional>
+
+#include "mlvc/codec/tensor_data.h"
+#include "mlvc/core/tensor_handle.h"
+#ifdef MLVC_TENSORRT
+#include "mlvc/core/buffer.h"
+#endif
 
 namespace mlvc::codec {
 
 struct ReferenceState {
+#ifdef MLVC_TENSORRT
+  // Persistent encoder storage survives logical GOP/reference resets.
+  std::shared_ptr<mlvc::DeviceBuffer> encoder_feature_cache,
+      encoder_frame_cache;
+#endif
   std::optional<TensorData> frame;
   std::optional<TensorData> feature;
   std::optional<mlvc::TensorHandle> frame_handle;

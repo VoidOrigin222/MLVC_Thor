@@ -1,14 +1,13 @@
 #ifndef MLVC_IO_DVPP_H264_ENCODER_H_
 #define MLVC_IO_DVPP_H264_ENCODER_H_
 
-#include <acl/acl.h>
-
 #include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <vector>
 
 #include "mlvc/io/fp16_yuv444_to_nv12.h"
+#include <acl/acl.h>
 
 namespace mlvc::io {
 
@@ -23,6 +22,7 @@ struct DvppH264EncoderConfig {
   bool persistent_channel = false;
   bool single_reference = false;
   uint32_t channel = 0;
+  uint32_t slice_count = 1;
 };
 
 // Synchronous one-frame interface backed by the device MPI VENC API. The
@@ -43,7 +43,7 @@ class DvppH264Encoder {
   // Upload directly to an owned DVPP input slot, without an intermediate
   // device copy. Requires zero_copy_input=false so the slots exist.
   std::vector<uint8_t> EncodeHostNv12(const void* nv12_host, std::size_t bytes,
-                                    bool force_keyframe = false);
+                                      bool force_keyframe = false);
 
  private:
   class Impl;

@@ -14,7 +14,8 @@ AsyncFramePlan::AsyncFramePlan(std::size_t pinned_bytes_per_slot, int slots) {
 }
 
 PinnedHostBuffer& AsyncFramePlan::PinnedSlot(int index) {
-  Check(index >= 0 && index < static_cast<int>(pinned_slots_.size()), "invalid pinned slot index");
+  Check(index >= 0 && index < static_cast<int>(pinned_slots_.size()),
+        "invalid pinned slot index");
   return pinned_slots_[index];
 }
 
@@ -22,9 +23,11 @@ void AsyncFramePlan::RecordCopy(const std::string& name, std::size_t bytes) {
   RecordCopy(name, bytes, 0.0, 0.0, "host");
 }
 
-void AsyncFramePlan::RecordCopy(const std::string& name, std::size_t bytes, double start_ms,
-                                double duration_ms, const std::string& timing_source) {
-  copy_records_.push_back(AsyncCopyRecord{name, bytes, start_ms, duration_ms, timing_source});
+void AsyncFramePlan::RecordCopy(const std::string& name, std::size_t bytes,
+                                double start_ms, double duration_ms,
+                                const std::string& timing_source) {
+  copy_records_.push_back(
+      AsyncCopyRecord{name, bytes, start_ms, duration_ms, timing_source});
 }
 
 void AsyncFramePlan::ClearCopyRecords() { copy_records_.clear(); }

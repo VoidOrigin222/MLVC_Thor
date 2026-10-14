@@ -1,6 +1,4 @@
-#include <mlvc/codec/detail/profile/codec_profile.h>
-#include <mlvc/codec/detail/quantization/qscale_cache.h>
-#include <mlvc/codec/detail/tensor/tensor_utils.h>
+#include "mlvc/codec/detail/tensor/tensor_utils.h"
 
 #include <algorithm>
 #include <array>
@@ -9,6 +7,8 @@
 #include <filesystem>
 #include <fstream>
 
+#include "mlvc/codec/detail/profile/codec_profile.h"
+#include "mlvc/codec/detail/quantization/qscale_cache.h"
 #include "mlvc/core/status.h"
 #include "mlvc/framework/profile_range.h"
 
@@ -21,7 +21,8 @@ constexpr uint16_t ExactInt8ToFp16(int value) {
   if (magnitude == 0) return sign;
 
   unsigned exponent = 0;
-  for (unsigned remaining = magnitude; remaining > 1; remaining >>= 1) ++exponent;
+  for (unsigned remaining = magnitude; remaining > 1; remaining >>= 1)
+    ++exponent;
   const unsigned mantissa = (magnitude - (1U << exponent)) << (10U - exponent);
   return static_cast<uint16_t>(sign | ((exponent + 15U) << 10U) | mantissa);
 }
@@ -46,7 +47,8 @@ void TensorData::AttachExternalBuffer(void* data, std::size_t byte_count,
               "external tensor buffer must use a non-CPU memory location");
   mlvc::Check(byte_count >= shape.NumElements() * mlvc::ElementSize(dtype),
               "external tensor buffer is too small");
-  mlvc::Check(owner != nullptr, "external tensor buffer requires an owning lease");
+  mlvc::Check(owner != nullptr,
+              "external tensor buffer requires an owning lease");
   external_data = data;
   external_bytes = byte_count;
   external_location = location;
@@ -85,7 +87,8 @@ uint32_t FloatToHalfBits(float value) {
     uint32_t half_mantissa = mantissa >> shift;
     const uint32_t remainder = mantissa & ((uint32_t{1} << shift) - 1);
     const uint32_t halfway = uint32_t{1} << (shift - 1);
-    if (remainder > halfway || (remainder == halfway && (half_mantissa & 1U) != 0)) {
+    if (remainder > halfway ||
+        (remainder == halfway && (half_mantissa & 1U) != 0)) {
       ++half_mantissa;
     }
     return sign | half_mantissa;
@@ -97,7 +100,8 @@ uint32_t FloatToHalfBits(float value) {
 
   uint32_t half_mantissa = mantissa >> 13;
   const uint32_t remainder = mantissa & 0x1fffU;
-  if (remainder > 0x1000U || (remainder == 0x1000U && (half_mantissa & 1U) != 0)) {
+  if (remainder > 0x1000U ||
+      (remainder == 0x1000U && (half_mantissa & 1U) != 0)) {
     ++half_mantissa;
     if (half_mantissa == 0x400U) {
       half_mantissa = 0;
@@ -156,8 +160,9 @@ TensorData MakeTensorLike(const mlvc::TensorSpec& spec) {
 }
 
 TensorData CloneTensor(const TensorData& tensor) {
-  mlvc::Check(!tensor.has_external_buffer(),
-              "external tensor buffers must not be cloned into host memory implicitly");
+  mlvc::Check(
+      !tensor.has_external_buffer(),
+      "external tensor buffers must not be cloned into host memory implicitly");
   TensorData clone;
   clone.shape = tensor.shape;
   clone.dtype = tensor.dtype;
@@ -167,9 +172,11 @@ TensorData CloneTensor(const TensorData& tensor) {
 
 void CloneTensorInto(const TensorData& tensor, TensorData* output) {
   mlvc::Check(output != nullptr, "clone tensor output is required");
-  mlvc::Check(!tensor.has_external_buffer(),
-              "external tensor buffers must not be cloned into host memory implicitly");
-  if (output->dtype != tensor.dtype || output->shape.dims() != tensor.shape.dims()) {
+  mlvc::Check(
+      !tensor.has_external_buffer(),
+      "external tensor buffers must not be cloned into host memory implicitly");
+  if (output->dtype != tensor.dtype ||
+      output->shape.dims() != tensor.shape.dims()) {
     output->shape = tensor.shape;
     output->dtype = tensor.dtype;
   }
@@ -177,13 +184,15 @@ void CloneTensorInto(const TensorData& tensor, TensorData* output) {
   std::memcpy(output->bytes.data(), tensor.bytes.data(), tensor.bytes.size());
 }
 
-const mlvc::TensorSpec& OutputSpec(const mlvc::ModelRecord& record, std::string_view name) {
+const mlvc::TensorSpec& OutputSpec(const mlvc::ModelRecord& record,
+                                   std::string_view name) {
   for (const mlvc::TensorSpec& output : record.outputs) {
     if (output.name == name) {
       return output;
     }
   }
-  throw mlvc::Error("missing output spec: " + record.name + "." + std::string(name));
+  throw mlvc::Error("missing output spec: " + record.name + "." +
+                    std::string(name));
 }
 
 TensorData MakeFp16Tensor(const std::vector<int64_t>& shape, float value) {
@@ -194,13 +203,15 @@ TensorData MakeFp16Tensor(const std::vector<int64_t>& shape, float value) {
 
 void FillFp16Tensor(float value, TensorData* tensor) {
   mlvc::Check(tensor != nullptr, "fill tensor output is required");
-  mlvc::Check(tensor->dtype == mlvc::DataType::kFloat16, "fill tensor expects fp16");
+  mlvc::Check(tensor->dtype == mlvc::DataType::kFloat16,
+              "fill tensor expects fp16");
   const uint16_t half = static_cast<uint16_t>(FloatToHalfBits(value));
   auto* data = reinterpret_cast<uint16_t*>(tensor->bytes.data());
   std::fill(data, data + tensor->Elements(), half);
 }
 
-TensorData ReadTensorFile(const std::filesystem::path& path, const std::vector<int64_t>& shape,
+TensorData ReadTensorFile(const std::filesystem::path& path,
+                          const std::vector<int64_t>& shape,
                           mlvc::DataType dtype) {
   TensorData tensor = MakeTensor(shape, dtype);
   ReadTensorFileInto(path, &tensor);
@@ -218,7 +229,8 @@ void ReadTensorFileInto(const std::filesystem::path& path, TensorData* tensor) {
   mlvc::Check(input.eof(), "tensor input has trailing bytes: " + path.string());
 }
 
-void WriteTensorFile(const std::filesystem::path& path, const TensorData& tensor) {
+void WriteTensorFile(const std::filesystem::path& path,
+                     const TensorData& tensor) {
   if (!path.parent_path().empty()) {
     std::filesystem::create_directories(path.parent_path());
   }
@@ -229,7 +241,8 @@ void WriteTensorFile(const std::filesystem::path& path, const TensorData& tensor
   mlvc::Check(output.good(), "failed to write tensor output: " + path.string());
 }
 
-TensorData MakeQScaleTensor(const mlvc::RuntimeSidecar& sidecar, const std::string& name, int qp,
+TensorData MakeQScaleTensor(const mlvc::RuntimeSidecar& sidecar,
+                            const std::string& name, int qp,
                             const std::vector<int64_t>& shape) {
   TensorData tensor = MakeTensor(shape, mlvc::DataType::kFloat16);
   const uint16_t* row = sidecar.QScaleData(name, qp);
@@ -247,7 +260,8 @@ void Fp16ToFloat(const TensorData& tensor, std::vector<float>* values) {
   }
 }
 
-void TensorToInt8Symbols(const TensorData& tensor, std::vector<int8_t>* symbols) {
+void TensorToInt8Symbols(const TensorData& tensor,
+                         std::vector<int8_t>* symbols) {
   MLVC_PROFILE_RANGE_FUNCTION();
   symbols->resize(tensor.Elements());
   if (tensor.dtype == mlvc::DataType::kInt8) {
@@ -255,14 +269,16 @@ void TensorToInt8Symbols(const TensorData& tensor, std::vector<int8_t>* symbols)
     std::copy(input, input + tensor.Elements(), symbols->begin());
     return;
   }
-  mlvc::Check(tensor.dtype == mlvc::DataType::kFloat16, "tensor is not int8 or fp16");
+  mlvc::Check(tensor.dtype == mlvc::DataType::kFloat16,
+              "tensor is not int8 or fp16");
   const auto* input = reinterpret_cast<const uint16_t*>(tensor.bytes.data());
   for (std::size_t i = 0; i < symbols->size(); ++i) {
     (*symbols)[i] = static_cast<int8_t>(HalfBitsToFloat(input[i]));
   }
 }
 
-void TensorToInt8Symbols(const TensorBytesView& tensor, std::vector<int8_t>* symbols) {
+void TensorToInt8Symbols(const TensorBytesView& tensor,
+                         std::vector<int8_t>* symbols) {
   MLVC_PROFILE_RANGE_FUNCTION();
   symbols->resize(tensor.Elements());
   if (tensor.dtype == mlvc::DataType::kInt8) {
@@ -270,44 +286,50 @@ void TensorToInt8Symbols(const TensorBytesView& tensor, std::vector<int8_t>* sym
     std::copy(input, input + tensor.Elements(), symbols->begin());
     return;
   }
-  mlvc::Check(tensor.dtype == mlvc::DataType::kFloat16, "tensor is not int8 or fp16");
+  mlvc::Check(tensor.dtype == mlvc::DataType::kFloat16,
+              "tensor is not int8 or fp16");
   const auto* input = reinterpret_cast<const uint16_t*>(tensor.bytes);
   for (std::size_t i = 0; i < symbols->size(); ++i) {
     (*symbols)[i] = static_cast<int8_t>(HalfBitsToFloat(input[i]));
   }
 }
 
-void FloatToFp16TensorFromInt8(const std::vector<int8_t>& symbols, const mlvc::TensorShape& shape,
+void FloatToFp16TensorFromInt8(const std::vector<int8_t>& symbols,
+                               const mlvc::TensorShape& shape,
                                TensorData* tensor) {
   MLVC_PROFILE_RANGE_FUNCTION();
   tensor->shape = shape;
   tensor->dtype = mlvc::DataType::kFloat16;
-  tensor->bytes.resize(tensor->shape.NumElements() * mlvc::ElementSize(tensor->dtype));
+  tensor->bytes.resize(tensor->shape.NumElements() *
+                       mlvc::ElementSize(tensor->dtype));
   auto* output = reinterpret_cast<uint16_t*>(tensor->bytes.data());
   for (std::size_t i = 0; i < symbols.size(); ++i) {
-    const auto index = static_cast<std::size_t>(static_cast<int>(symbols[i]) + 128);
+    const auto index =
+        static_cast<std::size_t>(static_cast<int>(symbols[i]) + 128);
     output[i] = kInt8ToFp16[index];
   }
 }
 
-void FloatToFp16Tensor(const std::vector<float>& values, const std::vector<int64_t>& shape,
-                       TensorData* tensor) {
+void FloatToFp16Tensor(const std::vector<float>& values,
+                       const std::vector<int64_t>& shape, TensorData* tensor) {
   MLVC_PROFILE_RANGE_FUNCTION();
   tensor->shape = mlvc::TensorShape(shape);
   tensor->dtype = mlvc::DataType::kFloat16;
-  tensor->bytes.resize(tensor->shape.NumElements() * mlvc::ElementSize(tensor->dtype));
+  tensor->bytes.resize(tensor->shape.NumElements() *
+                       mlvc::ElementSize(tensor->dtype));
   auto* output = reinterpret_cast<uint16_t*>(tensor->bytes.data());
   for (std::size_t i = 0; i < values.size(); ++i) {
     output[i] = static_cast<uint16_t>(FloatToHalfBits(values[i]));
   }
 }
 
-void FloatToFp16Tensor(const std::vector<float>& values, const mlvc::TensorShape& shape,
-                       TensorData* tensor) {
+void FloatToFp16Tensor(const std::vector<float>& values,
+                       const mlvc::TensorShape& shape, TensorData* tensor) {
   MLVC_PROFILE_RANGE_FUNCTION();
   tensor->shape = shape;
   tensor->dtype = mlvc::DataType::kFloat16;
-  tensor->bytes.resize(tensor->shape.NumElements() * mlvc::ElementSize(tensor->dtype));
+  tensor->bytes.resize(tensor->shape.NumElements() *
+                       mlvc::ElementSize(tensor->dtype));
   auto* output = reinterpret_cast<uint16_t*>(tensor->bytes.data());
   for (std::size_t i = 0; i < values.size(); ++i) {
     output[i] = static_cast<uint16_t>(FloatToHalfBits(values[i]));
@@ -324,12 +346,14 @@ void Fp16ToFloat(const TensorBytesView& tensor, std::vector<float>* values) {
   }
 }
 
-void ApplyChannelQuantStep(const std::vector<float>& quant_step, int channels, int height,
-                           int width, std::vector<float>* values) {
+void ApplyChannelQuantStep(const std::vector<float>& quant_step, int channels,
+                           int height, int width, std::vector<float>* values) {
   MLVC_PROFILE_RANGE_FUNCTION();
-  const int quant_channels = static_cast<int>(quant_step.size()) / (height * width);
-  mlvc::Check(static_cast<int>(quant_step.size()) == quant_channels * height * width,
-              "decoder quant step shape is not contiguous NCHW");
+  const int quant_channels =
+      static_cast<int>(quant_step.size()) / (height * width);
+  mlvc::Check(
+      static_cast<int>(quant_step.size()) == quant_channels * height * width,
+      "decoder quant step shape is not contiguous NCHW");
   mlvc::Check(quant_channels == 1 || quant_channels == channels,
               "decoder quant step channel count mismatch");
   for (int c = 0; c < channels; ++c) {

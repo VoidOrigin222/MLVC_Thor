@@ -1,4 +1,3 @@
-#include <arpa/inet.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
@@ -9,6 +8,7 @@
 #include <vector>
 
 #include "mlvc/io/udp_frame_transport.h"
+#include <arpa/inet.h>
 
 namespace {
 
@@ -30,8 +30,9 @@ std::vector<uint8_t> MakeScu(uint32_t config_id) {
   return mlvc::transport::SerializeScu(scu);
 }
 
-std::vector<uint8_t> MakeEfu(uint32_t config_id, uint32_t frame_id, MlvcFrameType type,
-                             uint32_t short_ref, uint32_t long_ref, bool store_ltr = false) {
+std::vector<uint8_t> MakeEfu(uint32_t config_id, uint32_t frame_id,
+                             MlvcFrameType type, uint32_t short_ref,
+                             uint32_t long_ref, bool store_ltr = false) {
   MlvcEfu efu;
   efu.config_id = config_id;
   efu.frame_id = frame_id;
@@ -41,8 +42,8 @@ std::vector<uint8_t> MakeEfu(uint32_t config_id, uint32_t frame_id, MlvcFrameTyp
   efu.short_ref_frame_id = short_ref;
   efu.long_ref_frame_id = long_ref;
   if (type == MlvcFrameType::kIFrame) {
-    efu.unit_flags |= mlvc::transport::kEfuRandomAccess |
-                      mlvc::transport::kEfuResetReference;
+    efu.unit_flags |=
+        mlvc::transport::kEfuRandomAccess | mlvc::transport::kEfuResetReference;
   }
   if (type == MlvcFrameType::kLtrRecovery) {
     efu.unit_flags |= mlvc::transport::kEfuResetReference;
@@ -57,9 +58,11 @@ void SendUnit(int socket, uint16_t port, uint16_t* sequence, uint32_t timestamp,
   const auto header = mlvc::transport::ParseMediaUnitHeader(unit);
   const RtpUnitType type = header.unit_type;
   const bool is_efu = type == RtpUnitType::kEfu;
-  const uint8_t flags = mlvc::transport::kRtpMlvcStart | mlvc::transport::kRtpMlvcEnd;
-  const RtpMlvcFragment fragment{type, flags, header.config_id, header.unit_id, 0,
-                                 header.unit_length, unit};
+  const uint8_t flags =
+      mlvc::transport::kRtpMlvcStart | mlvc::transport::kRtpMlvcEnd;
+  const RtpMlvcFragment fragment{
+      type, flags, header.config_id, header.unit_id, 0, header.unit_length,
+      unit};
   const auto payload = mlvc::transport::EncodeRtpMlvcFragment(fragment);
   std::vector<uint8_t> packet(12, 0);
   packet[0] = 0x80;
@@ -105,10 +108,10 @@ void TestEosWaitsForReorderedFrames() {
   assert(socket >= 0);
   uint16_t sequence = 1000;
   SendUnit(socket, receiver.local_port(), &sequence, 0, MakeScu(1));
-  SendUnit(socket, receiver.local_port(), &sequence, 0,
-           MakeEfu(1, 0, MlvcFrameType::kIFrame,
-                   mlvc::transport::kMlvcNoReference,
-                   mlvc::transport::kMlvcNoReference));
+  SendUnit(
+      socket, receiver.local_port(), &sequence, 0,
+      MakeEfu(1, 0, MlvcFrameType::kIFrame, mlvc::transport::kMlvcNoReference,
+              mlvc::transport::kMlvcNoReference));
   (void)receiver.ReceiveHeader();
   ExpectFrame(&receiver, 0, MlvcFrameType::kIFrame);
 
@@ -143,9 +146,9 @@ void TestCompletedFrameDuplicateIsIgnored() {
   assert(socket >= 0);
   uint16_t sequence = 2000;
   SendUnit(socket, receiver.local_port(), &sequence, 0, MakeScu(1));
-  const auto first_frame = MakeEfu(1, 0, MlvcFrameType::kIFrame,
-                                  mlvc::transport::kMlvcNoReference,
-                                  mlvc::transport::kMlvcNoReference);
+  const auto first_frame =
+      MakeEfu(1, 0, MlvcFrameType::kIFrame, mlvc::transport::kMlvcNoReference,
+              mlvc::transport::kMlvcNoReference);
   SendUnit(socket, receiver.local_port(), &sequence, 0, first_frame);
   (void)receiver.ReceiveHeader();
   ExpectFrame(&receiver, 0, MlvcFrameType::kIFrame);
@@ -173,10 +176,10 @@ void TestDamagedEfuDoesNotTerminateReceiver() {
   assert(socket >= 0);
   uint16_t sequence = 3000;
   SendUnit(socket, receiver.local_port(), &sequence, 0, MakeScu(1));
-  SendUnit(socket, receiver.local_port(), &sequence, 0,
-           MakeEfu(1, 0, MlvcFrameType::kIFrame,
-                   mlvc::transport::kMlvcNoReference,
-                   mlvc::transport::kMlvcNoReference));
+  SendUnit(
+      socket, receiver.local_port(), &sequence, 0,
+      MakeEfu(1, 0, MlvcFrameType::kIFrame, mlvc::transport::kMlvcNoReference,
+              mlvc::transport::kMlvcNoReference));
   (void)receiver.ReceiveHeader();
   ExpectFrame(&receiver, 0, MlvcFrameType::kIFrame);
 
@@ -184,10 +187,10 @@ void TestDamagedEfuDoesNotTerminateReceiver() {
                          mlvc::transport::kMlvcNoReference);
   damaged.back() ^= 0x80;
   SendUnit(socket, receiver.local_port(), &sequence, 3000, damaged);
-  SendUnit(socket, receiver.local_port(), &sequence, 6000,
-           MakeEfu(1, 2, MlvcFrameType::kIFrame,
-                   mlvc::transport::kMlvcNoReference,
-                   mlvc::transport::kMlvcNoReference));
+  SendUnit(
+      socket, receiver.local_port(), &sequence, 6000,
+      MakeEfu(1, 2, MlvcFrameType::kIFrame, mlvc::transport::kMlvcNoReference,
+              mlvc::transport::kMlvcNoReference));
   ExpectFrame(&receiver, 2, MlvcFrameType::kIFrame);
 
   SendUnit(socket, receiver.local_port(), &sequence, 9000,
@@ -206,17 +209,17 @@ void TestRandomAccessReorderKeepsLatePredecessor() {
   assert(socket >= 0);
   uint16_t sequence = 4000;
   SendUnit(socket, receiver.local_port(), &sequence, 0, MakeScu(1));
-  SendUnit(socket, receiver.local_port(), &sequence, 0,
-           MakeEfu(1, 0, MlvcFrameType::kIFrame,
-                   mlvc::transport::kMlvcNoReference,
-                   mlvc::transport::kMlvcNoReference));
+  SendUnit(
+      socket, receiver.local_port(), &sequence, 0,
+      MakeEfu(1, 0, MlvcFrameType::kIFrame, mlvc::transport::kMlvcNoReference,
+              mlvc::transport::kMlvcNoReference));
   (void)receiver.ReceiveHeader();
   ExpectFrame(&receiver, 0, MlvcFrameType::kIFrame);
 
-  SendUnit(socket, receiver.local_port(), &sequence, 6000,
-           MakeEfu(1, 2, MlvcFrameType::kIFrame,
-                   mlvc::transport::kMlvcNoReference,
-                   mlvc::transport::kMlvcNoReference));
+  SendUnit(
+      socket, receiver.local_port(), &sequence, 6000,
+      MakeEfu(1, 2, MlvcFrameType::kIFrame, mlvc::transport::kMlvcNoReference,
+              mlvc::transport::kMlvcNoReference));
   std::thread delayed_middle_frame([&] {
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
     SendUnit(socket, receiver.local_port(), &sequence, 3000,
@@ -243,10 +246,10 @@ void TestLongGopGapWaitsForRecovery() {
   assert(socket >= 0);
   uint16_t sequence = 5000;
   SendUnit(socket, receiver.local_port(), &sequence, 0, MakeScu(1));
-  SendUnit(socket, receiver.local_port(), &sequence, 0,
-           MakeEfu(1, 0, MlvcFrameType::kIFrame,
-                   mlvc::transport::kMlvcNoReference,
-                   mlvc::transport::kMlvcNoReference));
+  SendUnit(
+      socket, receiver.local_port(), &sequence, 0,
+      MakeEfu(1, 0, MlvcFrameType::kIFrame, mlvc::transport::kMlvcNoReference,
+              mlvc::transport::kMlvcNoReference));
   (void)receiver.ReceiveHeader();
   ExpectFrame(&receiver, 0, MlvcFrameType::kIFrame);
 
@@ -255,10 +258,10 @@ void TestLongGopGapWaitsForRecovery() {
              MakeEfu(1, frame, MlvcFrameType::kPFrame, frame - 1,
                      mlvc::transport::kMlvcNoReference));
   }
-  SendUnit(socket, receiver.local_port(), &sequence, 96 * 3000,
-           MakeEfu(1, 96, MlvcFrameType::kIFrame,
-                   mlvc::transport::kMlvcNoReference,
-                   mlvc::transport::kMlvcNoReference));
+  SendUnit(
+      socket, receiver.local_port(), &sequence, 96 * 3000,
+      MakeEfu(1, 96, MlvcFrameType::kIFrame, mlvc::transport::kMlvcNoReference,
+              mlvc::transport::kMlvcNoReference));
   SendUnit(socket, receiver.local_port(), &sequence, 97 * 3000,
            mlvc::transport::SerializeEos(1, 97));
 
@@ -279,9 +282,10 @@ int main() {
   assert(socket >= 0);
   uint16_t sequence = 100;
 
-  SendUnit(socket, receiver.local_port(), &sequence, 0,
-           MakeEfu(1, 0, MlvcFrameType::kIFrame, mlvc::transport::kMlvcNoReference,
-                   mlvc::transport::kMlvcNoReference));
+  SendUnit(
+      socket, receiver.local_port(), &sequence, 0,
+      MakeEfu(1, 0, MlvcFrameType::kIFrame, mlvc::transport::kMlvcNoReference,
+              mlvc::transport::kMlvcNoReference));
   // A receiver may see the RA EFU before its reordered/repeated SCU.
   SendUnit(socket, receiver.local_port(), &sequence, 0, MakeScu(1));
   const auto header = receiver.ReceiveHeader();
@@ -314,24 +318,24 @@ int main() {
 
   // Random access can recover even when the missing-frame distance is larger
   // than the ordinary reorder window.
-  SendUnit(socket, receiver.local_port(), &sequence, 300000,
-           MakeEfu(1, 100, MlvcFrameType::kIFrame,
-                   mlvc::transport::kMlvcNoReference,
-                   mlvc::transport::kMlvcNoReference));
+  SendUnit(
+      socket, receiver.local_port(), &sequence, 300000,
+      MakeEfu(1, 100, MlvcFrameType::kIFrame, mlvc::transport::kMlvcNoReference,
+              mlvc::transport::kMlvcNoReference));
   ExpectFrame(&receiver, 100, MlvcFrameType::kIFrame);
 
   // SCUs arrive in reverse order.  The receiver sorts them by config ID and
   // applies each at its own random-access frame boundary.
   SendUnit(socket, receiver.local_port(), &sequence, 303000, MakeScu(3));
   SendUnit(socket, receiver.local_port(), &sequence, 303000, MakeScu(2));
-  SendUnit(socket, receiver.local_port(), &sequence, 303000,
-           MakeEfu(2, 101, MlvcFrameType::kIFrame,
-                   mlvc::transport::kMlvcNoReference,
-                   mlvc::transport::kMlvcNoReference));
-  SendUnit(socket, receiver.local_port(), &sequence, 306000,
-           MakeEfu(3, 102, MlvcFrameType::kIFrame,
-                   mlvc::transport::kMlvcNoReference,
-                   mlvc::transport::kMlvcNoReference));
+  SendUnit(
+      socket, receiver.local_port(), &sequence, 303000,
+      MakeEfu(2, 101, MlvcFrameType::kIFrame, mlvc::transport::kMlvcNoReference,
+              mlvc::transport::kMlvcNoReference));
+  SendUnit(
+      socket, receiver.local_port(), &sequence, 306000,
+      MakeEfu(3, 102, MlvcFrameType::kIFrame, mlvc::transport::kMlvcNoReference,
+              mlvc::transport::kMlvcNoReference));
   ExpectFrame(&receiver, 101, MlvcFrameType::kIFrame);
   ExpectFrame(&receiver, 102, MlvcFrameType::kIFrame);
 
@@ -350,7 +354,8 @@ int main() {
   std::vector<uint8_t> bad_payload;
   bool rejected_unavailable_short_reference = false;
   try {
-    (void)receiver.ReceiveFrame(&bad_frame_index, &bad_frame_type, &bad_q_index, &bad_payload);
+    (void)receiver.ReceiveFrame(&bad_frame_index, &bad_frame_type, &bad_q_index,
+                                &bad_payload);
   } catch (const std::exception&) {
     rejected_unavailable_short_reference = true;
   }

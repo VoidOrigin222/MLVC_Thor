@@ -1,10 +1,10 @@
-#include <mlvc/core/status.h>
-#include <mlvc/io/udp_frame_transport.h>
-
 #include <chrono>
 #include <future>
 #include <iostream>
 #include <string>
+
+#include "mlvc/core/status.h"
+#include "mlvc/io/udp_frame_transport.h"
 
 int main() {
   try {
@@ -13,9 +13,8 @@ int main() {
 
     Queue capacity_queue(1);
     const std::size_t first = capacity_queue.Acquire();
-    std::future<std::size_t> blocked = std::async(std::launch::async, [&] {
-      return capacity_queue.Acquire();
-    });
+    std::future<std::size_t> blocked = std::async(
+        std::launch::async, [&] { return capacity_queue.Acquire(); });
     mlvc::Check(blocked.wait_for(std::chrono::milliseconds(20)) ==
                     std::future_status::timeout,
                 "slot acquire must block while capacity is exhausted");
@@ -54,18 +53,20 @@ int main() {
 
     Queue failed_queue(1);
     const std::size_t held = failed_queue.Acquire();
-    std::future<std::string> failed_waiter = std::async(std::launch::async, [&] {
-      try {
-        (void)failed_queue.Acquire();
-      } catch (const std::exception& error) {
-        return std::string(error.what());
-      }
-      return std::string();
-    });
+    std::future<std::string> failed_waiter =
+        std::async(std::launch::async, [&] {
+          try {
+            (void)failed_queue.Acquire();
+          } catch (const std::exception& error) {
+            return std::string(error.what());
+          }
+          return std::string();
+        });
     mlvc::Check(failed_waiter.wait_for(std::chrono::milliseconds(20)) ==
                     std::future_status::timeout,
                 "failure waiter must start in a blocked state");
-    failed_queue.Fail(std::make_exception_ptr(mlvc::Error("expected slot failure")));
+    failed_queue.Fail(
+        std::make_exception_ptr(mlvc::Error("expected slot failure")));
     mlvc::Check(failed_waiter.get() == "expected slot failure",
                 "slot failure did not wake and rethrow to a blocked producer");
     (void)held;

@@ -42,13 +42,16 @@ class Profiler {
   void ReserveEvents(std::size_t capacity);
   void AddEvent(const std::string& name, double start_ms, double duration_ms);
   void AddEvent(const char* name, double start_ms, double duration_ms);
-  void AddEventWithArgs(std::string name, std::string category, std::string thread, double start_ms,
-                        double duration_ms, std::vector<ProfileArgument> args);
-  void AddCounter(std::string name, std::string category, std::string thread, double start_ms,
-                  std::vector<ProfileArgument> args);
-  void AddDurationNow(const std::string& name, std::chrono::steady_clock::time_point begin,
+  void AddEventWithArgs(std::string name, std::string category,
+                        std::string thread, double start_ms, double duration_ms,
+                        std::vector<ProfileArgument> args);
+  void AddCounter(std::string name, std::string category, std::string thread,
+                  double start_ms, std::vector<ProfileArgument> args);
+  void AddDurationNow(const std::string& name,
+                      std::chrono::steady_clock::time_point begin,
                       std::chrono::steady_clock::time_point end);
-  void AddDurationNow(const char* name, std::chrono::steady_clock::time_point begin,
+  void AddDurationNow(const char* name,
+                      std::chrono::steady_clock::time_point begin,
                       std::chrono::steady_clock::time_point end);
   double StartMs(std::chrono::steady_clock::time_point time) const;
   double DurationMs(std::chrono::steady_clock::time_point begin,

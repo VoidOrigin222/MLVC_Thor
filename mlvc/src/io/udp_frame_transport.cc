@@ -1,9 +1,10 @@
 #include "mlvc/io/udp_frame_transport.h"
 
-#include <chrono>
-#include <cstring>
-#include <cmath>
 #include <algorithm>
+#include <chrono>
+#include <cmath>
+#include <cstring>
+#include <iostream>
 #include <limits>
 #include <numeric>
 #include <random>
@@ -19,22 +20,23 @@ namespace {
 constexpr uint8_t kHeaderMessage = 1;
 constexpr uint8_t kFrameMessage = 2;
 constexpr uint8_t kEndMessage = 3;
-constexpr std::size_t kMaxPendingRtpFrames = 64;
 constexpr std::size_t kMaxPendingRtpFrameBytes = 128u * 1024u * 1024u;
-constexpr auto kRtpFrameReorderWait = std::chrono::milliseconds(100);
 
 bool IsRandomAccessEfu(const mlvc::transport::MlvcEfu& efu) {
-  return efu.frame_type == static_cast<uint8_t>(mlvc::codec::MlvcFrameType::kIFrame) &&
+  return efu.frame_type ==
+             static_cast<uint8_t>(mlvc::codec::MlvcFrameType::kIFrame) &&
          (efu.unit_flags & (mlvc::transport::kEfuRandomAccess |
                             mlvc::transport::kEfuResetReference)) ==
-             (mlvc::transport::kEfuRandomAccess | mlvc::transport::kEfuResetReference);
+             (mlvc::transport::kEfuRandomAccess |
+              mlvc::transport::kEfuResetReference);
 }
 
 std::string FormatBundleHash(const std::array<uint8_t, 32>& hash) {
   std::ostringstream output;
   output << std::hex;
-  for (uint8_t byte : hash) output << static_cast<unsigned>(byte >> 4)
-                                    << static_cast<unsigned>(byte & 0x0f);
+  for (uint8_t byte : hash)
+    output << static_cast<unsigned>(byte >> 4)
+           << static_cast<unsigned>(byte & 0x0f);
   return output.str();
 }
 
@@ -44,7 +46,9 @@ void PutU32(std::vector<uint8_t>* out, uint32_t value) {
   }
 }
 
-void PutI32(std::vector<uint8_t>* out, int32_t value) { PutU32(out, static_cast<uint32_t>(value)); }
+void PutI32(std::vector<uint8_t>* out, int32_t value) {
+  PutU32(out, static_cast<uint32_t>(value));
+}
 
 void PutU64(std::vector<uint8_t>* out, uint64_t value) {
   for (int shift = 0; shift < 64; shift += 8) {
@@ -59,11 +63,15 @@ void PutDouble(std::vector<uint8_t>* out, double value) {
 }
 
 uint32_t ReadU32(const uint8_t* data) {
-  return static_cast<uint32_t>(data[0]) | (static_cast<uint32_t>(data[1]) << 8) |
-         (static_cast<uint32_t>(data[2]) << 16) | (static_cast<uint32_t>(data[3]) << 24);
+  return static_cast<uint32_t>(data[0]) |
+         (static_cast<uint32_t>(data[1]) << 8) |
+         (static_cast<uint32_t>(data[2]) << 16) |
+         (static_cast<uint32_t>(data[3]) << 24);
 }
 
-int32_t ReadI32(const uint8_t* data) { return static_cast<int32_t>(ReadU32(data)); }
+int32_t ReadI32(const uint8_t* data) {
+  return static_cast<int32_t>(ReadU32(data));
+}
 
 uint64_t ReadU64(const uint8_t* data) {
   uint64_t value = 0;
@@ -81,25 +89,31 @@ double ReadDouble(const uint8_t* data) {
 }
 
 void PutBe32(std::vector<uint8_t>* out, uint32_t value) {
-  for (int shift = 24; shift >= 0; shift -= 8) out->push_back(static_cast<uint8_t>(value >> shift));
+  for (int shift = 24; shift >= 0; shift -= 8)
+    out->push_back(static_cast<uint8_t>(value >> shift));
 }
 
-mlvc::transport::MlvcScu MakeScu(const MlvcBitstreamHeader& header, uint32_t config_id) {
+mlvc::transport::MlvcScu MakeScu(const MlvcBitstreamHeader& header,
+                                 uint32_t config_id) {
   mlvc::transport::MlvcScu scu;
   scu.translation_warp = header.translation_warp;
   scu.config_id = config_id;
   scu.codec_bundle_sha256 = header.codec_bundle_sha256;
   scu.coded_width = static_cast<uint32_t>(header.width);
   scu.coded_height = static_cast<uint32_t>(header.height);
-  if (header.coded_width > 0) scu.coded_width = static_cast<uint32_t>(header.coded_width);
-  if (header.coded_height > 0) scu.coded_height = static_cast<uint32_t>(header.coded_height);
+  if (header.coded_width > 0)
+    scu.coded_width = static_cast<uint32_t>(header.coded_width);
+  if (header.coded_height > 0)
+    scu.coded_height = static_cast<uint32_t>(header.coded_height);
   scu.visible_width = static_cast<uint32_t>(header.width);
   scu.visible_height = static_cast<uint32_t>(header.height);
   scu.max_frame_bytes = static_cast<uint32_t>(std::min<uint64_t>(
       mlvc::io::MaxMlvcFramePayloadBytes(header.width, header.height),
       std::numeric_limits<uint32_t>::max()));
-  const uint64_t fps_scaled = static_cast<uint64_t>(std::llround(header.fps * 1000.0));
-  const uint32_t fps_num = static_cast<uint32_t>(std::max<uint64_t>(1, fps_scaled));
+  const uint64_t fps_scaled =
+      static_cast<uint64_t>(std::llround(header.fps * 1000.0));
+  const uint32_t fps_num =
+      static_cast<uint32_t>(std::max<uint64_t>(1, fps_scaled));
   const uint32_t fps_den = 1000;
   const uint32_t divisor = std::gcd(fps_num, fps_den);
   scu.nominal_fps_num = fps_num / divisor;
@@ -111,7 +125,8 @@ mlvc::transport::MlvcScu MakeScu(const MlvcBitstreamHeader& header, uint32_t con
   PutBe32(&policy, static_cast<uint32_t>(header.reset_interval));
   PutBe32(&policy, static_cast<uint32_t>(header.ltr_start_idx));
   PutBe32(&policy, static_cast<uint32_t>(header.ltr_period));
-  scu.tlvs.push_back({mlvc::transport::kMlvcTlvNominalPolicy, std::move(policy)});
+  scu.tlvs.push_back(
+      {mlvc::transport::kMlvcTlvNominalPolicy, std::move(policy)});
   std::vector<uint8_t> forced;
   PutBe32(&forced, static_cast<uint32_t>(header.forced_ltr_recovery_frame));
   PutBe32(&forced, static_cast<uint32_t>(header.forced_ltr_reference_frame));
@@ -120,9 +135,11 @@ mlvc::transport::MlvcScu MakeScu(const MlvcBitstreamHeader& header, uint32_t con
 }
 
 uint32_t RtpTimestamp(uint32_t offset, int frame_index, double fps) {
-  const long double ticks = std::round(static_cast<long double>(frame_index) * 90000.0L /
-                                       static_cast<long double>(fps));
-  if (!std::isfinite(ticks) || ticks < 0.0L) throw mlvc::Error("invalid RTP timestamp");
+  const long double ticks =
+      std::round(static_cast<long double>(frame_index) * 90000.0L /
+                 static_cast<long double>(fps));
+  if (!std::isfinite(ticks) || ticks < 0.0L)
+    throw mlvc::Error("invalid RTP timestamp");
   const long double modulo = std::fmod(ticks, 4294967296.0L);
   return offset + static_cast<uint32_t>(modulo);
 }
@@ -148,13 +165,15 @@ UdpMlvcSender::~UdpMlvcSender() = default;
 
 void UdpMlvcSender::SendHeader(const MlvcBitstreamHeader& header) {
   Check(!header.translation_warp,
-        "translation warp requires MLVC-ES file or RTP; legacy UDP cannot carry geometry");
+        "translation warp requires MLVC-ES file or RTP; legacy UDP cannot "
+        "carry geometry");
   Check(!closed_, "MLVC UDP sender is closed");
   Check(!header_sent_, "MLVC UDP header has already been sent");
   MlvcBitstreamHeader normalized = header;
   if (normalized.version == 0) normalized.version = 3;
   ValidateMlvcBitstreamHeader(normalized);
-  max_payload_size_ = MaxMlvcFramePayloadBytes(normalized.width, normalized.height);
+  max_payload_size_ =
+      MaxMlvcFramePayloadBytes(normalized.width, normalized.height);
   std::vector<uint8_t> message;
   message.reserve(65);
   message.push_back(kHeaderMessage);
@@ -179,15 +198,18 @@ void UdpMlvcSender::SendHeader(const MlvcBitstreamHeader& header) {
   expected_frame_index_ = 0;
 }
 
-void UdpMlvcSender::SendFrame(int frame_index, mlvc::codec::MlvcFrameType frame_type, int q_index,
+void UdpMlvcSender::SendFrame(int frame_index,
+                              mlvc::codec::MlvcFrameType frame_type,
+                              int q_index,
                               const std::vector<uint8_t>& payload) {
   Check(!closed_, "MLVC UDP sender is closed");
   Check(header_sent_, "MLVC UDP header must be sent before frames");
-  ValidateMlvcFrameMetadata(frame_index, frame_type, q_index, expected_frame_index_,
-                            expected_frame_index_ == 0);
+  ValidateMlvcFrameMetadata(frame_index, frame_type, q_index,
+                            expected_frame_index_, expected_frame_index_ == 0);
   Check(payload.size() <= max_payload_size_,
         "MLVC frame payload exceeds the configured resolution limit");
-  Check(payload.size() <= std::numeric_limits<uint32_t>::max(), "MLVC frame payload is too large");
+  Check(payload.size() <= std::numeric_limits<uint32_t>::max(),
+        "MLVC frame payload is too large");
   std::vector<uint8_t> message;
   message.reserve(14 + payload.size());
   message.push_back(kFrameMessage);
@@ -219,7 +241,8 @@ UdpMlvcReceiver::~UdpMlvcReceiver() = default;
 
 MlvcBitstreamHeader UdpMlvcReceiver::ReceiveHeader() {
   const std::vector<uint8_t> message = receiver_.Receive();
-  Check((message.size() == 57 || message.size() == 65) && message[0] == kHeaderMessage,
+  Check((message.size() == 57 || message.size() == 65) &&
+            message[0] == kHeaderMessage,
         "invalid MLVC UDP header message");
   const uint8_t* cursor = message.data() + 1;
   MlvcBitstreamHeader header;
@@ -256,17 +279,22 @@ MlvcBitstreamHeader UdpMlvcReceiver::ReceiveHeader() {
     Check(message.size() == 57, "invalid MLVC UDP legacy header size");
   }
   mlvc::io::ValidateMlvcBitstreamHeader(header);
-  Check(header.version >= 2 && header.version <= 4, "unsupported MLVC UDP header version");
+  Check(header.version >= 2 && header.version <= 4,
+        "unsupported MLVC UDP header version");
   header_ = header;
-  max_payload_size_ = mlvc::io::MaxMlvcFramePayloadBytes(header.width, header.height);
+  max_payload_size_ =
+      mlvc::io::MaxMlvcFramePayloadBytes(header.width, header.height);
   expected_frame_index_ = 0;
   header_received_ = true;
   return header;
 }
 
-bool UdpMlvcReceiver::ReceiveFrame(int* frame_index, mlvc::codec::MlvcFrameType* frame_type,
-                                   int* q_index, std::vector<uint8_t>* payload) {
-  Check(frame_index && frame_type && q_index && payload, "UDP frame outputs are required");
+bool UdpMlvcReceiver::ReceiveFrame(int* frame_index,
+                                   mlvc::codec::MlvcFrameType* frame_type,
+                                   int* q_index,
+                                   std::vector<uint8_t>* payload) {
+  Check(frame_index && frame_type && q_index && payload,
+        "UDP frame outputs are required");
   Check(header_received_, "MLVC UDP header must be received before frames");
   const std::vector<uint8_t> message = receiver_.Receive();
   Check(!message.empty(), "empty MLVC UDP message");
@@ -274,34 +302,42 @@ bool UdpMlvcReceiver::ReceiveFrame(int* frame_index, mlvc::codec::MlvcFrameType*
     Check(message.size() == 1, "invalid MLVC UDP end message");
     return false;
   }
-  Check(message[0] == kFrameMessage && message.size() >= 14, "invalid MLVC UDP frame message");
+  Check(message[0] == kFrameMessage && message.size() >= 14,
+        "invalid MLVC UDP frame message");
   const uint8_t* cursor = message.data() + 1;
   *frame_index = ReadI32(cursor);
   cursor += 4;
   const uint8_t raw_type = *cursor++;
-  Check(raw_type <= static_cast<uint8_t>(mlvc::codec::MlvcFrameType::kLtrRecovery),
+  Check(raw_type <=
+            static_cast<uint8_t>(mlvc::codec::MlvcFrameType::kLtrRecovery),
         "invalid MLVC UDP frame type");
   *frame_type = static_cast<mlvc::codec::MlvcFrameType>(raw_type);
   *q_index = ReadI32(cursor);
   cursor += 4;
-  mlvc::io::ValidateMlvcFrameMetadata(*frame_index, *frame_type, *q_index, expected_frame_index_,
+  mlvc::io::ValidateMlvcFrameMetadata(*frame_index, *frame_type, *q_index,
+                                      expected_frame_index_,
                                       expected_frame_index_ == 0);
   const uint32_t payload_size = ReadU32(cursor);
   cursor += 4;
-  Check(payload_size == message.size() - 14, "invalid MLVC UDP frame payload size");
-  Check(payload_size <= max_payload_size_, "MLVC UDP frame payload exceeds maximum for resolution");
+  Check(payload_size == message.size() - 14,
+        "invalid MLVC UDP frame payload size");
+  Check(payload_size <= max_payload_size_,
+        "MLVC UDP frame payload exceeds maximum for resolution");
   payload->assign(cursor, cursor + payload_size);
   ++expected_frame_index_;
   return true;
 }
 
-RtpMlvcSender::RtpMlvcSender(const std::string& host, uint16_t port, uint64_t pacing_rate_bps,
-                             std::size_t max_burst_bytes, std::size_t max_queue_bytes,
+RtpMlvcSender::RtpMlvcSender(const std::string& host, uint16_t port,
+                             uint64_t pacing_rate_bps,
+                             std::size_t max_burst_bytes,
+                             std::size_t max_queue_bytes,
                              uint64_t max_queue_delay_ms, uint8_t payload_type)
     : sender_(host, port, 0, pacing_rate_bps, max_burst_bytes, max_queue_bytes,
               max_queue_delay_ms, payload_type) {
   std::random_device rd;
-  timestamp_offset_ = (static_cast<uint32_t>(rd()) << 16) ^ static_cast<uint32_t>(rd());
+  timestamp_offset_ =
+      (static_cast<uint32_t>(rd()) << 16) ^ static_cast<uint32_t>(rd());
 }
 RtpMlvcSender::~RtpMlvcSender() = default;
 void RtpMlvcSender::SendHeader(const MlvcBitstreamHeader& header) {
@@ -314,8 +350,9 @@ void RtpMlvcSender::SendHeader(const MlvcBitstreamHeader& header) {
   session_config_ = mlvc::transport::SerializeScu(scu);
   sender_.SetSessionConfig(config_id_, session_config_, 0, timestamp_offset_);
   fps_ = normalized.fps;
-  max_payload_size_ = std::min<uint64_t>(scu.max_frame_bytes,
-                                         MaxMlvcFramePayloadBytes(normalized.width, normalized.height));
+  max_payload_size_ = std::min<uint64_t>(
+      scu.max_frame_bytes,
+      MaxMlvcFramePayloadBytes(normalized.width, normalized.height));
   header_sent_ = true;
   expected_frame_index_ = 0;
   configuration_switch_pending_ = false;
@@ -324,10 +361,14 @@ void RtpMlvcSender::SendHeader(const MlvcBitstreamHeader& header) {
 void RtpMlvcSender::SendConfiguration(uint32_t config_id,
                                       const MlvcBitstreamHeader& header) {
   Check(!closed_, "MLVC RTP sender is closed");
-  Check(header_sent_, "MLVC RTP initial header must be sent before a configuration switch");
-  Check(!configuration_switch_pending_, "MLVC RTP configuration switch is already pending");
-  const auto config_order = mlvc::transport::CompareMlvcSerial32(config_id, config_id_);
-  Check(config_order == mlvc::transport::MlvcSerial32Order::kNewer && config_id != 0,
+  Check(header_sent_,
+        "MLVC RTP initial header must be sent before a configuration switch");
+  Check(!configuration_switch_pending_,
+        "MLVC RTP configuration switch is already pending");
+  const auto config_order =
+      mlvc::transport::CompareMlvcSerial32(config_id, config_id_);
+  Check(config_order == mlvc::transport::MlvcSerial32Order::kNewer &&
+            config_id != 0,
         "MLVC RTP configuration IDs must increase monotonically");
   MlvcBitstreamHeader normalized = header;
   if (normalized.version == 0) normalized.version = 4;
@@ -339,54 +380,65 @@ void RtpMlvcSender::SendConfiguration(uint32_t config_id,
   session_config_ = session_config;
   config_id_ = config_id;
   fps_ = normalized.fps;
-  max_payload_size_ = std::min<uint64_t>(scu.max_frame_bytes,
-                                         MaxMlvcFramePayloadBytes(normalized.width, normalized.height));
+  max_payload_size_ = std::min<uint64_t>(
+      scu.max_frame_bytes,
+      MaxMlvcFramePayloadBytes(normalized.width, normalized.height));
   configuration_switch_pending_ = true;
 }
-void RtpMlvcSender::SendFrame(int frame_index, mlvc::codec::MlvcFrameType frame_type, int q_index,
+void RtpMlvcSender::SendFrame(int frame_index,
+                              mlvc::codec::MlvcFrameType frame_type,
+                              int q_index,
                               const std::vector<uint8_t>& payload) {
   SendFrame(frame_index, frame_type, q_index, MlvcFrameMetadata{}, payload);
 }
 
-void RtpMlvcSender::SendFrame(int frame_index, mlvc::codec::MlvcFrameType frame_type, int q_index,
-                              const MlvcFrameMetadata& metadata,
+void RtpMlvcSender::SendFrame(int frame_index,
+                              mlvc::codec::MlvcFrameType frame_type,
+                              int q_index, const MlvcFrameMetadata& metadata,
                               const std::vector<uint8_t>& payload) {
   Check(!closed_, "MLVC RTP sender is closed");
   Check(header_sent_, "MLVC RTP header must be sent before frames");
   if (configuration_switch_pending_) {
     Check(frame_type == mlvc::codec::MlvcFrameType::kIFrame,
-          "MLVC RTP configuration switch must begin with a random-access I-frame");
+          "MLVC RTP configuration switch must begin with a random-access "
+          "I-frame");
     if (metadata.explicit_metadata) {
-      Check((metadata.unit_flags & (mlvc::transport::kEfuRandomAccess |
-                                    mlvc::transport::kEfuResetReference)) ==
-                (mlvc::transport::kEfuRandomAccess | mlvc::transport::kEfuResetReference),
-            "MLVC RTP configuration switch I-frame is not marked random access");
+      Check(
+          (metadata.unit_flags & (mlvc::transport::kEfuRandomAccess |
+                                  mlvc::transport::kEfuResetReference)) ==
+              (mlvc::transport::kEfuRandomAccess |
+               mlvc::transport::kEfuResetReference),
+          "MLVC RTP configuration switch I-frame is not marked random access");
     }
   }
-  ValidateMlvcFrameMetadata(frame_index, frame_type, q_index, expected_frame_index_,
-                            expected_frame_index_ == 0);
-  Check(metadata.explicit_metadata || frame_type == mlvc::codec::MlvcFrameType::kIFrame,
+  ValidateMlvcFrameMetadata(frame_index, frame_type, q_index,
+                            expected_frame_index_, expected_frame_index_ == 0);
+  Check(metadata.explicit_metadata ||
+            frame_type == mlvc::codec::MlvcFrameType::kIFrame,
         "RTP inter frames require explicit reference metadata");
   const bool warp = mlvc::transport::ParseScu(session_config_).translation_warp;
   Check(metadata.translation_warp == warp,
         "RTP frame warp mode disagrees with stream capability");
-  Check((metadata.unit_flags & mlvc::transport::kEfuTranslationWarp) == 0 || warp,
-        "unexpected RTP frame warp flag");
+  Check(
+      (metadata.unit_flags & mlvc::transport::kEfuTranslationWarp) == 0 || warp,
+      "unexpected RTP frame warp flag");
   Check(payload.size() <= max_payload_size_,
         "RTP MLVC frame payload exceeds the configured resolution limit");
   Check(payload.size() <= std::numeric_limits<uint32_t>::max(),
         "RTP MLVC frame payload is too large");
-  Check(static_cast<uint64_t>(frame_index) + 1 <= std::numeric_limits<uint32_t>::max(),
+  Check(static_cast<uint64_t>(frame_index) + 1 <=
+            std::numeric_limits<uint32_t>::max(),
         "RTP MLVC frame index exceeds the unit identifier range");
   const int64_t pts = metadata.explicit_metadata
                           ? metadata.pts
                           : static_cast<int64_t>(std::llround(
-                                static_cast<long double>(frame_index) * 90000.0L /
-                                static_cast<long double>(fps_)));
+                                static_cast<long double>(frame_index) *
+                                90000.0L / static_cast<long double>(fps_)));
   const uint32_t timestamp = RtpTimestampForPts(timestamp_offset_, pts);
   if (configuration_switch_pending_) {
     sender_.SetSessionConfig(config_id_, session_config_, 0, timestamp);
-  } else if (frame_type == mlvc::codec::MlvcFrameType::kIFrame && frame_index != 0) {
+  } else if (frame_type == mlvc::codec::MlvcFrameType::kIFrame &&
+             frame_index != 0) {
     sender_.ResendSessionConfig(timestamp);
   }
   mlvc::transport::MlvcEfu efu;
@@ -400,12 +452,14 @@ void RtpMlvcSender::SendFrame(int frame_index, mlvc::codec::MlvcFrameType frame_
     efu.unit_flags = metadata.unit_flags | mlvc::transport::kEfuCrcPresent;
     efu.short_ref_frame_id = metadata.short_ref_frame_id;
     efu.long_ref_frame_id = metadata.long_ref_frame_id;
-    const int model_q_index = metadata.model_q_index < 0 ? q_index : metadata.model_q_index;
+    const int model_q_index =
+        metadata.model_q_index < 0 ? q_index : metadata.model_q_index;
     Check(model_q_index >= 0 && model_q_index < 64,
           "RTP explicit model Q index must be in [0, 63]");
     efu.model_q_index = static_cast<uint8_t>(model_q_index);
   } else if (frame_type == mlvc::codec::MlvcFrameType::kIFrame) {
-    efu.unit_flags |= mlvc::transport::kEfuRandomAccess | mlvc::transport::kEfuResetReference;
+    efu.unit_flags |=
+        mlvc::transport::kEfuRandomAccess | mlvc::transport::kEfuResetReference;
     efu.short_ref_frame_id = mlvc::transport::kMlvcNoReference;
     efu.long_ref_frame_id = mlvc::transport::kMlvcNoReference;
   }
@@ -426,9 +480,9 @@ void RtpMlvcSender::SendEnd() {
         "MLVC RTP configuration switch has no random-access frame");
   const uint32_t next_frame_id = static_cast<uint32_t>(expected_frame_index_);
   const auto unit = mlvc::transport::SerializeEos(config_id_, next_frame_id);
-  sender_.SendUnit(mlvc::transport::RtpUnitType::kEos, 0, config_id_,
-                   next_frame_id,
-                   RtpTimestamp(timestamp_offset_, expected_frame_index_, fps_), unit);
+  sender_.SendUnit(
+      mlvc::transport::RtpUnitType::kEos, 0, config_id_, next_frame_id,
+      RtpTimestamp(timestamp_offset_, expected_frame_index_, fps_), unit);
 }
 
 void RtpMlvcSender::Close() {
@@ -442,63 +496,94 @@ void RtpMlvcSender::Close() {
 bool RtpMlvcSender::ConsumeRandomAccessRequest() {
   return sender_.ConsumeRandomAccessRequest();
 }
-bool RtpMlvcSender::PopMlvcControl(mlvc::transport::MlvcControlMessage* message) {
+bool RtpMlvcSender::PopMlvcControl(
+    mlvc::transport::MlvcControlMessage* message) {
   return sender_.PopMlvcControl(message);
 }
-uint16_t RtpMlvcSender::rtcp_local_port() const { return sender_.rtcp_local_port(); }
+uint16_t RtpMlvcSender::rtcp_local_port() const {
+  return sender_.rtcp_local_port();
+}
 void RtpMlvcSender::SendMlvcControlResponse(
     const mlvc::transport::MlvcControlMessage& request, bool accepted,
     const std::string& reason) {
   sender_.SendMlvcControlResponse(request, accepted, reason);
 }
 
-RtpMlvcReceiver::RtpMlvcReceiver(uint16_t port, std::array<uint8_t, 32> expected_bundle_hash,
-                                 uint8_t payload_type)
-    : receiver_(port, "MLVC RTP", payload_type), expected_bundle_hash_(expected_bundle_hash) {}
-RtpMlvcReceiver::~RtpMlvcReceiver() = default;
+RtpMlvcReceiver::RtpMlvcReceiver(uint16_t port,
+                                 std::array<uint8_t, 32> expected_bundle_hash,
+                                 uint8_t payload_type, RtpReceivePolicy policy)
+    : receiver_(port, "MLVC RTP", payload_type, policy.queue),
+      policy_(std::move(policy)),
+      expected_bundle_hash_(expected_bundle_hash) {
+  Check(policy_.pending_frames > 0 && policy_.pending_frames <= 4096 &&
+            policy_.reorder_wait.count() > 0 && policy_.eos_wait.count() > 0,
+        "Invalid RTP frame receive policy");
+}
+RtpMlvcReceiver::~RtpMlvcReceiver() {
+  std::cout << "rtp_lost_packets=" << receiver_.lost_packets()
+            << "\nrtp_reordered_packets=" << receiver_.reordered_packets()
+            << "\nrtp_queue_max_depth=" << receiver_.queue_max_depth()
+            << "\nrtp_queue_dropped_units=" << receiver_.queue_dropped_units()
+            << "\nrtp_queue_overflows=" << receiver_.queue_overflows()
+            << "\nrtp_crc_failed_units=" << receiver_.crc_failed_units()
+            << "\nrtp_dependency_gaps=" << dependency_gaps_
+            << "\nrtp_skipped_frames=" << skipped_frames_
+            << "\nrtp_recoveries=" << recovery_count_
+            << "\nrtp_socket_receive_buffer="
+            << receiver_.socket_receive_buffer() << "\n";
+}
 
-void RtpMlvcReceiver::HandleConfigurationUnit(const std::vector<uint8_t>& unit) {
+void RtpMlvcReceiver::HandleConfigurationUnit(
+    const std::vector<uint8_t>& unit) {
   const auto scu = mlvc::transport::ParseScu(unit);
   if (std::any_of(expected_bundle_hash_.begin(), expected_bundle_hash_.end(),
                   [](uint8_t byte) { return byte != 0; })) {
-      Check(scu.codec_bundle_sha256 == expected_bundle_hash_,
-            "RTP configuration uses a different model bundle (received=" +
-                FormatBundleHash(scu.codec_bundle_sha256) + ", expected=" +
-                FormatBundleHash(expected_bundle_hash_) + ")");
+    Check(scu.codec_bundle_sha256 == expected_bundle_hash_,
+          "RTP configuration uses a different model bundle (received=" +
+              FormatBundleHash(scu.codec_bundle_sha256) +
+              ", expected=" + FormatBundleHash(expected_bundle_hash_) + ")");
   }
-  const auto config_order = mlvc::transport::CompareMlvcSerial32(scu.config_id, config_id_);
+  const auto config_order =
+      mlvc::transport::CompareMlvcSerial32(scu.config_id, config_id_);
   if (config_order == mlvc::transport::MlvcSerial32Order::kAmbiguous) {
     throw Error("RTP SCU configuration ID is serial-number ambiguous");
   }
   if (config_order == mlvc::transport::MlvcSerial32Order::kSame) {
-    Check(unit == active_config_unit_, "RTP configuration ID was reused with different SCU bytes");
+    Check(unit == active_config_unit_,
+          "RTP configuration ID was reused with different SCU bytes");
     return;
   }
   Check(config_order == mlvc::transport::MlvcSerial32Order::kNewer,
         "RTP SCU configuration ID moved backwards");
-  Check(header_received_, "RTP configuration switch arrived before the initial SCU");
+  Check(header_received_,
+        "RTP configuration switch arrived before the initial SCU");
   Check(pending_config_id_ == 0, "RTP configuration switch is already pending");
-  CheckCompatibleRtpConfiguration(mlvc::transport::ParseScu(active_config_unit_), scu);
+  CheckCompatibleRtpConfiguration(
+      mlvc::transport::ParseScu(active_config_unit_), scu);
   config_id_ = scu.config_id;
   active_config_unit_ = unit;
   pending_config_id_ = config_id_;
   reorder_deadline_.reset();
   waiting_for_recovery_ = false;
   eos_frame_count_.reset();
-  max_payload_size_ = std::min<uint64_t>(scu.max_frame_bytes,
-                                         MaxMlvcFramePayloadBytes(header_.width, header_.height));
+  max_payload_size_ = std::min<uint64_t>(
+      scu.max_frame_bytes,
+      MaxMlvcFramePayloadBytes(header_.width, header_.height));
   available_short_reference_id_.reset();
   ltr_frame_ids_.clear();
 }
 
-void RtpMlvcReceiver::QueueConfigurationUnit(std::vector<uint8_t> unit, uint32_t config_id) {
+void RtpMlvcReceiver::QueueConfigurationUnit(std::vector<uint8_t> unit,
+                                             uint32_t config_id) {
   for (const auto& queued : pending_config_units_) {
     if (mlvc::transport::ParseScu(queued).config_id == config_id) {
-      Check(queued == unit, "conflicting RTP SCU with the same configuration ID");
+      Check(queued == unit,
+            "conflicting RTP SCU with the same configuration ID");
       return;
     }
   }
-  Check(pending_config_units_.size() < 8, "RTP configuration reorder window is full");
+  Check(pending_config_units_.size() < 8,
+        "RTP configuration reorder window is full");
   pending_config_units_.push_back(std::move(unit));
 }
 
@@ -517,7 +602,8 @@ void RtpMlvcReceiver::HandleEndUnit(const std::vector<uint8_t>& unit) {
     return;
   }
   for (const auto& entry : pending_frames_) {
-    const auto frame_header = mlvc::transport::ParseMediaUnitHeader(entry.second);
+    const auto frame_header =
+        mlvc::transport::ParseMediaUnitHeader(entry.second);
     if (frame_header.config_id == config_id_) {
       Check(entry.first < header.unit_id,
             "RTP frame is at or beyond the EOS frame boundary");
@@ -526,7 +612,8 @@ void RtpMlvcReceiver::HandleEndUnit(const std::vector<uint8_t>& unit) {
   eos_frame_count_ = header.unit_id;
 }
 
-void RtpMlvcReceiver::BufferFrameUnit(const std::vector<uint8_t>& unit, uint32_t frame_id) {
+void RtpMlvcReceiver::BufferFrameUnit(const std::vector<uint8_t>& unit,
+                                      uint32_t frame_id) {
   const auto common = mlvc::transport::ParseMediaUnitHeader(unit);
   Check(common.unit_type == mlvc::transport::MlvcMediaUnitType::kEfu &&
             common.unit_id == frame_id,
@@ -535,7 +622,8 @@ void RtpMlvcReceiver::BufferFrameUnit(const std::vector<uint8_t>& unit, uint32_t
         "RTP frame ID exceeds the application range");
   const auto efu = mlvc::transport::ParseEfu(unit);
   if (efu.config_id == config_id_ && eos_frame_count_.has_value()) {
-    Check(frame_id < *eos_frame_count_, "RTP frame is at or beyond the EOS frame boundary");
+    Check(frame_id < *eos_frame_count_,
+          "RTP frame is at or beyond the EOS frame boundary");
   }
   if (!header_received_) {
     // A live receiver can join well after frame zero.  Before the matching
@@ -545,10 +633,11 @@ void RtpMlvcReceiver::BufferFrameUnit(const std::vector<uint8_t>& unit, uint32_t
     if (!is_random_access) return;
     const auto existing = pending_frames_.find(frame_id);
     if (existing != pending_frames_.end()) {
-      Check(existing->second == unit, "conflicting duplicate RTP random-access EFU");
+      Check(existing->second == unit,
+            "conflicting duplicate RTP random-access EFU");
       return;
     }
-    Check(pending_frames_.size() < kMaxPendingRtpFrames &&
+    Check(pending_frames_.size() < policy_.pending_frames &&
               unit.size() <= kMaxPendingRtpFrameBytes - pending_frame_bytes_,
           "RTP initial random-access window is full");
     pending_frame_bytes_ += unit.size();
@@ -577,15 +666,18 @@ void RtpMlvcReceiver::BufferFrameUnit(const std::vector<uint8_t>& unit, uint32_t
   const uint64_t frame_distance = static_cast<uint64_t>(frame_id) -
                                   static_cast<uint64_t>(expected_frame_index_);
   const bool random_access = IsRandomAccessEfu(efu);
-  const bool ltr_recovery = efu.config_id == config_id_ &&
-      efu.frame_type == static_cast<uint8_t>(mlvc::codec::MlvcFrameType::kLtrRecovery) &&
+  const bool ltr_recovery =
+      efu.config_id == config_id_ &&
+      efu.frame_type ==
+          static_cast<uint8_t>(mlvc::codec::MlvcFrameType::kLtrRecovery) &&
       ltr_frame_ids_.find(efu.long_ref_frame_id) != ltr_frame_ids_.end();
   const bool can_recover_gap = random_access || ltr_recovery;
-  if (waiting_for_recovery_ && frame_id > static_cast<uint32_t>(expected_frame_index_) &&
+  if (waiting_for_recovery_ &&
+      frame_id > static_cast<uint32_t>(expected_frame_index_) &&
       !can_recover_gap) {
     return;
   }
-  if (!can_recover_gap && frame_distance >= kMaxPendingRtpFrames) {
+  if (!can_recover_gap && frame_distance >= policy_.pending_frames) {
     MarkDependencyGap();
     return;
   }
@@ -594,12 +686,14 @@ void RtpMlvcReceiver::BufferFrameUnit(const std::vector<uint8_t>& unit, uint32_t
     Check(existing->second == unit, "conflicting duplicate RTP media unit");
     return;
   }
-  if (pending_frames_.size() >= kMaxPendingRtpFrames ||
+  if (pending_frames_.size() >= policy_.pending_frames ||
       unit.size() > kMaxPendingRtpFrameBytes - pending_frame_bytes_) {
     MarkDependencyGap();
-    if (!can_recover_gap && frame_id > static_cast<uint32_t>(expected_frame_index_)) return;
+    if (!can_recover_gap &&
+        frame_id > static_cast<uint32_t>(expected_frame_index_))
+      return;
   }
-  Check(pending_frames_.size() < kMaxPendingRtpFrames &&
+  Check(pending_frames_.size() < policy_.pending_frames &&
             unit.size() <= kMaxPendingRtpFrameBytes - pending_frame_bytes_,
         "RTP pending frame resource limit exceeded");
   pending_frame_bytes_ += unit.size();
@@ -607,7 +701,8 @@ void RtpMlvcReceiver::BufferFrameUnit(const std::vector<uint8_t>& unit, uint32_t
 }
 
 bool RtpMlvcReceiver::PopReadyFrame(std::vector<uint8_t>* unit) {
-  const auto it = pending_frames_.find(static_cast<uint32_t>(expected_frame_index_));
+  const auto it =
+      pending_frames_.find(static_cast<uint32_t>(expected_frame_index_));
   if (it == pending_frames_.end()) return false;
   const auto header = mlvc::transport::ParseMediaUnitHeader(it->second);
   // A future-configuration EFU may complete before its SCU because RTP
@@ -625,7 +720,8 @@ bool RtpMlvcReceiver::PopReadyFrame(std::vector<uint8_t>* unit) {
 
 bool RtpMlvcReceiver::HasPendingCurrentFrameAfterExpected() const {
   const auto expected = static_cast<uint32_t>(expected_frame_index_);
-  for (auto it = pending_frames_.upper_bound(expected); it != pending_frames_.end(); ++it) {
+  for (auto it = pending_frames_.upper_bound(expected);
+       it != pending_frames_.end(); ++it) {
     const auto header = mlvc::transport::ParseMediaUnitHeader(it->second);
     if (header.config_id == config_id_) return true;
   }
@@ -650,6 +746,9 @@ bool RtpMlvcReceiver::TryStartAtRandomAccess() {
       continue;
     }
     if (IsRandomAccessEfu(efu)) {
+      Check(!policy_.require_complete || efu.frame_id == 0,
+            "Complete RTP stream requires initial frame zero");
+      skipped_frames_ += efu.frame_id;
       expected_frame_index_ = static_cast<int>(efu.frame_id);
       for (auto stale = pending_frames_.begin(); stale != it;) {
         pending_frame_bytes_ -= stale->second.size();
@@ -669,14 +768,17 @@ bool RtpMlvcReceiver::TryStartAtRandomAccess() {
 
 std::optional<uint32_t> RtpMlvcReceiver::FindRecoveryFrame() const {
   const uint32_t expected = static_cast<uint32_t>(expected_frame_index_);
-  for (auto it = pending_frames_.upper_bound(expected); it != pending_frames_.end(); ++it) {
+  for (auto it = pending_frames_.upper_bound(expected);
+       it != pending_frames_.end(); ++it) {
     const auto efu = mlvc::transport::ParseEfu(it->second);
     const auto config_order =
         mlvc::transport::CompareMlvcSerial32(efu.config_id, config_id_);
     Check(config_order != mlvc::transport::MlvcSerial32Order::kAmbiguous,
           "RTP recovery EFU configuration ID is serial-number ambiguous");
-    bool config_available = config_order == mlvc::transport::MlvcSerial32Order::kSame;
-    if (!config_available && config_order == mlvc::transport::MlvcSerial32Order::kNewer) {
+    bool config_available =
+        config_order == mlvc::transport::MlvcSerial32Order::kSame;
+    if (!config_available &&
+        config_order == mlvc::transport::MlvcSerial32Order::kNewer) {
       config_available = std::any_of(
           pending_config_units_.begin(), pending_config_units_.end(),
           [&efu](const std::vector<uint8_t>& queued) {
@@ -685,8 +787,10 @@ std::optional<uint32_t> RtpMlvcReceiver::FindRecoveryFrame() const {
     }
     if (!config_available) continue;
     const bool random_access = IsRandomAccessEfu(efu);
-    const bool ltr_recovery = efu.config_id == config_id_ &&
-        efu.frame_type == static_cast<uint8_t>(mlvc::codec::MlvcFrameType::kLtrRecovery) &&
+    const bool ltr_recovery =
+        efu.config_id == config_id_ &&
+        efu.frame_type ==
+            static_cast<uint8_t>(mlvc::codec::MlvcFrameType::kLtrRecovery) &&
         ltr_frame_ids_.find(efu.long_ref_frame_id) != ltr_frame_ids_.end();
     if (random_access || ltr_recovery) return it->first;
   }
@@ -694,9 +798,15 @@ std::optional<uint32_t> RtpMlvcReceiver::FindRecoveryFrame() const {
 }
 
 void RtpMlvcReceiver::MarkDependencyGap() {
+  if (!waiting_for_recovery_) ++dependency_gaps_;
+  Check(!policy_.require_complete,
+        "RTP missing frame in complete-stream mode: " +
+            std::to_string(expected_frame_index_));
+  receiver_.RequestRandomAccess();
   waiting_for_recovery_ = true;
   reorder_deadline_.reset();
   const uint32_t expected = static_cast<uint32_t>(expected_frame_index_);
+  const auto recovery = FindRecoveryFrame();
   for (auto it = pending_frames_.begin(); it != pending_frames_.end();) {
     if (it->first == expected) {
       ++it;
@@ -706,9 +816,16 @@ void RtpMlvcReceiver::MarkDependencyGap() {
     const bool random_access = IsRandomAccessEfu(efu);
     const bool usable_ltr_recovery =
         efu.config_id == config_id_ &&
-        efu.frame_type == static_cast<uint8_t>(mlvc::codec::MlvcFrameType::kLtrRecovery) &&
+        efu.frame_type ==
+            static_cast<uint8_t>(mlvc::codec::MlvcFrameType::kLtrRecovery) &&
         ltr_frame_ids_.find(efu.long_ref_frame_id) != ltr_frame_ids_.end();
-    if (random_access || usable_ltr_recovery) {
+    // A buffered recovery point restores its subsequent reference chain.
+    // Keep those frames; discarding them would manufacture another gap even
+    // though their complete packets have already arrived.
+    const bool follows_recovery = recovery.has_value() &&
+                                  efu.config_id == config_id_ &&
+                                  it->first > *recovery;
+    if (random_access || usable_ltr_recovery || follows_recovery) {
       ++it;
     } else {
       pending_frame_bytes_ -= it->second.size();
@@ -718,13 +835,15 @@ void RtpMlvcReceiver::MarkDependencyGap() {
 }
 
 void RtpMlvcReceiver::DiscardPendingFramesBefore(uint32_t frame_id) {
-  for (auto it = pending_frames_.begin(); it != pending_frames_.end() && it->first < frame_id;) {
+  for (auto it = pending_frames_.begin();
+       it != pending_frames_.end() && it->first < frame_id;) {
     pending_frame_bytes_ -= it->second.size();
     it = pending_frames_.erase(it);
   }
 }
 
-void RtpMlvcReceiver::RememberDecodedFrame(uint32_t frame_id, bool store_as_ltr) {
+void RtpMlvcReceiver::RememberDecodedFrame(uint32_t frame_id,
+                                           bool store_as_ltr) {
   constexpr std::size_t kMaxLtrFrames = 64;
   available_short_reference_id_ = frame_id;
   if (store_as_ltr) {
@@ -756,21 +875,26 @@ MlvcBitstreamHeader RtpMlvcReceiver::ReceiveHeader() {
         mlvc::transport::CompareMlvcSerial32(scu.config_id, config_id_);
     Check(config_order != mlvc::transport::MlvcSerial32Order::kAmbiguous,
           "RTP SCU configuration ID is serial-number ambiguous");
-    if (config_id_ != 0 && config_order == mlvc::transport::MlvcSerial32Order::kSame) {
+    if (config_id_ != 0 &&
+        config_order == mlvc::transport::MlvcSerial32Order::kSame) {
       Check(unit == active_config_unit_,
             "RTP configuration ID was reused with different SCU bytes");
       if (TryStartAtRandomAccess()) return header_;
       continue;
     }
-    if (config_id_ != 0 && config_order == mlvc::transport::MlvcSerial32Order::kOlder) continue;
-    Check(config_id_ == 0 || config_order == mlvc::transport::MlvcSerial32Order::kNewer,
+    if (config_id_ != 0 &&
+        config_order == mlvc::transport::MlvcSerial32Order::kOlder)
+      continue;
+    Check(config_id_ == 0 ||
+              config_order == mlvc::transport::MlvcSerial32Order::kNewer,
           "RTP initial configuration IDs did not advance");
     if (std::any_of(expected_bundle_hash_.begin(), expected_bundle_hash_.end(),
                     [](uint8_t byte) { return byte != 0; })) {
       Check(scu.codec_bundle_sha256 == expected_bundle_hash_,
-            "RTP SCU model bundle hash does not match the local manifest (received=" +
-                FormatBundleHash(scu.codec_bundle_sha256) + ", expected=" +
-                FormatBundleHash(expected_bundle_hash_) + ")");
+            "RTP SCU model bundle hash does not match the local manifest "
+            "(received=" +
+                FormatBundleHash(scu.codec_bundle_sha256) +
+                ", expected=" + FormatBundleHash(expected_bundle_hash_) + ")");
     }
     config_id_ = scu.config_id;
     active_config_unit_ = unit;
@@ -786,12 +910,14 @@ MlvcBitstreamHeader RtpMlvcReceiver::ReceiveHeader() {
                  static_cast<double>(scu.nominal_fps_den);
     header.q_index = std::min<int>(21, scu.q_index_count - 1);
     for (const auto& tlv : scu.tlvs) {
-      if (tlv.type == mlvc::transport::kMlvcTlvNominalPolicy && tlv.value.size() == 16) {
+      if (tlv.type == mlvc::transport::kMlvcTlvNominalPolicy &&
+          tlv.value.size() == 16) {
         auto read_nonnegative = [&tlv](std::size_t offset) {
-          const uint32_t value = (static_cast<uint32_t>(tlv.value[offset]) << 24) |
-                                 (static_cast<uint32_t>(tlv.value[offset + 1]) << 16) |
-                                 (static_cast<uint32_t>(tlv.value[offset + 2]) << 8) |
-                                 static_cast<uint32_t>(tlv.value[offset + 3]);
+          const uint32_t value =
+              (static_cast<uint32_t>(tlv.value[offset]) << 24) |
+              (static_cast<uint32_t>(tlv.value[offset + 1]) << 16) |
+              (static_cast<uint32_t>(tlv.value[offset + 2]) << 8) |
+              static_cast<uint32_t>(tlv.value[offset + 3]);
           Check(value <= static_cast<uint32_t>(std::numeric_limits<int>::max()),
                 "RTP SCU policy value exceeds the application range");
           return static_cast<int>(value);
@@ -801,14 +927,17 @@ MlvcBitstreamHeader RtpMlvcReceiver::ReceiveHeader() {
         header.ltr_start_idx = read_nonnegative(8);
         header.ltr_period = read_nonnegative(12);
       }
-      if (tlv.type == mlvc::transport::kMlvcTlvVendorData && tlv.value.size() == 8) {
+      if (tlv.type == mlvc::transport::kMlvcTlvVendorData &&
+          tlv.value.size() == 8) {
         auto read_frame_index = [&tlv](std::size_t offset) {
-          const uint32_t value = (static_cast<uint32_t>(tlv.value[offset]) << 24) |
-                                 (static_cast<uint32_t>(tlv.value[offset + 1]) << 16) |
-                                 (static_cast<uint32_t>(tlv.value[offset + 2]) << 8) |
-                                 static_cast<uint32_t>(tlv.value[offset + 3]);
+          const uint32_t value =
+              (static_cast<uint32_t>(tlv.value[offset]) << 24) |
+              (static_cast<uint32_t>(tlv.value[offset + 1]) << 16) |
+              (static_cast<uint32_t>(tlv.value[offset + 2]) << 8) |
+              static_cast<uint32_t>(tlv.value[offset + 3]);
           Check(value == 0xffffffffu ||
-                    value <= static_cast<uint32_t>(std::numeric_limits<int>::max()),
+                    value <=
+                        static_cast<uint32_t>(std::numeric_limits<int>::max()),
                 "RTP forced LTR frame exceeds the application range");
           return value == 0xffffffffu ? -1 : static_cast<int>(value);
         };
@@ -821,8 +950,9 @@ MlvcBitstreamHeader RtpMlvcReceiver::ReceiveHeader() {
     header.flags = 0;
     ValidateMlvcBitstreamHeader(header);
     header_ = header;
-    max_payload_size_ = std::min<uint64_t>(scu.max_frame_bytes,
-                                           MaxMlvcFramePayloadBytes(header.width, header.height));
+    max_payload_size_ = std::min<uint64_t>(
+        scu.max_frame_bytes,
+        MaxMlvcFramePayloadBytes(header.width, header.height));
     pending_config_id_ = 0;
     available_short_reference_id_.reset();
     ltr_frame_ids_.clear();
@@ -831,35 +961,45 @@ MlvcBitstreamHeader RtpMlvcReceiver::ReceiveHeader() {
     if (TryStartAtRandomAccess()) return header_;
   }
 }
-bool RtpMlvcReceiver::ReceiveFrame(int* frame_index, mlvc::codec::MlvcFrameType* frame_type,
-                                   int* q_index, std::vector<uint8_t>* payload) {
-  Check(frame_index && frame_type && q_index && payload, "RTP frame outputs are required");
+bool RtpMlvcReceiver::ReceiveFrame(int* frame_index,
+                                   mlvc::codec::MlvcFrameType* frame_type,
+                                   int* q_index,
+                                   std::vector<uint8_t>* payload) {
+  Check(frame_index && frame_type && q_index && payload,
+        "RTP frame outputs are required");
   Check(header_received_, "MLVC RTP header must be received before frames");
   std::vector<uint8_t> message;
   for (;;) {
     if (pending_eos_unit_.has_value()) {
-      const auto eos_header = mlvc::transport::ParseMediaUnitHeader(*pending_eos_unit_);
+      const auto eos_header =
+          mlvc::transport::ParseMediaUnitHeader(*pending_eos_unit_);
       if (eos_header.config_id == config_id_) {
         HandleEndUnit(*pending_eos_unit_);
         pending_eos_unit_.reset();
-      } else if (mlvc::transport::CompareMlvcSerial32(eos_header.config_id, config_id_) ==
+      } else if (mlvc::transport::CompareMlvcSerial32(eos_header.config_id,
+                                                      config_id_) ==
                  mlvc::transport::MlvcSerial32Order::kOlder) {
         pending_eos_unit_.reset();
       }
     }
     if (pending_config_id_ == 0 && !pending_config_units_.empty()) {
       uint32_t target_config_id = 0;
-      const auto exact = pending_frames_.find(static_cast<uint32_t>(expected_frame_index_));
+      const auto exact =
+          pending_frames_.find(static_cast<uint32_t>(expected_frame_index_));
       if (exact != pending_frames_.end()) {
-        const auto exact_header = mlvc::transport::ParseMediaUnitHeader(exact->second);
-        if (mlvc::transport::CompareMlvcSerial32(exact_header.config_id, config_id_) ==
+        const auto exact_header =
+            mlvc::transport::ParseMediaUnitHeader(exact->second);
+        if (mlvc::transport::CompareMlvcSerial32(exact_header.config_id,
+                                                 config_id_) ==
             mlvc::transport::MlvcSerial32Order::kNewer) {
           target_config_id = exact_header.config_id;
         }
-      } else if (const auto recovery = FindRecoveryFrame(); recovery.has_value()) {
-        const auto recovery_header =
-            mlvc::transport::ParseMediaUnitHeader(pending_frames_.at(*recovery));
-        if (mlvc::transport::CompareMlvcSerial32(recovery_header.config_id, config_id_) ==
+      } else if (const auto recovery = FindRecoveryFrame();
+                 recovery.has_value()) {
+        const auto recovery_header = mlvc::transport::ParseMediaUnitHeader(
+            pending_frames_.at(*recovery));
+        if (mlvc::transport::CompareMlvcSerial32(recovery_header.config_id,
+                                                 config_id_) ==
             mlvc::transport::MlvcSerial32Order::kNewer) {
           target_config_id = recovery_header.config_id;
         }
@@ -869,7 +1009,8 @@ bool RtpMlvcReceiver::ReceiveFrame(int* frame_index, mlvc::codec::MlvcFrameType*
               pending_frames_.end() &&
           !waiting_for_recovery_) {
         if (!reorder_deadline_.has_value()) {
-          reorder_deadline_ = std::chrono::steady_clock::now() + kRtpFrameReorderWait;
+          reorder_deadline_ =
+              std::chrono::steady_clock::now() + policy_.reorder_wait;
         }
         if (std::chrono::steady_clock::now() < *reorder_deadline_) {
           target_config_id = 0;
@@ -885,25 +1026,28 @@ bool RtpMlvcReceiver::ReceiveFrame(int* frame_index, mlvc::codec::MlvcFrameType*
         auto target = std::find_if(
             pending_config_units_.begin(), pending_config_units_.end(),
             [target_config_id](const std::vector<uint8_t>& queued) {
-              return mlvc::transport::ParseScu(queued).config_id == target_config_id;
+              return mlvc::transport::ParseScu(queued).config_id ==
+                     target_config_id;
             });
         if (target != pending_config_units_.end()) {
           // If an intermediate switch and its RA frame were both lost, a
           // later complete SCU + random-access EFU is a valid recovery point.
           // Skip older queued SCUs only at that independently decodable RA.
           pending_config_units_.erase(
-              std::remove_if(pending_config_units_.begin(), pending_config_units_.end(),
-                             [target_config_id](const std::vector<uint8_t>& queued) {
-                               const auto order = mlvc::transport::CompareMlvcSerial32(
-                                   target_config_id,
-                                   mlvc::transport::ParseScu(queued).config_id);
-                               return order == mlvc::transport::MlvcSerial32Order::kNewer;
-                             }),
+              std::remove_if(
+                  pending_config_units_.begin(), pending_config_units_.end(),
+                  [target_config_id](const std::vector<uint8_t>& queued) {
+                    const auto order = mlvc::transport::CompareMlvcSerial32(
+                        target_config_id,
+                        mlvc::transport::ParseScu(queued).config_id);
+                    return order == mlvc::transport::MlvcSerial32Order::kNewer;
+                  }),
               pending_config_units_.end());
           target = std::find_if(
               pending_config_units_.begin(), pending_config_units_.end(),
               [target_config_id](const std::vector<uint8_t>& queued) {
-                return mlvc::transport::ParseScu(queued).config_id == target_config_id;
+                return mlvc::transport::ParseScu(queued).config_id ==
+                       target_config_id;
               });
           Check(target != pending_config_units_.end(),
                 "RTP recovery SCU disappeared from the reorder queue");
@@ -916,10 +1060,12 @@ bool RtpMlvcReceiver::ReceiveFrame(int* frame_index, mlvc::codec::MlvcFrameType*
       }
     }
     const bool expected_frame_pending =
-        pending_frames_.find(static_cast<uint32_t>(expected_frame_index_)) != pending_frames_.end();
+        pending_frames_.find(static_cast<uint32_t>(expected_frame_index_)) !=
+        pending_frames_.end();
     if (!expected_frame_pending && HasPendingCurrentFrameAfterExpected() &&
         !waiting_for_recovery_ && !reorder_deadline_.has_value()) {
-      reorder_deadline_ = std::chrono::steady_clock::now() + kRtpFrameReorderWait;
+      reorder_deadline_ =
+          std::chrono::steady_clock::now() + policy_.reorder_wait;
     }
     if (!expected_frame_pending && reorder_deadline_.has_value() &&
         std::chrono::steady_clock::now() >= *reorder_deadline_) {
@@ -929,9 +1075,12 @@ bool RtpMlvcReceiver::ReceiveFrame(int* frame_index, mlvc::codec::MlvcFrameType*
     if (!expected_frame_pending && waiting_for_recovery_) {
       const auto recovery = FindRecoveryFrame();
       if (recovery.has_value()) {
-        const auto recovery_header =
-            mlvc::transport::ParseMediaUnitHeader(pending_frames_.at(*recovery));
+        const auto recovery_header = mlvc::transport::ParseMediaUnitHeader(
+            pending_frames_.at(*recovery));
         if (recovery_header.config_id == config_id_) {
+          skipped_frames_ +=
+              *recovery - static_cast<uint32_t>(expected_frame_index_);
+          ++recovery_count_;
           expected_frame_index_ = static_cast<int>(*recovery);
           DiscardPendingFramesBefore(*recovery);
           waiting_for_recovery_ = false;
@@ -943,13 +1092,15 @@ bool RtpMlvcReceiver::ReceiveFrame(int* frame_index, mlvc::codec::MlvcFrameType*
     if (!PopReadyFrame(&message)) {
       if (eos_frame_count_.has_value() &&
           static_cast<uint32_t>(expected_frame_index_) == *eos_frame_count_ &&
-          pending_frames_.empty() && pending_config_units_.empty() && pending_config_id_ == 0) {
+          pending_frames_.empty() && pending_config_units_.empty() &&
+          pending_config_id_ == 0) {
         return false;
       }
       bool received = false;
       if (reorder_deadline_.has_value()) {
-        const auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
-            *reorder_deadline_ - std::chrono::steady_clock::now());
+        const auto remaining =
+            std::chrono::duration_cast<std::chrono::milliseconds>(
+                *reorder_deadline_ - std::chrono::steady_clock::now());
         if (remaining <= std::chrono::milliseconds::zero()) {
           MarkDependencyGap();
           continue;
@@ -960,9 +1111,20 @@ bool RtpMlvcReceiver::ReceiveFrame(int* frame_index, mlvc::codec::MlvcFrameType*
           continue;
         }
       } else if (eos_frame_count_.has_value()) {
-        received = receiver_.ReceiveFor(&message, std::chrono::seconds(2));
+        received = receiver_.ReceiveFor(&message, policy_.eos_wait);
+        if (!received && waiting_for_recovery_ &&
+            policy_.queue.overflow_policy == "recover" &&
+            pending_config_id_ == 0 && pending_config_units_.empty()) {
+          skipped_frames_ +=
+              *eos_frame_count_ - static_cast<uint32_t>(expected_frame_index_);
+          expected_frame_index_ = static_cast<int>(*eos_frame_count_);
+          pending_frames_.clear();
+          pending_frame_bytes_ = 0;
+          return false;
+        }
         Check(received,
-              "RTP EOS frame boundary was not reached before the missing-frame timeout");
+              "RTP EOS frame boundary was not reached before the missing-frame "
+              "timeout");
       } else {
         received = receiver_.Receive(&message);
       }
@@ -973,11 +1135,13 @@ bool RtpMlvcReceiver::ReceiveFrame(int* frame_index, mlvc::codec::MlvcFrameType*
         mlvc::transport::ValidateMediaUnit(message);
         const auto eos_config_order =
             mlvc::transport::CompareMlvcSerial32(common.config_id, config_id_);
-        Check(eos_config_order != mlvc::transport::MlvcSerial32Order::kAmbiguous,
-              "RTP EOS configuration ID is serial-number ambiguous");
+        Check(
+            eos_config_order != mlvc::transport::MlvcSerial32Order::kAmbiguous,
+            "RTP EOS configuration ID is serial-number ambiguous");
         if (eos_config_order == mlvc::transport::MlvcSerial32Order::kOlder) {
           continue;  // Delayed EOS from an obsolete configuration.
-        } else if (eos_config_order == mlvc::transport::MlvcSerial32Order::kSame) {
+        } else if (eos_config_order ==
+                   mlvc::transport::MlvcSerial32Order::kSame) {
           HandleEndUnit(message);
         } else {
           if (pending_eos_unit_.has_value()) {
@@ -1002,7 +1166,8 @@ bool RtpMlvcReceiver::ReceiveFrame(int* frame_index, mlvc::codec::MlvcFrameType*
         }
         continue;
       }
-      if (common.unit_type != mlvc::transport::MlvcMediaUnitType::kEfu) continue;
+      if (common.unit_type != mlvc::transport::MlvcMediaUnitType::kEfu)
+        continue;
       const auto efu = mlvc::transport::ParseEfu(message);
       BufferFrameUnit(message, efu.frame_id);
       continue;
@@ -1014,29 +1179,37 @@ bool RtpMlvcReceiver::ReceiveFrame(int* frame_index, mlvc::codec::MlvcFrameType*
       Check(efu.config_id == pending_config_id_ && efu.frame_type == 0 &&
                 (efu.unit_flags & (mlvc::transport::kEfuRandomAccess |
                                    mlvc::transport::kEfuResetReference)) ==
-                    (mlvc::transport::kEfuRandomAccess | mlvc::transport::kEfuResetReference),
+                    (mlvc::transport::kEfuRandomAccess |
+                     mlvc::transport::kEfuResetReference),
             "RTP configuration switch was not followed by a random-access EFU");
       pending_config_id_ = 0;
     }
-    Check(efu.frame_id <= static_cast<uint32_t>(std::numeric_limits<int>::max()),
-          "RTP frame ID exceeds the application range");
+    Check(
+        efu.frame_id <= static_cast<uint32_t>(std::numeric_limits<int>::max()),
+        "RTP frame ID exceeds the application range");
     *frame_index = static_cast<int>(efu.frame_id);
     *frame_type = static_cast<mlvc::codec::MlvcFrameType>(efu.frame_type);
     *q_index = efu.entropy_q_index;
     if (*frame_index != expected_frame_index_) {
-      mlvc::Check(false,
-                  "MLVC RTP frame index must be consecutive: expected " +
-                      std::to_string(expected_frame_index_) + ", got " +
-                      std::to_string(*frame_index) + " (lost=" +
-                      std::to_string(receiver_.lost_packets()) + ", duplicate=" +
-                      std::to_string(receiver_.duplicate_packets()) + ", reordered=" +
-                      std::to_string(receiver_.reordered_packets()) + ")");
+      mlvc::Check(
+          false,
+          "MLVC RTP frame index must be consecutive: expected " +
+              std::to_string(expected_frame_index_) + ", got " +
+              std::to_string(*frame_index) +
+              " (lost=" + std::to_string(receiver_.lost_packets()) +
+              ", duplicate=" + std::to_string(receiver_.duplicate_packets()) +
+              ", reordered=" + std::to_string(receiver_.reordered_packets()) +
+              ")");
     }
-    mlvc::io::ValidateMlvcFrameMetadata(*frame_index, *frame_type, *q_index, expected_frame_index_,
+    mlvc::io::ValidateMlvcFrameMetadata(*frame_index, *frame_type, *q_index,
+                                        expected_frame_index_,
                                         expected_frame_index_ == 0);
-    const bool random_access = (efu.unit_flags & mlvc::transport::kEfuRandomAccess) != 0;
-    const bool reset_reference = (efu.unit_flags & mlvc::transport::kEfuResetReference) != 0;
-    const bool store_as_ltr = (efu.unit_flags & mlvc::transport::kEfuStoreAsLtr) != 0;
+    const bool random_access =
+        (efu.unit_flags & mlvc::transport::kEfuRandomAccess) != 0;
+    const bool reset_reference =
+        (efu.unit_flags & mlvc::transport::kEfuResetReference) != 0;
+    const bool store_as_ltr =
+        (efu.unit_flags & mlvc::transport::kEfuStoreAsLtr) != 0;
     if (random_access) {
       Check(*frame_type == mlvc::codec::MlvcFrameType::kIFrame,
             "RTP random-access flag is only valid on an I-frame");
@@ -1047,7 +1220,8 @@ bool RtpMlvcReceiver::ReceiveFrame(int* frame_index, mlvc::codec::MlvcFrameType*
       // independent and remain usable for an explicit LTR recovery frame.
       available_short_reference_id_.reset();
     }
-    if (*frame_type == mlvc::codec::MlvcFrameType::kPFrame && !reset_reference) {
+    if (*frame_type == mlvc::codec::MlvcFrameType::kPFrame &&
+        !reset_reference) {
       Check(efu.short_ref_frame_id != mlvc::transport::kMlvcNoReference &&
                 available_short_reference_id_.has_value() &&
                 efu.short_ref_frame_id == *available_short_reference_id_,
@@ -1055,7 +1229,8 @@ bool RtpMlvcReceiver::ReceiveFrame(int* frame_index, mlvc::codec::MlvcFrameType*
     }
     if (*frame_type == mlvc::codec::MlvcFrameType::kLtrRecovery) {
       Check(efu.long_ref_frame_id != mlvc::transport::kMlvcNoReference &&
-                ltr_frame_ids_.find(efu.long_ref_frame_id) != ltr_frame_ids_.end(),
+                ltr_frame_ids_.find(efu.long_ref_frame_id) !=
+                    ltr_frame_ids_.end(),
             "RTP LTR recovery references an unavailable LTR frame");
     }
     Check(efu.entropy_payload.size() <= max_payload_size_,
@@ -1074,7 +1249,8 @@ bool RtpMlvcReceiver::ReceiveFrame(int* frame_index, mlvc::codec::MlvcFrameType*
     Check(expected_frame_index_ < std::numeric_limits<int>::max(),
           "RTP frame index reached the application limit");
     ++expected_frame_index_;
-    recent_frames_[efu.frame_id] = {message.size(), mlvc::transport::MlvcCrc32c(message)};
+    recent_frames_[efu.frame_id] = {message.size(),
+                                    mlvc::transport::MlvcCrc32c(message)};
     constexpr std::size_t kMaxRecentFrameFingerprints = 4096;
     while (recent_frames_.size() > kMaxRecentFrameFingerprints) {
       recent_frames_.erase(recent_frames_.begin());

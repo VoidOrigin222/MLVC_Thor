@@ -26,7 +26,8 @@ std::pair<int, bool> SpsHelper::GetSpsId(const Sps& target) {
   int max_id = -1;
   for (const Sps& record : records_) {
     if (record.height == target.height && record.width == target.width &&
-        record.use_ada_i == target.use_ada_i && record.ec_part == target.ec_part) {
+        record.use_ada_i == target.use_ada_i &&
+        record.ec_part == target.ec_part) {
       return {record.sps_id, false};
     }
     max_id = std::max(max_id, record.sps_id);
@@ -64,7 +65,8 @@ void WriteUIntAdaptive(std::ostream& out, uint32_t value) {
   }
   if (value < (1u << 14)) {
     const uint8_t v0 = static_cast<uint8_t>(value & 0xff);
-    const uint8_t v1 = static_cast<uint8_t>(((value >> 8) & 0xff) | (0x02 << 6));
+    const uint8_t v1 =
+        static_cast<uint8_t>(((value >> 8) & 0xff) | (0x02 << 6));
     WriteByte(out, v1);
     WriteByte(out, v0);
     return;
@@ -97,7 +99,8 @@ uint32_t ReadUIntAdaptive(std::istream& in) {
 
 void WriteSps(std::ostream& out, const Sps& sps) {
   Check(sps.sps_id >= 0 && sps.sps_id < 16, "sps_id must be in [0, 15]");
-  WriteByte(out, static_cast<uint8_t>((static_cast<int>(NalType::kSps) << 4) + sps.sps_id));
+  WriteByte(out, static_cast<uint8_t>((static_cast<int>(NalType::kSps) << 4) +
+                                      sps.sps_id));
   WriteUIntAdaptive(out, static_cast<uint32_t>(sps.height));
   WriteUIntAdaptive(out, static_cast<uint32_t>(sps.width));
   WriteByte(out, static_cast<uint8_t>((sps.ec_part << 2) + sps.use_ada_i));
@@ -106,7 +109,8 @@ void WriteSps(std::ostream& out, const Sps& sps) {
 void WriteIp(std::ostream& out, bool is_i_frame, int sps_id, int qp,
              const std::vector<uint8_t>& bitstream) {
   const NalType nal_type = is_i_frame ? NalType::kI : NalType::kP;
-  WriteByte(out, static_cast<uint8_t>((static_cast<int>(nal_type) << 4) + sps_id));
+  WriteByte(out,
+            static_cast<uint8_t>((static_cast<int>(nal_type) << 4) + sps_id));
   WriteByte(out, static_cast<uint8_t>(qp));
   WriteUIntAdaptive(out, static_cast<uint32_t>(bitstream.size()));
   out.write(reinterpret_cast<const char*>(bitstream.data()),

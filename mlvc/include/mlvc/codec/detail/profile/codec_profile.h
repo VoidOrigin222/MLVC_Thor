@@ -9,10 +9,11 @@
 
 namespace mlvc::codec {
 
-void AddProfileEvent(mlvc::Profiler* profiler, const char* name, double start_ms,
-                     double duration_ms);
-void AddProfileEventWithArgs(mlvc::Profiler* profiler, std::string name, std::string category,
-                             std::string thread, double start_ms, double duration_ms,
+void AddProfileEvent(mlvc::Profiler* profiler, const char* name,
+                     double start_ms, double duration_ms);
+void AddProfileEventWithArgs(mlvc::Profiler* profiler, std::string name,
+                             std::string category, std::string thread,
+                             double start_ms, double duration_ms,
                              std::vector<mlvc::ProfileArgument> args);
 void AddProfileDuration(mlvc::Profiler* profiler, const char* name,
                         std::chrono::steady_clock::time_point begin,

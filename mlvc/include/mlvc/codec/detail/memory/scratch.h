@@ -1,13 +1,13 @@
 #ifndef MLVC_CODEC_DETAIL_SCRATCH_H_
 #define MLVC_CODEC_DETAIL_SCRATCH_H_
 
-#include <mlvc/codec/tensor_data.h>
-#include <mlvc/core/tensor.h>
-#include <mlvc/runtime/stage_runtime.h>
-
 #include <cstddef>
 #include <cstdint>
 #include <vector>
+
+#include "mlvc/codec/tensor_data.h"
+#include "mlvc/core/tensor.h"
+#include "mlvc/runtime/stage_runtime.h"
 
 namespace mlvc::codec {
 
@@ -44,7 +44,8 @@ struct PriorScratch {
 
  private:
   void Reserve(int channels, int height, int width) {
-    const std::size_t elements = static_cast<std::size_t>(channels * height * width);
+    const std::size_t elements =
+        static_cast<std::size_t>(channels * height * width);
     latent_shape = mlvc::TensorShape({1, channels, height, width});
     const int z_height = (height + 3) / 4;
     const int z_width = (width + 3) / 4;
@@ -57,9 +58,12 @@ struct PriorScratch {
     part_scales_fp16.reserve(elements);
     y_symbols.reserve(elements);
     z_symbols.reserve(elements);
-    reconstructed_fp16.bytes.reserve(elements * mlvc::ElementSize(mlvc::DataType::kFloat16));
-    quantized_z.bytes.reserve(elements * mlvc::ElementSize(mlvc::DataType::kFloat16));
-    output.bytes.reserve(elements * mlvc::ElementSize(mlvc::DataType::kFloat16));
+    reconstructed_fp16.bytes.reserve(
+        elements * mlvc::ElementSize(mlvc::DataType::kFloat16));
+    quantized_z.bytes.reserve(elements *
+                              mlvc::ElementSize(mlvc::DataType::kFloat16));
+    output.bytes.reserve(elements *
+                         mlvc::ElementSize(mlvc::DataType::kFloat16));
   }
 };
 
@@ -73,11 +77,14 @@ struct CodecScratch {
 
   void ReserveRoute(mlvc::StageModelSet* models) {
     reference_feature = MakeTensorLike(
-        OutputSpec(models->manifest().GetModel("p_reference_frame_adaptor"), "reference_feature"));
-    decoded_feature = MakeTensorLike(
-        OutputSpec(models->manifest().GetModel("p_synthesis_decoder"), "decoded_feature"));
-    x_hat_encode = MakeTensorLike(OutputSpec(models->manifest().GetModel("i_decoder"), "x_hat"));
-    x_hat_decode = MakeTensorLike(OutputSpec(models->manifest().GetModel("i_decoder"), "x_hat"));
+        OutputSpec(models->manifest().GetModel("p_reference_frame_adaptor"),
+                   "reference_feature"));
+    decoded_feature = MakeTensorLike(OutputSpec(
+        models->manifest().GetModel("p_synthesis_decoder"), "decoded_feature"));
+    x_hat_encode = MakeTensorLike(
+        OutputSpec(models->manifest().GetModel("i_decoder"), "x_hat"));
+    x_hat_decode = MakeTensorLike(
+        OutputSpec(models->manifest().GetModel("i_decoder"), "x_hat"));
   }
 };
 
@@ -88,7 +95,8 @@ struct AsyncEntropyScratch {
   std::vector<int16_t> y_index_scratch;
 
   void Reserve(int channels, int height, int width) {
-    const std::size_t elements = static_cast<std::size_t>(channels * height * width);
+    const std::size_t elements =
+        static_cast<std::size_t>(channels * height * width);
     z_symbol_scratch.reserve(elements);
     y_symbol_scratch.reserve(elements);
     scale_scratch.reserve(elements);

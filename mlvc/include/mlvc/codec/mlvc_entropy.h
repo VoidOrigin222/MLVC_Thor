@@ -1,11 +1,11 @@
 #ifndef MLVC_CODEC_MLVC_ENTROPY_H_
 #define MLVC_CODEC_MLVC_ENTROPY_H_
 
-#include <mlvc/codec/tensor_data.h>
-
 #include <cstdint>
 #include <string_view>
 #include <vector>
+
+#include "mlvc/codec/tensor_data.h"
 
 namespace mlvc::codec {
 
@@ -25,17 +25,21 @@ bool ShouldUseLtrFeatures(int cycle_index, int ltr_start_idx, int ltr_period);
 bool ShouldSaveLtrFeatures(int cycle_index, int ltr_start_idx, int ltr_period);
 void ValidateForcedLtrConfiguration(int gop, int ltr_start_idx, int ltr_period,
                                     int recovery_frame, int reference_frame);
-MlvcFrameType MlvcFrameTypeForFrame(int frame_index, int gop, int reset_interval, int ltr_start_idx,
+MlvcFrameType MlvcFrameTypeForFrame(int frame_index, int gop,
+                                    int reset_interval, int ltr_start_idx,
                                     int ltr_period);
 std::string_view MlvcFrameTypeName(MlvcFrameType frame_type);
 std::string_view MlvcEntropyPrefix(bool is_i_frame);
 bool MlvcUseTwoParts(int width, int height);
 
-void BuildMlvcScaleIndexesFromZRaw(const TensorData& z_raw, int y_channels, int y_height,
-                                   int y_width, int channel_repeat, std::vector<uint8_t>* scales_0,
+void BuildMlvcScaleIndexesFromZRaw(const TensorData& z_raw, int y_channels,
+                                   int y_height, int y_width,
+                                   int channel_repeat,
+                                   std::vector<uint8_t>* scales_0,
                                    std::vector<uint8_t>* scales_1);
 void BuildMlvcCombinedYIndexes(const std::vector<int8_t>& symbols,
-                               const std::vector<uint8_t>& scales, std::vector<int16_t>* indexes);
+                               const std::vector<uint8_t>& scales,
+                               std::vector<int16_t>* indexes);
 
 }  // namespace mlvc::codec
 

@@ -1,11 +1,3 @@
-#include <mlvc/codec/tensor_data.h>
-#include <mlvc/core/status.h>
-#include <mlvc/io/dvpp_jpeg_encoder.h>
-#include <mlvc/io/fp16_yuv444_to_nv12.h>
-#include <mlvc/runtime/acl_runtime.h>
-
-#include <acl/ops/acl_dvpp.h>
-
 #include <chrono>
 #include <cstdint>
 #include <filesystem>
@@ -13,6 +5,13 @@
 #include <iostream>
 #include <string>
 #include <vector>
+
+#include "mlvc/codec/tensor_data.h"
+#include "mlvc/core/status.h"
+#include "mlvc/io/dvpp_jpeg_encoder.h"
+#include "mlvc/io/fp16_yuv444_to_nv12.h"
+#include "mlvc/runtime/acl_runtime.h"
+#include <acl/ops/acl_dvpp.h>
 
 namespace {
 
@@ -35,22 +34,35 @@ Options ParseOptions(int argc, char** argv) {
     const std::string arg = argv[i];
     mlvc::Check(i + 1 < argc, "missing value for " + arg);
     const std::string value = argv[++i];
-    if (arg == "--input-fp16") options.input_fp16 = value;
-    else if (arg == "--output-jpeg") options.output_jpeg = value;
-    else if (arg == "--width") options.width = std::stoi(value);
-    else if (arg == "--height") options.height = std::stoi(value);
-    else if (arg == "--padded-width") options.padded_width = std::stoi(value);
-    else if (arg == "--padded-height") options.padded_height = std::stoi(value);
-    else if (arg == "--device") options.device = std::stoi(value);
-    else if (arg == "--quality") options.quality = std::stoi(value);
-    else if (arg == "--warmup") options.warmup = std::stoi(value);
-    else if (arg == "--frames") options.frames = std::stoi(value);
-    else throw mlvc::Error("unknown option: " + arg);
+    if (arg == "--input-fp16")
+      options.input_fp16 = value;
+    else if (arg == "--output-jpeg")
+      options.output_jpeg = value;
+    else if (arg == "--width")
+      options.width = std::stoi(value);
+    else if (arg == "--height")
+      options.height = std::stoi(value);
+    else if (arg == "--padded-width")
+      options.padded_width = std::stoi(value);
+    else if (arg == "--padded-height")
+      options.padded_height = std::stoi(value);
+    else if (arg == "--device")
+      options.device = std::stoi(value);
+    else if (arg == "--quality")
+      options.quality = std::stoi(value);
+    else if (arg == "--warmup")
+      options.warmup = std::stoi(value);
+    else if (arg == "--frames")
+      options.frames = std::stoi(value);
+    else
+      throw mlvc::Error("unknown option: " + arg);
   }
   mlvc::Check(!options.input_fp16.empty(), "--input-fp16 is required");
   mlvc::Check(!options.output_jpeg.empty(), "--output-jpeg is required");
-  mlvc::Check(options.quality >= 1 && options.quality <= 100, "quality must be in [1, 100]");
-  mlvc::Check(options.warmup >= 0 && options.frames > 0, "invalid warmup or frame count");
+  mlvc::Check(options.quality >= 1 && options.quality <= 100,
+              "quality must be in [1, 100]");
+  mlvc::Check(options.warmup >= 0 && options.frames > 0,
+              "invalid warmup or frame count");
   return options;
 }
 
@@ -59,7 +71,8 @@ Options ParseOptions(int argc, char** argv) {
 int main(int argc, char** argv) {
   try {
     const Options options = ParseOptions(argc, argv);
-    const mlvc::io::Nv12Layout layout{options.width, options.height, options.width, options.height};
+    const mlvc::io::Nv12Layout layout{options.width, options.height,
+                                      options.width, options.height};
     const mlvc::codec::TensorData input = mlvc::codec::ReadTensorFile(
         options.input_fp16, {1, 3, options.padded_height, options.padded_width},
         mlvc::DataType::kFloat16);
@@ -73,15 +86,16 @@ int main(int argc, char** argv) {
     aclrtEvent nv12_ready = nullptr;
     mlvc::CheckAcl(acldvppMalloc(&nv12_device, nv12.size()),
                    "acldvppMalloc benchmark device input");
-    mlvc::CheckAcl(aclrtMemcpy(nv12_device, nv12.size(), nv12.data(), nv12.size(),
-                               ACL_MEMCPY_HOST_TO_DEVICE),
+    mlvc::CheckAcl(aclrtMemcpy(nv12_device, nv12.size(), nv12.data(),
+                               nv12.size(), ACL_MEMCPY_HOST_TO_DEVICE),
                    "copy benchmark NV12 H2D");
-    mlvc::CheckAcl(aclrtCreateEvent(&nv12_ready), "aclrtCreateEvent benchmark NV12");
+    mlvc::CheckAcl(aclrtCreateEvent(&nv12_ready),
+                   "aclrtCreateEvent benchmark NV12");
     mlvc::CheckAcl(aclrtRecordEvent(nv12_ready, runtime.stream()),
                    "aclrtRecordEvent benchmark NV12");
     mlvc::io::DvppJpegTiming device_timing;
-    const std::vector<uint8_t> device_jpeg =
-        encoder.EncodeDevice(nv12_device, nv12.size(), nv12_ready, &device_timing);
+    const std::vector<uint8_t> device_jpeg = encoder.EncodeDevice(
+        nv12_device, nv12.size(), nv12_ready, &device_timing);
     mlvc::Check(device_timing.h2d_ms == 0.0,
                 "device-input DVPP encode must not report H2D time");
     mlvc::Check(device_jpeg.size() >= 4 && device_jpeg[0] == 0xff &&
@@ -91,7 +105,8 @@ int main(int argc, char** argv) {
                 "device-input DVPP output is not a valid JPEG");
     mlvc::CheckAcl(aclrtDestroyEvent(nv12_ready),
                    "aclrtDestroyEvent benchmark NV12");
-    mlvc::CheckAcl(acldvppFree(nv12_device), "acldvppFree benchmark device input");
+    mlvc::CheckAcl(acldvppFree(nv12_device),
+                   "acldvppFree benchmark device input");
     for (int i = 0; i < options.warmup; ++i) encoder.Encode(nv12);
 
     double conversion_ms = 0.0;
@@ -102,8 +117,9 @@ int main(int argc, char** argv) {
       const auto conversion_begin = std::chrono::steady_clock::now();
       mlvc::io::ConvertFp16Yuv444ToNv12(input, layout, &nv12);
       const auto conversion_end = std::chrono::steady_clock::now();
-      conversion_ms +=
-          std::chrono::duration<double, std::milli>(conversion_end - conversion_begin).count();
+      conversion_ms += std::chrono::duration<double, std::milli>(
+                           conversion_end - conversion_begin)
+                           .count();
       mlvc::io::DvppJpegTiming timing;
       jpeg = encoder.Encode(nv12, &timing);
       totals.h2d_ms += timing.h2d_ms;
@@ -122,23 +138,29 @@ int main(int argc, char** argv) {
     uint32_t decoded_width = 0;
     uint32_t decoded_height = 0;
     int32_t components = 0;
-    mlvc::CheckAcl(acldvppJpegGetImageInfo(jpeg.data(), static_cast<uint32_t>(jpeg.size()),
-                                           &decoded_width, &decoded_height, &components),
-                   "acldvppJpegGetImageInfo");
+    mlvc::CheckAcl(
+        acldvppJpegGetImageInfo(jpeg.data(), static_cast<uint32_t>(jpeg.size()),
+                                &decoded_width, &decoded_height, &components),
+        "acldvppJpegGetImageInfo");
     mlvc::Check(decoded_width == static_cast<uint32_t>(options.width) &&
-                    decoded_height == static_cast<uint32_t>(options.height) && components == 3,
+                    decoded_height == static_cast<uint32_t>(options.height) &&
+                    components == 3,
                 "DVPP JPEG metadata mismatch");
 
     const double frames = static_cast<double>(options.frames);
     const double total_ms =
-        std::chrono::duration<double, std::milli>(total_end - total_begin).count();
+        std::chrono::duration<double, std::milli>(total_end - total_begin)
+            .count();
     std::cout << "jpeg_valid=1\n";
-    std::cout << "decoded_size=" << decoded_width << "x" << decoded_height << "\n";
+    std::cout << "decoded_size=" << decoded_width << "x" << decoded_height
+              << "\n";
     std::cout << "jpeg_bytes=" << jpeg.size() << "\n";
-    std::cout << "neon=" << (mlvc::io::Fp16Yuv444ToNv12UsesNeon() ? 1 : 0) << "\n";
+    std::cout << "neon=" << (mlvc::io::Fp16Yuv444ToNv12UsesNeon() ? 1 : 0)
+              << "\n";
     std::cout << "frames=" << options.frames << "\n";
     std::cout << "device_input_h2d_ms=" << device_timing.h2d_ms << "\n";
-    std::cout << "device_input_dvpp_encode_ms=" << device_timing.encode_ms << "\n";
+    std::cout << "device_input_dvpp_encode_ms=" << device_timing.encode_ms
+              << "\n";
     std::cout << "device_input_d2h_ms=" << device_timing.d2h_ms << "\n";
     std::cout << "conversion_avg_ms=" << conversion_ms / frames << "\n";
     std::cout << "h2d_avg_ms=" << totals.h2d_ms / frames << "\n";

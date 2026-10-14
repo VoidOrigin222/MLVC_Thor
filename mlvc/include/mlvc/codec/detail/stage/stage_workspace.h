@@ -1,21 +1,21 @@
 #ifndef MLVC_CODEC_DETAIL_STAGE_WORKSPACE_H_
 #define MLVC_CODEC_DETAIL_STAGE_WORKSPACE_H_
 
-#include <mlvc/codec/detail/stage/constants.h>
-#include <mlvc/codec/detail/stage/stage_types.h>
-#include <mlvc/codec/tensor_data.h>
-#include <mlvc/core/buffer.h>
-#include <mlvc/core/tensor.h>
-#include <mlvc/core/tensor_handle.h>
-#include <mlvc/framework/profiler.h>
-#include <mlvc/runtime/stage_runtime.h>
-
 #include <array>
 #include <cstddef>
 #include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
+
+#include "mlvc/codec/detail/stage/constants.h"
+#include "mlvc/codec/detail/stage/stage_types.h"
+#include "mlvc/codec/tensor_data.h"
+#include "mlvc/core/buffer.h"
+#include "mlvc/core/tensor.h"
+#include "mlvc/core/tensor_handle.h"
+#include "mlvc/framework/profiler.h"
+#include "mlvc/runtime/stage_runtime.h"
 
 namespace mlvc::codec {
 
@@ -42,26 +42,34 @@ struct StageOutputWorkspace {
     std::size_t size = 0;
   };
 
-  explicit StageOutputWorkspace(mlvc::StageModelSet* models, StageOutputBindingMode binding_mode);
+  explicit StageOutputWorkspace(mlvc::StageModelSet* models,
+                                StageOutputBindingMode binding_mode);
 
   RunOutput Bind(const mlvc::ModelRecord& record);
-  void BindOutputViews(const mlvc::ModelRecord& record, const RunOutput& output,
-                       std::array<mlvc::NamedTensorView, kMaxStageOutputs>* output_views,
-                       std::size_t* output_count);
-  void MirrorOutputsToCpu(const mlvc::ModelRecord& record, const RunOutput& output,
-                          mlvc::Profiler* profiler);
+  void BindOutputViews(
+      const mlvc::ModelRecord& record, const RunOutput& output,
+      std::array<mlvc::NamedTensorView, kMaxStageOutputs>* output_views,
+      std::size_t* output_count);
+  void MirrorOutputsToCpu(const mlvc::ModelRecord& record,
+                          const RunOutput& output, mlvc::Profiler* profiler);
   bool CanCopyStageTensorFromDevice(std::string_view stage_name,
                                     std::string_view tensor_name) const;
   std::optional<InputView> InputViewForCpuMirror(const TensorData* tensor);
   std::optional<InputView> UploadInputToDevice(const mlvc::ModelRecord& record,
-                                               const char* input_name, const TensorData& tensor,
+                                               const char* input_name,
+                                               const TensorData& tensor,
                                                mlvc::Profiler* profiler);
-  void CopyStageTensorFromDevice(std::string_view stage_name, std::string_view tensor_name,
-                                 mlvc::PinnedHostBuffer* buffer, std::size_t* offset,
-                                 TensorBytesView* view, mlvc::Profiler* profiler = nullptr);
-  bool BuildEncodeYIndexesToPinned(std::string_view spatial_stage, int part, float force_zero_thres,
-                                   mlvc::PinnedHostBuffer* buffer, std::size_t* offset,
-                                   TensorBytesView* combined_view, TensorBytesView* keep_view,
+  void CopyStageTensorFromDevice(std::string_view stage_name,
+                                 std::string_view tensor_name,
+                                 mlvc::PinnedHostBuffer* buffer,
+                                 std::size_t* offset, TensorBytesView* view,
+                                 mlvc::Profiler* profiler = nullptr);
+  bool BuildEncodeYIndexesToPinned(std::string_view spatial_stage, int part,
+                                   float force_zero_thres,
+                                   mlvc::PinnedHostBuffer* buffer,
+                                   std::size_t* offset,
+                                   TensorBytesView* combined_view,
+                                   TensorBytesView* keep_view,
                                    mlvc::Profiler* profiler = nullptr);
   void SynchronizeCopyStream(mlvc::Profiler* profiler = nullptr,
                              std::string_view reason = "copy_stream");

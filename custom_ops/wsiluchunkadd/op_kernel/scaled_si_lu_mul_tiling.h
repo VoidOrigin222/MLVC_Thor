@@ -13,12 +13,12 @@
 #include <cstdint>
 
 struct ScaledSiLUMulTilingData {
-    uint32_t totalElements;
-    uint32_t elementsPerCore;
-    uint32_t tailCoreElements;
-    uint32_t tileElements;
-    uint32_t dataType;
-    uint32_t computeMode;
+  uint32_t totalElements;
+  uint32_t elementsPerCore;
+  uint32_t tailCoreElements;
+  uint32_t tileElements;
+  uint32_t dataType;
+  uint32_t computeMode;
 };
 
-#endif // SCALED_SI_LU_MUL_TILING_H
+#endif  // SCALED_SI_LU_MUL_TILING_H

@@ -82,13 +82,15 @@ class MlvcRateController {
     RateAllocator(double bitrate, double fps, double target_level_in = 0.1);
 
     void Configure(double bitrate, double fps);
-    RateAllocatorResult Allocate(double presentation_time, double frame_weight,
-                                 std::optional<double> undershoot_tau_override = std::nullopt,
-                                 std::optional<double> overshoot_tau_override = std::nullopt);
+    RateAllocatorResult Allocate(
+        double presentation_time, double frame_weight,
+        std::optional<double> undershoot_tau_override = std::nullopt,
+        std::optional<double> overshoot_tau_override = std::nullopt);
     void Update(double presentation_time, double frame_weight, int frame_bits);
 
    private:
-    int CalcPlannedExcessBits(double presentation_time, double frame_weight) const;
+    int CalcPlannedExcessBits(double presentation_time,
+                              double frame_weight) const;
   };
 
   class RateModel {

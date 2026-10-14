@@ -1,14 +1,15 @@
-#include <mlvc/core/status.h>
-#include <mlvc/runtime/acl_runtime.h>
-
 #include <functional>
 #include <iostream>
 #include <limits>
 #include <utility>
 #include <vector>
 
+#include "mlvc/core/status.h"
+#include "mlvc/runtime/acl_runtime.h"
+
 namespace {
-void ExpectRejected(mlvc::AclRuntime* runtime, const mlvc::ModelManifest& manifest,
+void ExpectRejected(mlvc::AclRuntime* runtime,
+                    const mlvc::ModelManifest& manifest,
                     mlvc::ModelRecord record, const std::string& reason) {
   try {
     mlvc::AclStage stage(runtime, record, manifest.directory() / record.model);
@@ -20,28 +21,33 @@ void ExpectRejected(mlvc::AclRuntime* runtime, const mlvc::ModelManifest& manife
   throw mlvc::Error("invalid model specification accepted: " + reason);
 }
 
-void ExpectRuntimeShapeRejected(mlvc::AclStage* stage, const mlvc::TensorSpec& input) {
-  const std::size_t element_count = mlvc::TensorShape(input.shape).NumElements();
-  mlvc::Check(element_count <= static_cast<std::size_t>(std::numeric_limits<int64_t>::max()),
+void ExpectRuntimeShapeRejected(mlvc::AclStage* stage,
+                                const mlvc::TensorSpec& input) {
+  const std::size_t element_count =
+      mlvc::TensorShape(input.shape).NumElements();
+  mlvc::Check(element_count <=
+                  static_cast<std::size_t>(std::numeric_limits<int64_t>::max()),
               "test tensor element count exceeds int64 range");
-  std::vector<int64_t> wrong_shape = {
-      static_cast<int64_t>(element_count)};
+  std::vector<int64_t> wrong_shape = {static_cast<int64_t>(element_count)};
   if (wrong_shape == input.shape) {
     wrong_shape = {1, static_cast<int64_t>(element_count)};
   }
   std::vector<uint8_t> storage(element_count * mlvc::ElementSize(input.dtype));
   mlvc::NamedTensorView wrong_input{
       input.name.c_str(),
-      mlvc::TensorView(storage.data(), mlvc::TensorShape(std::move(wrong_shape)), input.dtype,
+      mlvc::TensorView(storage.data(),
+                       mlvc::TensorShape(std::move(wrong_shape)), input.dtype,
                        mlvc::MemoryLocation::kCpu)};
   try {
     stage->RunNamed(&wrong_input, 1, nullptr, 0);
   } catch (const mlvc::Error& error) {
-    mlvc::Check(std::string(error.what()).find("shape mismatch") != std::string::npos,
-                "unexpected runtime rejection: " + std::string(error.what()));
+    mlvc::Check(
+        std::string(error.what()).find("shape mismatch") != std::string::npos,
+        "unexpected runtime rejection: " + std::string(error.what()));
     return;
   }
-  throw mlvc::Error("same-element-count tensor with a different shape was accepted");
+  throw mlvc::Error(
+      "same-element-count tensor with a different shape was accepted");
 }
 }  // namespace
 
@@ -53,7 +59,8 @@ int main(int argc, char** argv) {
     for (const auto& record : manifest.models()) {
       // Exercise the real OM metadata, and retain logical names for RunStage.
       {
-        mlvc::AclStage stage(&runtime, record, manifest.directory() / record.model);
+        mlvc::AclStage stage(&runtime, record,
+                             manifest.directory() / record.model);
         for (std::size_t i = 0; i < record.outputs.size(); ++i) {
           mlvc::Check(stage.record().outputs[i].name == record.outputs[i].name,
                       "logical output name changed");

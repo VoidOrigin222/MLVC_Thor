@@ -15,17 +15,22 @@ inline bool ProfileHotPathEnabled() {
 
 class ScopedProfileHotPath {
  public:
-  ScopedProfileHotPath() { g_profile_hot_path_depth.fetch_add(1, std::memory_order_relaxed); }
+  ScopedProfileHotPath() {
+    g_profile_hot_path_depth.fetch_add(1, std::memory_order_relaxed);
+  }
 
   ScopedProfileHotPath(const ScopedProfileHotPath&) = delete;
   ScopedProfileHotPath& operator=(const ScopedProfileHotPath&) = delete;
 
-  ~ScopedProfileHotPath() { g_profile_hot_path_depth.fetch_sub(1, std::memory_order_relaxed); }
+  ~ScopedProfileHotPath() {
+    g_profile_hot_path_depth.fetch_sub(1, std::memory_order_relaxed);
+  }
 };
 
 class ScopedProfileRange {
  public:
-  explicit ScopedProfileRange(const char* name) : name_(name), active_(ProfileHotPathEnabled()) {}
+  explicit ScopedProfileRange(const char* name)
+      : name_(name), active_(ProfileHotPathEnabled()) {}
 
   explicit ScopedProfileRange(std::string name)
       : name_(std::move(name)), active_(ProfileHotPathEnabled()) {}
@@ -44,9 +49,11 @@ class ScopedProfileRange {
 
 #define MLVC_PROFILE_JOIN_INNER(a, b) a##b
 #define MLVC_PROFILE_JOIN(a, b) MLVC_PROFILE_JOIN_INNER(a, b)
-#define MLVC_PROFILE_RANGE_FUNCTION() \
-  ::mlvc::ScopedProfileRange MLVC_PROFILE_JOIN(mlvc_profile_range_, __LINE__)(__func__)
-#define MLVC_PROFILE_RANGE(name) \
-  ::mlvc::ScopedProfileRange MLVC_PROFILE_JOIN(mlvc_profile_range_, __LINE__)(name)
+#define MLVC_PROFILE_RANGE_FUNCTION()                               \
+  ::mlvc::ScopedProfileRange MLVC_PROFILE_JOIN(mlvc_profile_range_, \
+                                               __LINE__)(__func__)
+#define MLVC_PROFILE_RANGE(name)                                    \
+  ::mlvc::ScopedProfileRange MLVC_PROFILE_JOIN(mlvc_profile_range_, \
+                                               __LINE__)(name)
 
 #endif  // MLVC_FRAMEWORK_PROFILE_RANGE_H_

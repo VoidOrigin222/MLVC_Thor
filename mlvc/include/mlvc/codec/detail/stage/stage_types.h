@@ -1,16 +1,16 @@
 #ifndef MLVC_CODEC_DETAIL_STAGE_TYPES_H_
 #define MLVC_CODEC_DETAIL_STAGE_TYPES_H_
 
-#include <mlvc/codec/detail/stage/constants.h>
-#include <mlvc/codec/tensor_data.h>
-#include <mlvc/core/status.h>
-#include <mlvc/core/tensor_handle.h>
-
 #include <array>
 #include <cstddef>
 #include <cstdint>
 #include <string>
 #include <string_view>
+
+#include "mlvc/codec/detail/stage/constants.h"
+#include "mlvc/codec/tensor_data.h"
+#include "mlvc/core/status.h"
+#include "mlvc/core/tensor_handle.h"
 
 namespace mlvc::codec {
 
@@ -48,9 +48,11 @@ inline StageInput TensorInput(const char* name, const TensorData& tensor) {
   return StageInput{name, &tensor, nullptr};
 }
 
-inline StageInput TensorOrHandleInput(const char* name, const TensorData& tensor,
+inline StageInput TensorOrHandleInput(const char* name,
+                                      const TensorData& tensor,
                                       const mlvc::TensorHandle* handle) {
-  return handle != nullptr ? StageInput{name, nullptr, handle} : StageInput{name, &tensor, nullptr};
+  return handle != nullptr ? StageInput{name, nullptr, handle}
+                           : StageInput{name, &tensor, nullptr};
 }
 
 struct RunOutput {
@@ -84,7 +86,8 @@ struct RunOutput {
         return tensors[i].handle;
       }
     }
-    throw mlvc::Error("missing stage output tensor handle: " + std::string(name));
+    throw mlvc::Error("missing stage output tensor handle: " +
+                      std::string(name));
   }
 
   const mlvc::TensorHandle* Handle(std::string_view name) const {
@@ -93,7 +96,8 @@ struct RunOutput {
         return tensors[i].handle;
       }
     }
-    throw mlvc::Error("missing stage output tensor handle: " + std::string(name));
+    throw mlvc::Error("missing stage output tensor handle: " +
+                      std::string(name));
   }
 
   std::size_t Size() const { return size; }

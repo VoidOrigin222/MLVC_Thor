@@ -23,7 +23,8 @@ AclBuffer& CodecWorkspace::Acl(const std::string& name) {
 
 PinnedHostBuffer& CodecWorkspace::Pinned(const std::string& name) {
   auto it = pinned_buffers_.find(name);
-  Check(it != pinned_buffers_.end(), "unknown pinned workspace buffer: " + name);
+  Check(it != pinned_buffers_.end(),
+        "unknown pinned workspace buffer: " + name);
   return it->second;
 }
 

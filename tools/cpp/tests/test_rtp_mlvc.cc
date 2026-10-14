@@ -4,13 +4,19 @@
 #include "mlvc/transport/rtp_mlvc.h"
 using namespace mlvc::transport;
 int main() {
-  RtpMlvcFragment in{RtpUnitType::kEfu, kRtpMlvcStart | kRtpMlvcEnd, 0x01020304u, 0x11223344u, 0,
-                     20, std::vector<uint8_t>(20, 0x44)};
+  RtpMlvcFragment in{RtpUnitType::kEfu,
+                     kRtpMlvcStart | kRtpMlvcEnd,
+                     0x01020304u,
+                     0x11223344u,
+                     0,
+                     20,
+                     std::vector<uint8_t>(20, 0x44)};
   auto bytes = EncodeRtpMlvcFragment(in);
   auto out = DecodeRtpMlvcFragment(bytes);
   assert(out.unit_type == in.unit_type && out.flags == in.flags);
   assert(out.config_id == in.config_id && out.unit_id == in.unit_id);
-  assert(out.fragment_offset == in.fragment_offset && out.unit_length == in.unit_length);
+  assert(out.fragment_offset == in.fragment_offset &&
+         out.unit_length == in.unit_length);
   assert(out.payload == in.payload);
   auto expect_throw = [](std::vector<uint8_t> b) {
     try {
@@ -27,10 +33,15 @@ int main() {
   bad = bytes;
   bad.pop_back();
   expect_throw(bad);
-  RtpMlvcFragment empty{RtpUnitType::kEos, kRtpMlvcStart | kRtpMlvcEnd, 7,
-                        kMlvcNoReference, 0, 20,
+  RtpMlvcFragment empty{RtpUnitType::kEos,
+                        kRtpMlvcStart | kRtpMlvcEnd,
+                        7,
+                        kMlvcNoReference,
+                        0,
+                        20,
                         std::vector<uint8_t>(20, 0x77)};
-  assert(DecodeRtpMlvcFragment(EncodeRtpMlvcFragment(empty)).payload == empty.payload);
+  assert(DecodeRtpMlvcFragment(EncodeRtpMlvcFragment(empty)).payload ==
+         empty.payload);
 
   // The RTP parser must skip negotiated CSRC and extension data and strip
   // valid RTP padding before handing the MLVC descriptor to the reassembler.
@@ -70,24 +81,24 @@ int main() {
 
   // Receivers skip aligned descriptor extensions under X=1; extensions are
   // not exposed to the version-1 media-unit parser.
-  std::vector<uint8_t> descriptor_extension(descriptor.begin(), descriptor.begin() + 24);
+  std::vector<uint8_t> descriptor_extension(descriptor.begin(),
+                                            descriptor.begin() + 24);
   descriptor_extension[2] |= kRtpMlvcExtension;
   descriptor_extension[4] = 0;
   descriptor_extension[5] = 28;
-  descriptor_extension.insert(descriptor_extension.end(), {0xaa, 0xbb, 0xcc, 0xdd});
-  descriptor_extension.insert(descriptor_extension.end(), descriptor.begin() + 24,
-                              descriptor.end());
+  descriptor_extension.insert(descriptor_extension.end(),
+                              {0xaa, 0xbb, 0xcc, 0xdd});
+  descriptor_extension.insert(descriptor_extension.end(),
+                              descriptor.begin() + 24, descriptor.end());
   const auto parsed_extension = DecodeRtpMlvcFragment(descriptor_extension);
-  assert(parsed_extension.payload == in.payload && parsed_extension.flags == in.flags);
+  assert(parsed_extension.payload == in.payload &&
+         parsed_extension.flags == in.flags);
 
-  RtpMlvcFragment optional_unit{static_cast<RtpUnitType>(0x05),
-                                kRtpMlvcStart | kRtpMlvcEnd,
-                                0,
-                                42,
-                                0,
-                                20,
-                                std::vector<uint8_t>(20, 0x33)};
-  const auto parsed_optional = DecodeRtpMlvcFragment(EncodeRtpMlvcFragment(optional_unit));
+  RtpMlvcFragment optional_unit{
+      static_cast<RtpUnitType>(0x05), kRtpMlvcStart | kRtpMlvcEnd, 0, 42, 0, 20,
+      std::vector<uint8_t>(20, 0x33)};
+  const auto parsed_optional =
+      DecodeRtpMlvcFragment(EncodeRtpMlvcFragment(optional_unit));
   assert(static_cast<uint8_t>(parsed_optional.unit_type) == 0x05);
 
   auto reserved = bytes;
@@ -95,7 +106,8 @@ int main() {
   expect_throw(reserved);
   auto unknown_type = bytes;
   unknown_type[1] = 0x7f;
-  assert(static_cast<uint8_t>(DecodeRtpMlvcFragment(unknown_type).unit_type) == 0x7f);
+  assert(static_cast<uint8_t>(DecodeRtpMlvcFragment(unknown_type).unit_type) ==
+         0x7f);
 
   std::vector<uint8_t> optional_media_unit(20, 0);
   optional_media_unit[0] = kMlvcMediaUnitVersion;
@@ -114,7 +126,8 @@ int main() {
   assert(optional_reassembler.Push(
       DecodeRtpMlvcFragment(EncodeRtpMlvcFragment(optional_rtp_unit)),
       &optional_reassembled));
-  assert(ParseMediaUnitHeader(optional_reassembled).unit_type == optional_rtp_unit.unit_type);
+  assert(ParseMediaUnitHeader(optional_reassembled).unit_type ==
+         optional_rtp_unit.unit_type);
   ValidateMediaUnit(optional_reassembled);
 
   const auto expect_rtp_throw = [](const std::vector<uint8_t>& packet) {

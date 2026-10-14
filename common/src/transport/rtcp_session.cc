@@ -1,20 +1,22 @@
 #include "mlvc/transport/rtcp_session.h"
 
 #include <algorithm>
-#include <stdexcept>
 #include <cstdlib>
+#include <stdexcept>
 #ifdef MLVC_HAS_OPENSSL
 #include <openssl/hmac.h>
 #endif
 #ifndef _WIN32
-#include <arpa/inet.h>
-#include <cerrno>
-#include <cstring>
 #include <netdb.h>
-#include <limits>
 #include <sys/socket.h>
 #include <sys/time.h>
 #include <unistd.h>
+
+#include <cerrno>
+#include <cstring>
+#include <limits>
+
+#include <arpa/inet.h>
 #endif
 
 namespace mlvc::transport {
@@ -23,16 +25,18 @@ namespace {
 #ifdef MLVC_HAS_OPENSSL
 constexpr uint8_t kAuthMagic[] = {0x4d, 0x4c, 0x56, 0x41};
 constexpr std::size_t kAuthTrailerBytes = 4 + 1 + 8 + 16;
-std::vector<uint8_t> AuthenticateRtcp(const std::vector<uint8_t>& packet, uint64_t index,
-                                      const std::string& key) {
+std::vector<uint8_t> AuthenticateRtcp(const std::vector<uint8_t>& packet,
+                                      uint64_t index, const std::string& key) {
   std::vector<uint8_t> out = packet;
   out.insert(out.end(), std::begin(kAuthMagic), std::end(kAuthMagic));
   out.push_back(1);
-  for (int shift = 56; shift >= 0; shift -= 8) out.push_back(static_cast<uint8_t>(index >> shift));
+  for (int shift = 56; shift >= 0; shift -= 8)
+    out.push_back(static_cast<uint8_t>(index >> shift));
   unsigned char digest[EVP_MAX_MD_SIZE]{};
   unsigned int digest_len = 0;
   HMAC_CTX* ctx = HMAC_CTX_new();
-  HMAC_Init_ex(ctx, key.data(), static_cast<int>(key.size()), EVP_sha256(), nullptr);
+  HMAC_Init_ex(ctx, key.data(), static_cast<int>(key.size()), EVP_sha256(),
+               nullptr);
   HMAC_Update(ctx, out.data(), out.size());
   HMAC_Final(ctx, digest, &digest_len);
   HMAC_CTX_free(ctx);
@@ -43,13 +47,17 @@ bool VerifyAndStripRtcp(std::vector<uint8_t>* packet, const std::string& key,
                         uint64_t* highest, uint64_t* window) {
   if (packet->size() < kAuthTrailerBytes) return false;
   const std::size_t begin = packet->size() - kAuthTrailerBytes;
-  if (!std::equal(std::begin(kAuthMagic), std::end(kAuthMagic), packet->begin() + begin) ||
-      (*packet)[begin + 4] != 1) return false;
+  if (!std::equal(std::begin(kAuthMagic), std::end(kAuthMagic),
+                  packet->begin() + begin) ||
+      (*packet)[begin + 4] != 1)
+    return false;
   uint64_t index = 0;
   for (int i = 0; i < 8; ++i) index = (index << 8) | (*packet)[begin + 5 + i];
   const auto expected = AuthenticateRtcp(
-      std::vector<uint8_t>(packet->begin(), packet->begin() + begin), index, key);
-  if (!std::equal(expected.end() - 16, expected.end(), packet->end() - 16)) return false;
+      std::vector<uint8_t>(packet->begin(), packet->begin() + begin), index,
+      key);
+  if (!std::equal(expected.end() - 16, expected.end(), packet->end() - 16))
+    return false;
   if (index > *highest) {
     const uint64_t shift = index - *highest;
     *window = shift >= 64 ? 1ull : ((*window << shift) | 1ull);
@@ -112,13 +120,16 @@ void RequireNonZeroSsrc(uint32_t ssrc, const char* message) {
   Require(ssrc != 0, message);
 }
 
-void PutReportBlock(std::vector<uint8_t>* bytes, const RtcpReportBlock& report) {
+void PutReportBlock(std::vector<uint8_t>* bytes,
+                    const RtcpReportBlock& report) {
   RequireNonZeroSsrc(report.source_ssrc, "RTCP report block has a zero SSRC");
-  Require(report.cumulative_lost >= -8388608 && report.cumulative_lost <= 8388607,
-          "RTCP cumulative lost is outside the signed 24-bit range");
+  Require(
+      report.cumulative_lost >= -8388608 && report.cumulative_lost <= 8388607,
+      "RTCP cumulative lost is outside the signed 24-bit range");
   Put32(bytes, report.source_ssrc);
   bytes->push_back(report.fraction_lost);
-  const uint32_t lost = static_cast<uint32_t>(report.cumulative_lost) & 0x00ffffffu;
+  const uint32_t lost =
+      static_cast<uint32_t>(report.cumulative_lost) & 0x00ffffffu;
   bytes->push_back(static_cast<uint8_t>(lost >> 16));
   bytes->push_back(static_cast<uint8_t>(lost >> 8));
   bytes->push_back(static_cast<uint8_t>(lost));
@@ -128,16 +139,21 @@ void PutReportBlock(std::vector<uint8_t>* bytes, const RtcpReportBlock& report) 
   Put32(bytes, report.delay_since_last_sender_report);
 }
 
-RtcpReportBlock GetReportBlock(const std::vector<uint8_t>& bytes, std::size_t offset) {
+RtcpReportBlock GetReportBlock(const std::vector<uint8_t>& bytes,
+                               std::size_t offset) {
   const uint32_t lost24 = (static_cast<uint32_t>(bytes[offset + 5]) << 16) |
                           (static_cast<uint32_t>(bytes[offset + 6]) << 8) |
                           static_cast<uint32_t>(bytes[offset + 7]);
   const int32_t lost = (lost24 & 0x00800000u) != 0
                            ? static_cast<int32_t>(lost24 | 0xff000000u)
                            : static_cast<int32_t>(lost24);
-  return RtcpReportBlock{Get32(bytes, offset), bytes[offset + 4], lost,
-                         Get32(bytes, offset + 8), Get32(bytes, offset + 12),
-                         Get32(bytes, offset + 16), Get32(bytes, offset + 20)};
+  return RtcpReportBlock{Get32(bytes, offset),
+                         bytes[offset + 4],
+                         lost,
+                         Get32(bytes, offset + 8),
+                         Get32(bytes, offset + 12),
+                         Get32(bytes, offset + 16),
+                         Get32(bytes, offset + 20)};
 }
 
 struct RtcpPacketView {
@@ -149,13 +165,14 @@ struct RtcpPacketView {
   uint8_t padding = 0;
 };
 
-RtcpPacketView ReadPacket(const std::vector<uint8_t>& packet, std::size_t offset,
-                          bool allow_padding) {
+RtcpPacketView ReadPacket(const std::vector<uint8_t>& packet,
+                          std::size_t offset, bool allow_padding) {
   Require(offset <= packet.size() && packet.size() - offset >= 4,
           "truncated RTCP packet header");
   Require((packet[offset] >> 6) == kRtcpVersion, "invalid RTCP version");
   const uint8_t padding_bit = static_cast<uint8_t>(packet[offset] & 0x20u);
-  const std::size_t packet_bytes = (static_cast<std::size_t>(Get16(packet, offset + 2)) + 1u) * 4u;
+  const std::size_t packet_bytes =
+      (static_cast<std::size_t>(Get16(packet, offset + 2)) + 1u) * 4u;
   Require(packet_bytes >= 4 && packet_bytes <= packet.size() - offset,
           "RTCP length exceeds compound packet");
   const std::size_t end = offset + packet_bytes;
@@ -164,10 +181,15 @@ RtcpPacketView ReadPacket(const std::vector<uint8_t>& packet, std::size_t offset
     Require(allow_padding && end == packet.size(),
             "RTCP padding is only allowed on the final packet");
     padding = packet[end - 1];
-    Require(padding != 0 && padding <= packet_bytes - 4, "invalid RTCP padding");
+    Require(padding != 0 && padding <= packet_bytes - 4,
+            "invalid RTCP padding");
   }
-  return RtcpPacketView{offset, end, end - padding, static_cast<uint8_t>(packet[offset] & 0x1fu),
-                        packet[offset + 1], padding};
+  return RtcpPacketView{offset,
+                        end,
+                        end - padding,
+                        static_cast<uint8_t>(packet[offset] & 0x1fu),
+                        packet[offset + 1],
+                        padding};
 }
 
 void ValidateReportCount(uint8_t count) {
@@ -178,7 +200,8 @@ RtcpSenderReport ParseSenderReport(const std::vector<uint8_t>& packet,
                                    const RtcpPacketView& view) {
   ValidateReportCount(view.count);
   const std::size_t expected = 4u + 24u + 24u * view.count;
-  Require(view.payload_end - view.offset == expected, "invalid RTCP sender report length");
+  Require(view.payload_end - view.offset == expected,
+          "invalid RTCP sender report length");
   const std::size_t body = view.offset + 4;
   RtcpSenderReport report;
   report.sender_ssrc = Get32(packet, body);
@@ -203,11 +226,13 @@ RtcpReceiverReport ParseReceiverReport(const std::vector<uint8_t>& packet,
                                        const RtcpPacketView& view) {
   ValidateReportCount(view.count);
   const std::size_t expected = 4u + 4u + 24u * view.count;
-  Require(view.payload_end - view.offset == expected, "invalid RTCP receiver report length");
+  Require(view.payload_end - view.offset == expected,
+          "invalid RTCP receiver report length");
   const std::size_t body = view.offset + 4;
   RtcpReceiverReport report;
   report.sender_ssrc = Get32(packet, body);
-  RequireNonZeroSsrc(report.sender_ssrc, "RTCP receiver report has a zero SSRC");
+  RequireNonZeroSsrc(report.sender_ssrc,
+                     "RTCP receiver report has a zero SSRC");
   report.reports.reserve(view.count);
   std::size_t cursor = body + 4;
   for (uint8_t i = 0; i < view.count; ++i) {
@@ -235,18 +260,21 @@ void AppendSdesCname(std::vector<uint8_t>* packet, uint32_t ssrc,
   PutRtcpLength(packet, offset);
 }
 
-std::vector<uint8_t> BuildCompound(std::vector<uint8_t> report, uint32_t ssrc,
-                                   const std::string& cname,
-                                   const std::vector<std::vector<uint8_t>>& extra) {
+std::vector<uint8_t> BuildCompound(
+    std::vector<uint8_t> report, uint32_t ssrc, const std::string& cname,
+    const std::vector<std::vector<uint8_t>>& extra) {
   Require(!report.empty() && report.size() % 4 == 0,
           "RTCP report packet must be word aligned");
   std::vector<uint8_t> compound = std::move(report);
   AppendSdesCname(&compound, ssrc, cname);
   for (const auto& item : extra) {
-    Require(item.size() >= 4 && item.size() % 4 == 0 && (item[0] >> 6) == kRtcpVersion,
+    Require(item.size() >= 4 && item.size() % 4 == 0 &&
+                (item[0] >> 6) == kRtcpVersion,
             "RTCP compound extension is malformed");
-    const std::size_t declared = (static_cast<std::size_t>(Get16(item, 2)) + 1u) * 4u;
-    Require(declared == item.size(), "RTCP compound extension length does not match bytes");
+    const std::size_t declared =
+        (static_cast<std::size_t>(Get16(item, 2)) + 1u) * 4u;
+    Require(declared == item.size(),
+            "RTCP compound extension length does not match bytes");
     Require((item[0] & 0x20u) == 0,
             "RTCP compound extensions with padding are not supported");
     compound.insert(compound.end(), item.begin(), item.end());
@@ -269,7 +297,8 @@ uint32_t DecodeTmmbrBitrate(uint32_t word) {
   const uint32_t exponent = word >> 26;
   const uint32_t mantissa = (word >> 9) & 0x1ffffu;
   const uint64_t value = static_cast<uint64_t>(mantissa) << exponent;
-  return static_cast<uint32_t>(std::min<uint64_t>(value, std::numeric_limits<uint32_t>::max()));
+  return static_cast<uint32_t>(
+      std::min<uint64_t>(value, std::numeric_limits<uint32_t>::max()));
 }
 
 void ValidateControlMessage(const MlvcControlMessage& message) {
@@ -344,20 +373,25 @@ void ParseSdes(const std::vector<uint8_t>& packet, const RtcpPacketView& view,
       if (item_type == 0) {
         ended = true;
         while (((cursor - view.offset) & 3u) != 0) {
-          Require(cursor < view.payload_end, "truncated RTCP SDES chunk padding");
+          Require(cursor < view.payload_end,
+                  "truncated RTCP SDES chunk padding");
           Require(packet[cursor++] == 0, "invalid RTCP SDES chunk padding");
         }
         break;
       }
       Require(cursor < view.payload_end, "truncated RTCP SDES item length");
       const uint8_t item_length = packet[cursor++];
-      Require(item_length <= view.payload_end - cursor, "truncated RTCP SDES item");
+      Require(item_length <= view.payload_end - cursor,
+              "truncated RTCP SDES item");
       if (item_type == 1 && source_ssrc == sender_ssrc) {
         Require(item_length != 0, "RTCP CNAME item is empty");
-        const std::string value(packet.begin() + static_cast<std::ptrdiff_t>(cursor),
-                                packet.begin() + static_cast<std::ptrdiff_t>(cursor + item_length));
-        if (cname->empty()) *cname = value;
-        else Require(*cname == value, "RTCP sender has conflicting CNAME items");
+        const std::string value(
+            packet.begin() + static_cast<std::ptrdiff_t>(cursor),
+            packet.begin() + static_cast<std::ptrdiff_t>(cursor + item_length));
+        if (cname->empty())
+          *cname = value;
+        else
+          Require(*cname == value, "RTCP sender has conflicting CNAME items");
       }
       cursor += item_length;
     }
@@ -381,7 +415,8 @@ void ParseBye(const std::vector<uint8_t>& packet, const RtcpPacketView& view,
   }
   if (cursor != view.payload_end) {
     const uint8_t reason_length = packet[cursor++];
-    Require(reason_length <= view.payload_end - cursor, "truncated RTCP BYE reason");
+    Require(reason_length <= view.payload_end - cursor,
+            "truncated RTCP BYE reason");
     cursor += reason_length;
     Require(cursor == view.payload_end, "RTCP BYE has trailing reason bytes");
   }
@@ -430,7 +465,8 @@ void ParseFir(const std::vector<uint8_t>& packet, const RtcpPacketView& view,
   for (std::size_t cursor = fci_begin; cursor < view.payload_end; cursor += 8) {
     const uint32_t target = Get32(packet, cursor);
     RequireNonZeroSsrc(target, "RTCP FIR target SSRC is zero");
-    Require(packet[cursor + 5] == 0 && packet[cursor + 6] == 0 && packet[cursor + 7] == 0,
+    Require(packet[cursor + 5] == 0 && packet[cursor + 6] == 0 &&
+                packet[cursor + 7] == 0,
             "RTCP FIR reserved bits are non-zero");
     firs->push_back(RtcpFir{sender_ssrc, target, packet[cursor + 4]});
   }
@@ -444,7 +480,8 @@ void ParseTmmbr(const std::vector<uint8_t>& packet, const RtcpPacketView& view,
   const std::size_t body = view.offset + 4;
   const uint32_t sender_ssrc = Get32(packet, body);
   RequireNonZeroSsrc(sender_ssrc, "RTCP TMMBR sender SSRC is zero");
-  Require(Get32(packet, body + 4) == 0, "RTCP TMMBR common media SSRC must be zero");
+  Require(Get32(packet, body + 4) == 0,
+          "RTCP TMMBR common media SSRC must be zero");
   const std::size_t fci_begin = body + 8;
   Require((view.payload_end - fci_begin) % 8 == 0,
           "RTCP TMMBR FCI is not entry aligned");
@@ -463,10 +500,12 @@ std::vector<uint8_t> EncodeRtcpSenderReport(
     const RtcpSenderReport& report, const std::string& cname,
     const std::vector<std::vector<uint8_t>>& extra) {
   RequireNonZeroSsrc(report.sender_ssrc, "RTCP sender report SSRC is zero");
-  Require(report.reports.size() <= 31, "RTCP sender report has too many report blocks");
+  Require(report.reports.size() <= 31,
+          "RTCP sender report has too many report blocks");
   std::vector<uint8_t> packet;
-  packet.insert(packet.end(), {static_cast<uint8_t>(0x80u | report.reports.size()),
-                               kPtSenderReport, 0, 0});
+  packet.insert(packet.end(),
+                {static_cast<uint8_t>(0x80u | report.reports.size()),
+                 kPtSenderReport, 0, 0});
   Put32(&packet, report.sender_ssrc);
   Put32(&packet, report.ntp_seconds);
   Put32(&packet, report.ntp_fraction);
@@ -482,10 +521,12 @@ std::vector<uint8_t> EncodeRtcpReceiverReport(
     const RtcpReceiverReport& report, const std::string& cname,
     const std::vector<std::vector<uint8_t>>& extra) {
   RequireNonZeroSsrc(report.sender_ssrc, "RTCP receiver report SSRC is zero");
-  Require(report.reports.size() <= 31, "RTCP receiver report has too many report blocks");
+  Require(report.reports.size() <= 31,
+          "RTCP receiver report has too many report blocks");
   std::vector<uint8_t> packet;
-  packet.insert(packet.end(), {static_cast<uint8_t>(0x80u | report.reports.size()),
-                               kPtReceiverReport, 0, 0});
+  packet.insert(packet.end(),
+                {static_cast<uint8_t>(0x80u | report.reports.size()),
+                 kPtReceiverReport, 0, 0});
   Put32(&packet, report.sender_ssrc);
   for (const auto& block : report.reports) PutReportBlock(&packet, block);
   PutRtcpLength(&packet, 0);
@@ -495,7 +536,8 @@ std::vector<uint8_t> EncodeRtcpReceiverReport(
 std::vector<uint8_t> EncodeRtcpNack(const RtcpNack& nack) {
   RequireNonZeroSsrc(nack.sender_ssrc, "RTCP Generic NACK sender SSRC is zero");
   std::vector<uint8_t> packet;
-  packet.insert(packet.end(), {static_cast<uint8_t>(0x80u | kFmtNack), kPtRtpFeedback, 0, 0});
+  packet.insert(packet.end(),
+                {static_cast<uint8_t>(0x80u | kFmtNack), kPtRtpFeedback, 0, 0});
   Put32(&packet, nack.sender_ssrc);
   Put32(&packet, nack.media_ssrc);
   Put16(&packet, nack.pid);
@@ -507,7 +549,8 @@ std::vector<uint8_t> EncodeRtcpNack(const RtcpNack& nack) {
 std::vector<uint8_t> EncodeRtcpPli(const RtcpPli& pli) {
   RequireNonZeroSsrc(pli.sender_ssrc, "RTCP PLI sender SSRC is zero");
   std::vector<uint8_t> packet;
-  packet.insert(packet.end(), {static_cast<uint8_t>(0x80u | kFmtPli), kPtPayloadFeedback, 0, 0});
+  packet.insert(packet.end(), {static_cast<uint8_t>(0x80u | kFmtPli),
+                               kPtPayloadFeedback, 0, 0});
   Put32(&packet, pli.sender_ssrc);
   Put32(&packet, pli.media_ssrc);
   PutRtcpLength(&packet, 0);
@@ -518,7 +561,8 @@ std::vector<uint8_t> EncodeRtcpFir(const RtcpFir& fir) {
   RequireNonZeroSsrc(fir.sender_ssrc, "RTCP FIR sender SSRC is zero");
   RequireNonZeroSsrc(fir.media_ssrc, "RTCP FIR target SSRC is zero");
   std::vector<uint8_t> packet;
-  packet.insert(packet.end(), {static_cast<uint8_t>(0x80u | kFmtFir), kPtPayloadFeedback, 0, 0});
+  packet.insert(packet.end(), {static_cast<uint8_t>(0x80u | kFmtFir),
+                               kPtPayloadFeedback, 0, 0});
   Put32(&packet, fir.sender_ssrc);
   Put32(&packet, 0);
   Put32(&packet, fir.media_ssrc);
@@ -532,7 +576,8 @@ std::vector<uint8_t> EncodeRtcpTmmbr(const RtcpTmmbr& tmmbr) {
   RequireNonZeroSsrc(tmmbr.media_ssrc, "RTCP TMMBR target SSRC is zero");
   Require(tmmbr.overhead_bytes <= 511, "RTCP TMMBR overhead exceeds nine bits");
   std::vector<uint8_t> packet;
-  packet.insert(packet.end(), {static_cast<uint8_t>(0x80u | kFmtTmmbr), kPtRtpFeedback, 0, 0});
+  packet.insert(packet.end(), {static_cast<uint8_t>(0x80u | kFmtTmmbr),
+                               kPtRtpFeedback, 0, 0});
   Put32(&packet, tmmbr.sender_ssrc);
   Put32(&packet, 0);
   Put32(&packet, tmmbr.media_ssrc);
@@ -568,7 +613,8 @@ MlvcControlMessage DecodeMlvcRtcpApp(const std::vector<uint8_t>& packet) {
   Require(!packet.empty() && packet.size() % 4 == 0,
           "MLVC RTCP APP packet is empty or unaligned");
   const RtcpPacketView view = ReadPacket(packet, 0, false);
-  Require(view.end == packet.size(), "MLVC RTCP APP decoder expects one packet");
+  Require(view.end == packet.size(),
+          "MLVC RTCP APP decoder expects one packet");
   Require(view.type == kPtApp && view.count == 0,
           "packet is not an MLVC APP subtype zero");
   Require(view.padding == 0, "MLVC RTCP APP padding is not supported");
@@ -577,8 +623,7 @@ MlvcControlMessage DecodeMlvcRtcpApp(const std::vector<uint8_t>& packet) {
   const std::size_t body = view.offset + 4;
   const uint32_t control_ssrc = Get32(packet, body);
   RequireNonZeroSsrc(control_ssrc, "MLVC RTCP APP control SSRC is zero");
-  Require(Get32(packet, body + 4) == kMlvcAppName,
-          "RTCP APP name is not MLVC");
+  Require(Get32(packet, body + 4) == kMlvcAppName, "RTCP APP name is not MLVC");
   const std::size_t envelope = body + 8;
   MlvcControlMessage message;
   message.version = packet[envelope];
@@ -609,32 +654,43 @@ RtcpCompoundContents DecodeRtcpCompound(const std::vector<uint8_t>& packet) {
       first_packet = false;
     }
     if (view.type == kPtSenderReport) {
-      Require(!contents.sender_report.has_value(), "RTCP compound has duplicate sender reports");
+      Require(!contents.sender_report.has_value(),
+              "RTCP compound has duplicate sender reports");
       contents.sender_report = ParseSenderReport(packet, view);
-      if (sender_ssrc == 0) sender_ssrc = contents.sender_report->sender_ssrc;
-      else Require(sender_ssrc == contents.sender_report->sender_ssrc,
-                   "RTCP compound report SSRCs do not match");
+      if (sender_ssrc == 0)
+        sender_ssrc = contents.sender_report->sender_ssrc;
+      else
+        Require(sender_ssrc == contents.sender_report->sender_ssrc,
+                "RTCP compound report SSRCs do not match");
     } else if (view.type == kPtReceiverReport) {
-      Require(!contents.receiver_report.has_value(), "RTCP compound has duplicate receiver reports");
+      Require(!contents.receiver_report.has_value(),
+              "RTCP compound has duplicate receiver reports");
       contents.receiver_report = ParseReceiverReport(packet, view);
-      if (sender_ssrc == 0) sender_ssrc = contents.receiver_report->sender_ssrc;
-      else Require(sender_ssrc == contents.receiver_report->sender_ssrc,
-                   "RTCP compound report SSRCs do not match");
+      if (sender_ssrc == 0)
+        sender_ssrc = contents.receiver_report->sender_ssrc;
+      else
+        Require(sender_ssrc == contents.receiver_report->sender_ssrc,
+                "RTCP compound report SSRCs do not match");
     } else if (view.type == kPtSdes) {
       ParseSdes(packet, view, sender_ssrc, &contents.cname);
       saw_sdes_cname = saw_sdes_cname || !contents.cname.empty();
     } else if (view.type == kPtBye) {
       ParseBye(packet, view, &contents.bye_sources);
     } else if (view.type == kPtRtpFeedback) {
-      if (view.count == kFmtNack) ParseNack(packet, view, &contents.nacks);
-      else if (view.count == kFmtTmmbr) ParseTmmbr(packet, view, &contents.tmmbrs);
+      if (view.count == kFmtNack)
+        ParseNack(packet, view, &contents.nacks);
+      else if (view.count == kFmtTmmbr)
+        ParseTmmbr(packet, view, &contents.tmmbrs);
     } else if (view.type == kPtPayloadFeedback) {
-      if (view.count == kFmtPli) ParsePli(packet, view, &contents.plis);
-      else if (view.count == kFmtFir) ParseFir(packet, view, &contents.firs);
+      if (view.count == kFmtPli)
+        ParsePli(packet, view, &contents.plis);
+      else if (view.count == kFmtFir)
+        ParseFir(packet, view, &contents.firs);
     } else if (view.type == kPtApp) {
       Require(view.padding == 0, "MLVC RTCP APP padding is not supported");
-      const std::vector<uint8_t> app(packet.begin() + static_cast<std::ptrdiff_t>(view.offset),
-                                     packet.begin() + static_cast<std::ptrdiff_t>(view.end));
+      const std::vector<uint8_t> app(
+          packet.begin() + static_cast<std::ptrdiff_t>(view.offset),
+          packet.begin() + static_cast<std::ptrdiff_t>(view.end));
       if (view.end - view.offset >= 12 && Get32(app, 8) == kMlvcAppName) {
         contents.mlvc_controls.push_back(DecodeMlvcRtcpApp(app));
       }
@@ -647,7 +703,8 @@ RtcpCompoundContents DecodeRtcpCompound(const std::vector<uint8_t>& packet) {
   return contents;
 }
 
-std::vector<uint8_t> EncodeRtcpSessionBye(uint32_t ssrc, const std::string& cname) {
+std::vector<uint8_t> EncodeRtcpSessionBye(uint32_t ssrc,
+                                          const std::string& cname) {
   RtcpReceiverReport report;
   report.sender_ssrc = ssrc;
   std::vector<uint8_t> packet = EncodeRtcpReceiverReport(report, cname);
@@ -664,8 +721,8 @@ uint32_t DecodeRtcpSessionBye(const std::vector<uint8_t>& packet) {
   const uint32_t sender_ssrc = contents.sender_report.has_value()
                                    ? contents.sender_report->sender_ssrc
                                    : contents.receiver_report->sender_ssrc;
-  Require(std::find(contents.bye_sources.begin(), contents.bye_sources.end(), sender_ssrc) !=
-              contents.bye_sources.end(),
+  Require(std::find(contents.bye_sources.begin(), contents.bye_sources.end(),
+                    sender_ssrc) != contents.bye_sources.end(),
           "RTCP BYE does not include the reporting SSRC");
   return sender_ssrc;
 }
@@ -703,13 +760,15 @@ RtcpUdpEndpoint::RtcpUdpEndpoint(uint16_t local_port, std::string remote_host,
                                  uint16_t remote_port)
     : impl_(std::make_unique<Impl>()) {
   if (remote_port != 0) {
-    if (remote_host.empty()) throw std::invalid_argument("RTCP remote host is empty");
+    if (remote_host.empty())
+      throw std::invalid_argument("RTCP remote host is empty");
     addrinfo hints{};
     hints.ai_family = AF_INET;
     hints.ai_socktype = SOCK_DGRAM;
     addrinfo* result = nullptr;
     const std::string service = std::to_string(remote_port);
-    if (getaddrinfo(remote_host.c_str(), service.c_str(), &hints, &result) != 0 ||
+    if (getaddrinfo(remote_host.c_str(), service.c_str(), &hints, &result) !=
+            0 ||
         result == nullptr) {
       throw std::runtime_error("failed to resolve RTCP remote endpoint");
     }
@@ -719,9 +778,11 @@ RtcpUdpEndpoint::RtcpUdpEndpoint(uint16_t local_port, std::string remote_host,
   }
   impl_->socket = ::socket(AF_INET, SOCK_DGRAM, 0);
 #ifdef MLVC_HAS_OPENSSL
-  if (const char* key = std::getenv("MLVC_RTCP_KEY"); key != nullptr) impl_->auth_key = key;
+  if (const char* key = std::getenv("MLVC_RTCP_KEY"); key != nullptr)
+    impl_->auth_key = key;
 #endif
-  if (impl_->socket < 0) throw std::runtime_error("failed to create RTCP socket");
+  if (impl_->socket < 0)
+    throw std::runtime_error("failed to create RTCP socket");
   int receive_buffer = 1024 * 1024;
   (void)::setsockopt(impl_->socket, SOL_SOCKET, SO_RCVBUF, &receive_buffer,
                      sizeof(receive_buffer));
@@ -729,13 +790,15 @@ RtcpUdpEndpoint::RtcpUdpEndpoint(uint16_t local_port, std::string remote_host,
   address.sin_family = AF_INET;
   address.sin_addr.s_addr = htonl(INADDR_ANY);
   address.sin_port = htons(local_port);
-  if (::bind(impl_->socket, reinterpret_cast<sockaddr*>(&address), sizeof(address)) < 0) {
+  if (::bind(impl_->socket, reinterpret_cast<sockaddr*>(&address),
+             sizeof(address)) < 0) {
     impl_->Close();
     throw std::runtime_error("failed to bind RTCP socket");
   }
   sockaddr_in bound{};
   socklen_t bound_length = sizeof(bound);
-  if (::getsockname(impl_->socket, reinterpret_cast<sockaddr*>(&bound), &bound_length) < 0) {
+  if (::getsockname(impl_->socket, reinterpret_cast<sockaddr*>(&bound),
+                    &bound_length) < 0) {
     impl_->Close();
     throw std::runtime_error("failed to query RTCP socket port");
   }
@@ -750,39 +813,51 @@ uint16_t RtcpUdpEndpoint::local_port() const {
 }
 
 void RtcpUdpEndpoint::Send(const std::vector<uint8_t>& compound_packet) {
-  if (!impl_ || impl_->socket < 0) throw std::runtime_error("RTCP socket is closed");
-  if (impl_->remote_length == 0) throw std::runtime_error("RTCP remote endpoint is not configured");
+  if (!impl_ || impl_->socket < 0)
+    throw std::runtime_error("RTCP socket is closed");
+  if (impl_->remote_length == 0)
+    throw std::runtime_error("RTCP remote endpoint is not configured");
   (void)DecodeRtcpCompound(compound_packet);
   std::vector<uint8_t> wire = compound_packet;
 #ifdef MLVC_HAS_OPENSSL
-  if (!impl_->auth_key.empty()) wire = AuthenticateRtcp(compound_packet, impl_->tx_index++, impl_->auth_key);
+  if (!impl_->auth_key.empty())
+    wire =
+        AuthenticateRtcp(compound_packet, impl_->tx_index++, impl_->auth_key);
 #endif
-  const ssize_t sent = ::sendto(impl_->socket, wire.data(), wire.size(), 0,
-                                reinterpret_cast<const sockaddr*>(&impl_->remote),
-                                impl_->remote_length);
+  const ssize_t sent = ::sendto(
+      impl_->socket, wire.data(), wire.size(), 0,
+      reinterpret_cast<const sockaddr*>(&impl_->remote), impl_->remote_length);
   if (sent < 0 || static_cast<std::size_t>(sent) != wire.size()) {
     throw std::runtime_error("failed to send RTCP packet");
   }
 }
 
 void RtcpUdpEndpoint::AcceptLastPeer() {
-  if (!impl_ || impl_->socket < 0) throw std::runtime_error("RTCP socket is closed");
-  if (impl_->last_peer_length == 0) throw std::runtime_error("RTCP peer has not sent a packet");
+  if (!impl_ || impl_->socket < 0)
+    throw std::runtime_error("RTCP socket is closed");
+  if (impl_->last_peer_length == 0)
+    throw std::runtime_error("RTCP peer has not sent a packet");
   impl_->reply_peer = impl_->last_peer;
   impl_->reply_peer_length = impl_->last_peer_length;
 }
 
-void RtcpUdpEndpoint::SendToLastPeer(const std::vector<uint8_t>& compound_packet) {
-  if (!impl_ || impl_->socket < 0) throw std::runtime_error("RTCP socket is closed");
-  if (impl_->reply_peer_length == 0) throw std::runtime_error("RTCP reply peer is not accepted");
+void RtcpUdpEndpoint::SendToLastPeer(
+    const std::vector<uint8_t>& compound_packet) {
+  if (!impl_ || impl_->socket < 0)
+    throw std::runtime_error("RTCP socket is closed");
+  if (impl_->reply_peer_length == 0)
+    throw std::runtime_error("RTCP reply peer is not accepted");
   (void)DecodeRtcpCompound(compound_packet);
   std::vector<uint8_t> wire = compound_packet;
 #ifdef MLVC_HAS_OPENSSL
-  if (!impl_->auth_key.empty()) wire = AuthenticateRtcp(compound_packet, impl_->tx_index++, impl_->auth_key);
+  if (!impl_->auth_key.empty())
+    wire =
+        AuthenticateRtcp(compound_packet, impl_->tx_index++, impl_->auth_key);
 #endif
-  const ssize_t sent = ::sendto(impl_->socket, wire.data(), wire.size(), 0,
-                                reinterpret_cast<const sockaddr*>(&impl_->reply_peer),
-                                impl_->reply_peer_length);
+  const ssize_t sent =
+      ::sendto(impl_->socket, wire.data(), wire.size(), 0,
+               reinterpret_cast<const sockaddr*>(&impl_->reply_peer),
+               impl_->reply_peer_length);
   if (sent < 0 || static_cast<std::size_t>(sent) != wire.size()) {
     throw std::runtime_error("failed to send RTCP reply");
   }
@@ -790,9 +865,12 @@ void RtcpUdpEndpoint::SendToLastPeer(const std::vector<uint8_t>& compound_packet
 
 bool RtcpUdpEndpoint::Receive(std::vector<uint8_t>* compound_packet,
                               std::chrono::milliseconds timeout) {
-  if (compound_packet == nullptr) throw std::invalid_argument("RTCP output is null");
-  if (!impl_ || impl_->socket < 0) throw std::runtime_error("RTCP socket is closed");
-  if (timeout.count() < 0) throw std::invalid_argument("RTCP timeout is negative");
+  if (compound_packet == nullptr)
+    throw std::invalid_argument("RTCP output is null");
+  if (!impl_ || impl_->socket < 0)
+    throw std::runtime_error("RTCP socket is closed");
+  if (timeout.count() < 0)
+    throw std::invalid_argument("RTCP timeout is negative");
   timeval tv{};
   tv.tv_sec = static_cast<time_t>(timeout.count() / 1000);
   tv.tv_usec = static_cast<suseconds_t>((timeout.count() % 1000) * 1000);
@@ -800,8 +878,9 @@ bool RtcpUdpEndpoint::Receive(std::vector<uint8_t>* compound_packet,
   std::vector<uint8_t> buffer(65536);
   sockaddr_storage peer{};
   socklen_t peer_length = sizeof(peer);
-  const ssize_t received = ::recvfrom(impl_->socket, buffer.data(), buffer.size(), 0,
-                                      reinterpret_cast<sockaddr*>(&peer), &peer_length);
+  const ssize_t received =
+      ::recvfrom(impl_->socket, buffer.data(), buffer.size(), 0,
+                 reinterpret_cast<sockaddr*>(&peer), &peer_length);
   if (received < 0) {
     if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) return false;
     throw std::runtime_error("failed to receive RTCP packet");
@@ -809,7 +888,8 @@ bool RtcpUdpEndpoint::Receive(std::vector<uint8_t>* compound_packet,
   if (received == 0) return false;
   buffer.resize(static_cast<std::size_t>(received));
   if (impl_->remote_length != 0) {
-    if (peer.ss_family != AF_INET || impl_->remote.ss_family != AF_INET) return false;
+    if (peer.ss_family != AF_INET || impl_->remote.ss_family != AF_INET)
+      return false;
     const auto* actual = reinterpret_cast<const sockaddr_in*>(&peer);
     const auto* expected = reinterpret_cast<const sockaddr_in*>(&impl_->remote);
     if (actual->sin_addr.s_addr != expected->sin_addr.s_addr ||
@@ -819,7 +899,9 @@ bool RtcpUdpEndpoint::Receive(std::vector<uint8_t>* compound_packet,
   }
 #ifdef MLVC_HAS_OPENSSL
   if (!impl_->auth_key.empty() &&
-      !VerifyAndStripRtcp(&buffer, impl_->auth_key, &impl_->rx_highest, &impl_->rx_window)) return false;
+      !VerifyAndStripRtcp(&buffer, impl_->auth_key, &impl_->rx_highest,
+                          &impl_->rx_window))
+    return false;
 #endif
   (void)DecodeRtcpCompound(buffer);
   impl_->last_peer = peer;
@@ -851,7 +933,8 @@ void RtcpUdpEndpoint::SendToLastPeer(const std::vector<uint8_t>&) {
 void RtcpUdpEndpoint::AcceptLastPeer() {
   throw std::runtime_error("RTCP UDP endpoint is not supported on this build");
 }
-bool RtcpUdpEndpoint::Receive(std::vector<uint8_t>*, std::chrono::milliseconds) {
+bool RtcpUdpEndpoint::Receive(std::vector<uint8_t>*,
+                              std::chrono::milliseconds) {
   throw std::runtime_error("RTCP UDP endpoint is not supported on this build");
 }
 void RtcpUdpEndpoint::Close() {}
@@ -862,7 +945,8 @@ namespace {
 
 void PutRtcpLength(std::vector<uint8_t>* bytes, std::size_t packet_offset) {
   const std::size_t packet_bytes = bytes->size() - packet_offset;
-  Require(packet_bytes >= 4 && packet_bytes % 4 == 0 && packet_bytes / 4 - 1 <= 0xffffu,
+  Require(packet_bytes >= 4 && packet_bytes % 4 == 0 &&
+              packet_bytes / 4 - 1 <= 0xffffu,
           "invalid RTCP packet size");
   const uint16_t words_minus_one = static_cast<uint16_t>(packet_bytes / 4 - 1);
   (*bytes)[packet_offset + 2] = static_cast<uint8_t>(words_minus_one >> 8);

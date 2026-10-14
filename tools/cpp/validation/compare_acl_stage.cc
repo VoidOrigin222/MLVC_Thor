@@ -1,6 +1,3 @@
-#include <mlvc/core/status.h>
-#include <mlvc/runtime/stage_runtime.h>
-
 #include <cmath>
 #include <cstdint>
 #include <cstring>
@@ -10,6 +7,9 @@
 #include <string>
 #include <vector>
 
+#include "mlvc/core/status.h"
+#include "mlvc/runtime/stage_runtime.h"
+
 namespace {
 
 struct TensorBuffer {
@@ -18,7 +18,8 @@ struct TensorBuffer {
   std::vector<uint8_t> bytes;
 
   mlvc::TensorView View() {
-    return mlvc::TensorView::Borrowed(bytes.data(), &shape, dtype, mlvc::MemoryLocation::kCpu);
+    return mlvc::TensorView::Borrowed(bytes.data(), &shape, dtype,
+                                      mlvc::MemoryLocation::kCpu);
   }
 };
 
@@ -33,7 +34,8 @@ struct OutputDiff {
 void PrintUsage(const char* argv0) {
   std::cerr << "usage: " << argv0
             << " --manifest <manifest.json> --stage <name> [--device 0]"
-               " [--baseline-om <path>] [--target-om <path>] [--atol 0.005] [--rtol 0.005]\n";
+               " [--baseline-om <path>] [--target-om <path>] [--atol 0.005] "
+               "[--rtol 0.005]\n";
 }
 
 uint32_t FloatToHalfBits(float value) {
@@ -55,7 +57,8 @@ uint32_t FloatToHalfBits(float value) {
     uint32_t half_mantissa = mantissa >> shift;
     const uint32_t remainder = mantissa & ((uint32_t{1} << shift) - 1U);
     const uint32_t halfway = uint32_t{1} << (shift - 1);
-    if (remainder > halfway || (remainder == halfway && (half_mantissa & 1U) != 0U)) {
+    if (remainder > halfway ||
+        (remainder == halfway && (half_mantissa & 1U) != 0U)) {
       ++half_mantissa;
     }
     return sign | half_mantissa;
@@ -65,7 +68,8 @@ uint32_t FloatToHalfBits(float value) {
   }
   uint32_t half_mantissa = mantissa >> 13;
   const uint32_t remainder = mantissa & 0x1fffU;
-  if (remainder > 0x1000U || (remainder == 0x1000U && (half_mantissa & 1U) != 0U)) {
+  if (remainder > 0x1000U ||
+      (remainder == 0x1000U && (half_mantissa & 1U) != 0U)) {
     ++half_mantissa;
     if (half_mantissa == 0x400U) {
       half_mantissa = 0;
@@ -137,14 +141,16 @@ TensorBuffer MakeInput(const mlvc::TensorSpec& spec, uint32_t seed) {
     case mlvc::DataType::kInt16: {
       auto* output = reinterpret_cast<int16_t*>(buffer.bytes.data());
       for (std::size_t i = 0; i < elements; ++i) {
-        output[i] = static_cast<int16_t>(static_cast<int>((i + seed) % 257) - 128);
+        output[i] =
+            static_cast<int16_t>(static_cast<int>((i + seed) % 257) - 128);
       }
       break;
     }
     case mlvc::DataType::kInt32: {
       auto* output = reinterpret_cast<int32_t*>(buffer.bytes.data());
       for (std::size_t i = 0; i < elements; ++i) {
-        output[i] = static_cast<int32_t>(static_cast<int>((i + seed) % 257) - 128);
+        output[i] =
+            static_cast<int32_t>(static_cast<int>((i + seed) % 257) - 128);
       }
       break;
     }
@@ -162,14 +168,16 @@ TensorBuffer MakeOutput(const mlvc::TensorSpec& spec) {
   TensorBuffer buffer;
   buffer.shape = mlvc::TensorShape(spec.shape);
   buffer.dtype = spec.dtype;
-  buffer.bytes.resize(buffer.shape.NumElements() * mlvc::ElementSize(spec.dtype));
+  buffer.bytes.resize(buffer.shape.NumElements() *
+                      mlvc::ElementSize(spec.dtype));
   return buffer;
 }
 
 double ReadValue(const TensorBuffer& buffer, std::size_t index) {
   switch (buffer.dtype) {
     case mlvc::DataType::kFloat16:
-      return HalfBitsToFloat(reinterpret_cast<const uint16_t*>(buffer.bytes.data())[index]);
+      return HalfBitsToFloat(
+          reinterpret_cast<const uint16_t*>(buffer.bytes.data())[index]);
     case mlvc::DataType::kFloat32:
       return reinterpret_cast<const float*>(buffer.bytes.data())[index];
     case mlvc::DataType::kInt8:
@@ -187,7 +195,8 @@ double ReadValue(const TensorBuffer& buffer, std::size_t index) {
 OutputDiff CompareOutput(const std::string& name, const TensorBuffer& baseline,
                          const TensorBuffer& target, double atol, double rtol) {
   mlvc::Check(baseline.dtype == target.dtype, "output dtype mismatch: " + name);
-  mlvc::Check(baseline.shape.dims() == target.shape.dims(), "output shape mismatch: " + name);
+  mlvc::Check(baseline.shape.dims() == target.shape.dims(),
+              "output shape mismatch: " + name);
   OutputDiff diff;
   diff.name = name;
   diff.elements = baseline.shape.NumElements();
@@ -198,7 +207,8 @@ OutputDiff CompareOutput(const std::string& name, const TensorBuffer& baseline,
     const double rel_error = abs_error / std::max(std::abs(expected), 1.0);
     diff.max_abs = std::max(diff.max_abs, abs_error);
     diff.max_rel = std::max(diff.max_rel, rel_error);
-    if (!std::isfinite(abs_error) || abs_error > atol + rtol * std::abs(expected)) {
+    if (!std::isfinite(abs_error) ||
+        abs_error > atol + rtol * std::abs(expected)) {
       ++diff.mismatches;
     }
   }
@@ -253,7 +263,8 @@ int main(int argc, char** argv) {
     mlvc::ModelManifest manifest = mlvc::ModelManifest::Load(manifest_path);
     const mlvc::ModelRecord& record = manifest.GetModel(stage_name);
     if (baseline_om.empty()) {
-      mlvc::Check(!record.atc_model.empty(), "manifest stage has no atc_om_file: " + stage_name);
+      mlvc::Check(!record.atc_model.empty(),
+                  "manifest stage has no atc_om_file: " + stage_name);
       baseline_om = ResolvePath(manifest.directory(), record.atc_model);
     }
     if (target_om.empty()) {
@@ -284,14 +295,17 @@ int main(int argc, char** argv) {
       input_views.push_back({record.inputs[i].name.c_str(), inputs[i].View()});
     }
     for (std::size_t i = 0; i < record.outputs.size(); ++i) {
-      baseline_output_views.push_back({record.outputs[i].name.c_str(), baseline_outputs[i].View()});
-      target_output_views.push_back({record.outputs[i].name.c_str(), target_outputs[i].View()});
+      baseline_output_views.push_back(
+          {record.outputs[i].name.c_str(), baseline_outputs[i].View()});
+      target_output_views.push_back(
+          {record.outputs[i].name.c_str(), target_outputs[i].View()});
     }
 
-    baseline.RunNamed(input_views.data(), input_views.size(), baseline_output_views.data(),
+    baseline.RunNamed(input_views.data(), input_views.size(),
+                      baseline_output_views.data(),
                       baseline_output_views.size());
-    target.RunNamed(input_views.data(), input_views.size(), target_output_views.data(),
-                    target_output_views.size());
+    target.RunNamed(input_views.data(), input_views.size(),
+                    target_output_views.data(), target_output_views.size());
 
     std::size_t total_mismatches = 0;
     std::cout << "stage=" << stage_name << "\n";
@@ -301,14 +315,17 @@ int main(int argc, char** argv) {
     std::cout << "rtol=" << rtol << "\n";
     for (std::size_t i = 0; i < record.outputs.size(); ++i) {
       const OutputDiff diff =
-          CompareOutput(record.outputs[i].name, baseline_outputs[i], target_outputs[i], atol, rtol);
+          CompareOutput(record.outputs[i].name, baseline_outputs[i],
+                        target_outputs[i], atol, rtol);
       total_mismatches += diff.mismatches;
       std::cout << "output=" << diff.name << " elements=" << diff.elements
-                << " mismatches=" << diff.mismatches << " max_abs=" << diff.max_abs
-                << " max_rel=" << diff.max_rel << "\n";
+                << " mismatches=" << diff.mismatches
+                << " max_abs=" << diff.max_abs << " max_rel=" << diff.max_rel
+                << "\n";
     }
     if (total_mismatches != 0) {
-      std::cerr << "compare_acl_stage failed: total_mismatches=" << total_mismatches << "\n";
+      std::cerr << "compare_acl_stage failed: total_mismatches="
+                << total_mismatches << "\n";
       return 1;
     }
     std::cout << "status=ok\n";

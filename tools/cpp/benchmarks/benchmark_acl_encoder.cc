@@ -1,16 +1,3 @@
-#include <mlvc/application/input/frame_input_queue.h>
-#include <mlvc/codec/mlvc_entropy.h>
-#include <mlvc/codec/mlvc_rate_control.h>
-#include <mlvc/codec/tensor_utils.h>
-#include <mlvc/core/status.h>
-#include <mlvc/entropy/entropy_codec.h>
-#include <mlvc/entropy/mlvc_official_entropy.h>
-#include <mlvc/entropy/sidecar.h>
-#include <mlvc/framework/entropy_worker.h>
-#include <mlvc/io/mlvc_bitstream.h>
-#include <mlvc/io/video_io.h>
-#include <mlvc/runtime/stage_runtime.h>
-
 #include <algorithm>
 #include <array>
 #include <chrono>
@@ -29,6 +16,19 @@
 #include <optional>
 #include <string>
 #include <string_view>
+
+#include "mlvc/application/input/frame_input_queue.h"
+#include "mlvc/codec/mlvc_entropy.h"
+#include "mlvc/codec/mlvc_rate_control.h"
+#include "mlvc/codec/tensor_utils.h"
+#include "mlvc/core/status.h"
+#include "mlvc/entropy/entropy_codec.h"
+#include "mlvc/entropy/mlvc_official_entropy.h"
+#include "mlvc/entropy/sidecar.h"
+#include "mlvc/framework/entropy_worker.h"
+#include "mlvc/io/mlvc_bitstream.h"
+#include "mlvc/io/video_io.h"
+#include "mlvc/runtime/stage_runtime.h"
 
 namespace {
 
@@ -53,7 +53,8 @@ void PrintUsage(const char* argv0) {
                " --output-bitstream <stream.bin>\n";
 }
 
-const mlvc::TensorSpec& FindTensorSpec(const mlvc::ModelRecord& record, std::string_view name) {
+const mlvc::TensorSpec& FindTensorSpec(const mlvc::ModelRecord& record,
+                                       std::string_view name) {
   for (const mlvc::TensorSpec& spec : record.inputs) {
     if (spec.name == name) {
       return spec;
@@ -64,13 +65,17 @@ const mlvc::TensorSpec& FindTensorSpec(const mlvc::ModelRecord& record, std::str
       return spec;
     }
   }
-  throw mlvc::Error("missing tensor spec: " + record.name + "." + std::string(name));
+  throw mlvc::Error("missing tensor spec: " + record.name + "." +
+                    std::string(name));
 }
 
-mlvc::codec::TensorData MakeInt32Tensor(const mlvc::TensorSpec& spec, int32_t value) {
+mlvc::codec::TensorData MakeInt32Tensor(const mlvc::TensorSpec& spec,
+                                        int32_t value) {
   mlvc::codec::TensorData tensor = mlvc::codec::MakeTensorLike(spec);
-  mlvc::Check(spec.dtype == mlvc::DataType::kInt32, "q-index tensor must be int32");
-  mlvc::Check(spec.shape.size() == 1 && spec.shape[0] == 1, "q-index tensor must be shape [1]");
+  mlvc::Check(spec.dtype == mlvc::DataType::kInt32,
+              "q-index tensor must be int32");
+  mlvc::Check(spec.shape.size() == 1 && spec.shape[0] == 1,
+              "q-index tensor must be shape [1]");
   std::memcpy(tensor.bytes.data(), &value, sizeof(value));
   return tensor;
 }
@@ -85,7 +90,8 @@ void ResetTensor(mlvc::codec::TensorData* tensor) {
 
 void DumpFeatureStats(const mlvc::codec::TensorData& tensor,
                       const std::filesystem::path& output_path) {
-  mlvc::Check(tensor.dtype == mlvc::DataType::kFloat16, "feature dump requires an FP16 tensor");
+  mlvc::Check(tensor.dtype == mlvc::DataType::kFloat16,
+              "feature dump requires an FP16 tensor");
   mlvc::codec::WriteTensorFile(output_path, tensor);
 
   const auto* bits = reinterpret_cast<const uint16_t*>(tensor.bytes.data());
@@ -124,7 +130,9 @@ void DumpFeatureStats(const mlvc::codec::TensorData& tensor,
   std::cout << "feature_bytes=" << tensor.bytes.size() << "\n";
   std::cout << "feature_min=" << min_value << "\n";
   std::cout << "feature_max=" << max_value << "\n";
-  std::cout << "feature_mean=" << (finite_count > 0 ? sum / static_cast<double>(finite_count) : 0.0)
+  std::cout << "feature_mean="
+            << (finite_count > 0 ? sum / static_cast<double>(finite_count)
+                                 : 0.0)
             << "\n";
   std::cout << "feature_max_abs=" << max_abs << "\n";
   std::cout << "feature_nan=" << nan_count << "\n";
@@ -234,8 +242,9 @@ int main(int argc, char** argv) {
     }
   }
 
-  if ((input_path.empty() && input_frame_dir.empty()) || output_bitstream_path.empty() ||
-      warmup < 0 || frames == 0 || gop < 0 || reset_interval < 0) {
+  if ((input_path.empty() && input_frame_dir.empty()) ||
+      output_bitstream_path.empty() || warmup < 0 || frames == 0 || gop < 0 ||
+      reset_interval < 0) {
     PrintUsage(argv[0]);
     return 2;
   }
@@ -250,21 +259,30 @@ int main(int argc, char** argv) {
     mlvc::StageRuntime runtime(device);
     mlvc::ModelManifest manifest = mlvc::ModelManifest::Load(manifest_path);
     const std::filesystem::path model_directory = manifest.directory();
-    mlvc::Check(manifest.HasModel("MLVCEncoder") && manifest.HasModel("MLVCDecoder"),
-                "e1d1 manifest must contain MLVCEncoder and MLVCDecoder");
+    mlvc::Check(
+        manifest.HasModel("MLVCEncoder") && manifest.HasModel("MLVCDecoder"),
+        "e1d1 manifest must contain MLVCEncoder and MLVCDecoder");
     mlvc::StageModelSet models(&runtime, std::move(manifest));
     mlvc::StageModel& encoder = models.GetStage(std::string("MLVCEncoder"));
 
     const mlvc::TensorSpec& frame_spec = FindTensorSpec(encoder.record(), "x");
-    const mlvc::TensorSpec& ref_feature_spec = FindTensorSpec(encoder.record(), "ref_feature");
-    const mlvc::TensorSpec& q_index_spec = FindTensorSpec(encoder.record(), "q_index_shifted");
-    const mlvc::TensorSpec& encoder_feature_spec = FindTensorSpec(encoder.record(), "feature");
-    const mlvc::TensorSpec& z_raw_spec = FindTensorSpec(encoder.record(), "z_raw");
-    const mlvc::TensorSpec& y_raw_0_spec = FindTensorSpec(encoder.record(), "y_raw_0");
-    const mlvc::TensorSpec& y_raw_1_spec = FindTensorSpec(encoder.record(), "y_raw_1");
+    const mlvc::TensorSpec& ref_feature_spec =
+        FindTensorSpec(encoder.record(), "ref_feature");
+    const mlvc::TensorSpec& q_index_spec =
+        FindTensorSpec(encoder.record(), "q_index_shifted");
+    const mlvc::TensorSpec& encoder_feature_spec =
+        FindTensorSpec(encoder.record(), "feature");
+    const mlvc::TensorSpec& z_raw_spec =
+        FindTensorSpec(encoder.record(), "z_raw");
+    const mlvc::TensorSpec& y_raw_0_spec =
+        FindTensorSpec(encoder.record(), "y_raw_0");
+    const mlvc::TensorSpec& y_raw_1_spec =
+        FindTensorSpec(encoder.record(), "y_raw_1");
 
-    mlvc::Check(encoder.record().inputs.size() == 3, "MLVCEncoder input count mismatch");
-    mlvc::Check(encoder.record().outputs.size() == 4, "MLVCEncoder output count mismatch");
+    mlvc::Check(encoder.record().inputs.size() == 3,
+                "MLVCEncoder input count mismatch");
+    mlvc::Check(encoder.record().outputs.size() == 4,
+                "MLVCEncoder output count mismatch");
 
     std::optional<mlvc::io::VideoFrameReader> video_reader;
     std::optional<mlvc::io::VideoInfo> video_info;
@@ -274,14 +292,16 @@ int main(int argc, char** argv) {
     if (!input_path.empty()) {
       video_reader.emplace(input_path);
       video_info = video_reader->info();
-      mlvc::Check(video_info->width <= static_cast<int>(frame_spec.shape[3]) &&
-                      video_info->height <= static_cast<int>(frame_spec.shape[2]),
-                  "input video exceeds model frame tensor shape");
+      mlvc::Check(
+          video_info->width <= static_cast<int>(frame_spec.shape[3]) &&
+              video_info->height <= static_cast<int>(frame_spec.shape[2]),
+          "input video exceeds model frame tensor shape");
       source_width = video_info->width;
       source_height = video_info->height;
       source_fps = video_info->fps;
     } else {
-      const std::optional<SourceInfo> source_info = ReadSourceInfo(input_frame_dir);
+      const std::optional<SourceInfo> source_info =
+          ReadSourceInfo(input_frame_dir);
       if (source_info.has_value()) {
         source_width = source_info->width;
         source_height = source_info->height;
@@ -291,7 +311,8 @@ int main(int argc, char** argv) {
 
     int measured_frames = frames;
     if (video_info.has_value() && video_info->frame_count > 0) {
-      const int available_frames = std::max(video_info->frame_count - warmup, 0);
+      const int available_frames =
+          std::max(video_info->frame_count - warmup, 0);
       if (measured_frames < 0) {
         measured_frames = available_frames;
       } else {
@@ -306,7 +327,8 @@ int main(int argc, char** argv) {
       frames_to_attempt = warmup + frames;
     }
 
-    const int y_channels = static_cast<int>(y_raw_0_spec.shape[1] + y_raw_1_spec.shape[1]);
+    const int y_channels =
+        static_cast<int>(y_raw_0_spec.shape[1] + y_raw_1_spec.shape[1]);
     const int y_height = static_cast<int>(y_raw_0_spec.shape[2]);
     const int y_width = static_cast<int>(y_raw_0_spec.shape[3]);
     const int z_height = static_cast<int>(z_raw_spec.shape[2]);
@@ -326,13 +348,18 @@ int main(int argc, char** argv) {
     mlvc::CodecGraphExecutor graph_executor(2);
     mlvc::app::FrameInputArena frame_prepare_arena(frame_spec, 3);
     mlvc::app::AsyncFrameInputQueue prepare_queue(
-        frames_to_attempt, frames, input_path, input_frame_dir, std::nullopt, nullptr, frame_spec, source_width,
-        source_height, &frame_prepare_arena, nullptr, &graph_executor);
+        frames_to_attempt, frames, input_path, input_frame_dir, std::nullopt,
+        nullptr, frame_spec, source_width, source_height, &frame_prepare_arena,
+        nullptr, &graph_executor);
 
-    mlvc::codec::TensorData ref_feature = mlvc::codec::MakeTensorLike(ref_feature_spec);
-    mlvc::codec::TensorData ltr_feature = mlvc::codec::MakeTensorLike(ref_feature_spec);
-    mlvc::codec::TensorData q_index_tensor = MakeInt32Tensor(q_index_spec, q_index);
-    mlvc::codec::TensorData encoder_feature = mlvc::codec::MakeTensorLike(encoder_feature_spec);
+    mlvc::codec::TensorData ref_feature =
+        mlvc::codec::MakeTensorLike(ref_feature_spec);
+    mlvc::codec::TensorData ltr_feature =
+        mlvc::codec::MakeTensorLike(ref_feature_spec);
+    mlvc::codec::TensorData q_index_tensor =
+        MakeInt32Tensor(q_index_spec, q_index);
+    mlvc::codec::TensorData encoder_feature =
+        mlvc::codec::MakeTensorLike(encoder_feature_spec);
     mlvc::codec::TensorData z_raw = mlvc::codec::MakeTensorLike(z_raw_spec);
     mlvc::codec::TensorData y_raw_0 = mlvc::codec::MakeTensorLike(y_raw_0_spec);
     mlvc::codec::TensorData y_raw_1 = mlvc::codec::MakeTensorLike(y_raw_1_spec);
@@ -354,15 +381,19 @@ int main(int argc, char** argv) {
     int p_frames = 0;
     int ltr_frames = 0;
 
-    mlvc::io::OfficialMlvcBitstreamWriter bitstream_writer(output_bitstream_path);
+    mlvc::io::OfficialMlvcBitstreamWriter bitstream_writer(
+        output_bitstream_path);
     mlvc::EntropyWorker entropy_worker;
     std::deque<std::future<void>> pending_entropy_jobs;
     constexpr std::size_t kMaxPendingEntropyJobs = 2;
 
-    auto encode_and_write = [&](int frame_index, mlvc::codec::MlvcFrameType frame_type,
-                                int frame_q_index, const mlvc::codec::TensorData& job_z_raw,
+    auto encode_and_write = [&](int frame_index,
+                                mlvc::codec::MlvcFrameType frame_type,
+                                int frame_q_index,
+                                const mlvc::codec::TensorData& job_z_raw,
                                 const mlvc::codec::TensorData& job_y_raw_0,
-                                const mlvc::codec::TensorData& job_y_raw_1, bool measure) {
+                                const mlvc::codec::TensorData& job_y_raw_1,
+                                bool measure) {
       std::vector<int8_t> job_z_symbol_buffer;
       std::vector<int8_t> job_y_symbols_0;
       std::vector<int8_t> job_y_symbols_1;
@@ -371,18 +402,20 @@ int main(int argc, char** argv) {
       std::vector<uint8_t> job_payload;
       const auto entropy_begin = std::chrono::steady_clock::now();
       mlvc::codec::TensorToInt8Symbols(job_z_raw, &job_z_symbol_buffer);
-      mlvc::codec::BuildMlvcScaleIndexesFromZRaw(job_z_raw, y_channels, y_height, y_width,
-                                                 mlvc::codec::kMlvcChannelRepeat, &job_scales_0,
-                                                 &job_scales_1);
+      mlvc::codec::BuildMlvcScaleIndexesFromZRaw(
+          job_z_raw, y_channels, y_height, y_width,
+          mlvc::codec::kMlvcChannelRepeat, &job_scales_0, &job_scales_1);
       mlvc::codec::TensorToInt8Symbols(job_y_raw_0, &job_y_symbols_0);
       mlvc::codec::TensorToInt8Symbols(job_y_raw_1, &job_y_symbols_1);
-      official_entropy.Encode(job_z_symbol_buffer, job_y_symbols_0, job_y_symbols_1, job_scales_0,
-                              job_scales_1, frame_q_index, z_channel, z_height, z_width,
+      official_entropy.Encode(job_z_symbol_buffer, job_y_symbols_0,
+                              job_y_symbols_1, job_scales_0, job_scales_1,
+                              frame_q_index, z_channel, z_height, z_width,
                               &job_payload);
       const auto entropy_end = std::chrono::steady_clock::now();
       if (measure) {
-        entropy_encode_ms +=
-            std::chrono::duration<double, std::milli>(entropy_end - entropy_begin).count();
+        entropy_encode_ms += std::chrono::duration<double, std::milli>(
+                                 entropy_end - entropy_begin)
+                                 .count();
       }
 
       const auto write_begin = std::chrono::steady_clock::now();
@@ -390,17 +423,20 @@ int main(int argc, char** argv) {
       const auto write_end = std::chrono::steady_clock::now();
       if (measure) {
         bitstream_write_ms +=
-            std::chrono::duration<double, std::milli>(write_end - write_begin).count();
+            std::chrono::duration<double, std::milli>(write_end - write_begin)
+                .count();
       }
       if (!entropy_pipeline) {
         const auto rate_control_update_begin = std::chrono::steady_clock::now();
-        rate_control.Update((frame_index + 1) / source_fps, frame_type, frame_q_index,
-                            job_payload.size(), mlvc::io::kOfficialMlvcFrameOverheadBytes);
+        rate_control.Update((frame_index + 1) / source_fps, frame_type,
+                            frame_q_index, job_payload.size(),
+                            mlvc::io::kOfficialMlvcFrameOverheadBytes);
         const auto rate_control_update_end = std::chrono::steady_clock::now();
         if (measure) {
-          rate_control_ms += std::chrono::duration<double, std::milli>(rate_control_update_end -
-                                                                       rate_control_update_begin)
-                                 .count();
+          rate_control_ms +=
+              std::chrono::duration<double, std::milli>(
+                  rate_control_update_end - rate_control_update_begin)
+                  .count();
         }
       }
     };
@@ -412,36 +448,42 @@ int main(int argc, char** argv) {
       }
     };
 
-    auto run_frame = [&](int frame_index, const mlvc::codec::TensorData& current_frame,
+    auto run_frame = [&](int frame_index,
+                         const mlvc::codec::TensorData& current_frame,
                          bool measure) {
-      const int cycle_index = mlvc::codec::MlvcResetCycleIndex(frame_index, reset_interval);
-      const mlvc::codec::MlvcFrameType frame_type = mlvc::codec::MlvcFrameTypeForFrame(
-          frame_index, gop, reset_interval, ltr_start_idx, ltr_period);
-      const bool save_ltr_feature =
-          mlvc::codec::ShouldSaveLtrFeatures(cycle_index, ltr_start_idx, ltr_period);
+      const int cycle_index =
+          mlvc::codec::MlvcResetCycleIndex(frame_index, reset_interval);
+      const mlvc::codec::MlvcFrameType frame_type =
+          mlvc::codec::MlvcFrameTypeForFrame(frame_index, gop, reset_interval,
+                                             ltr_start_idx, ltr_period);
+      const bool save_ltr_feature = mlvc::codec::ShouldSaveLtrFeatures(
+          cycle_index, ltr_start_idx, ltr_period);
       if (frame_type == mlvc::codec::MlvcFrameType::kIFrame) {
         ResetTensor(&ref_feature);
       } else if (frame_type == mlvc::codec::MlvcFrameType::kLtrRecovery) {
-        mlvc::Check(has_ltr_feature, "LTR frame requested before LTR feature is initialized");
+        mlvc::Check(has_ltr_feature,
+                    "LTR frame requested before LTR feature is initialized");
         mlvc::codec::CloneTensorInto(ltr_feature, &ref_feature);
       }
 
       int frame_q_index = q_index;
       const auto rate_control_begin = std::chrono::steady_clock::now();
       if (rate_control.enabled()) {
-        frame_q_index = rate_control.SolveQIndex((frame_index + 1) / source_fps, frame_type);
+        frame_q_index = rate_control.SolveQIndex((frame_index + 1) / source_fps,
+                                                 frame_type);
       }
       if (frame_type == mlvc::codec::MlvcFrameType::kLtrRecovery) {
         frame_q_index += ltr_qp_shift;
       }
       frame_q_index = std::clamp(frame_q_index, 0, 63);
-      const int q_index_shifted = frame_q_index + kMlvcQIndexShift[frame_index % 8];
+      const int q_index_shifted =
+          frame_q_index + kMlvcQIndexShift[frame_index % 8];
       SetInt32TensorValue(&q_index_tensor, q_index_shifted);
       const auto rate_control_end = std::chrono::steady_clock::now();
       if (measure) {
-        rate_control_ms +=
-            std::chrono::duration<double, std::milli>(rate_control_end - rate_control_begin)
-                .count();
+        rate_control_ms += std::chrono::duration<double, std::milli>(
+                               rate_control_end - rate_control_begin)
+                               .count();
       }
 
       const std::array<mlvc::NamedTensorView, 3> encoder_inputs = {
@@ -457,7 +499,8 @@ int main(int argc, char** argv) {
       };
 
       const auto encoder_begin = std::chrono::steady_clock::now();
-      encoder.RunNamed(encoder_inputs.data(), encoder_inputs.size(), encoder_output_views.data(),
+      encoder.RunNamed(encoder_inputs.data(), encoder_inputs.size(),
+                       encoder_output_views.data(),
                        encoder_output_views.size());
       const auto encoder_end = std::chrono::steady_clock::now();
       if (frame_index == 0) {
@@ -467,15 +510,18 @@ int main(int argc, char** argv) {
         }
       }
       if (measure) {
-        encoder_ms +=
-            std::chrono::duration<double, std::milli>(encoder_end - encoder_begin).count();
+        encoder_ms += std::chrono::duration<double, std::milli>(encoder_end -
+                                                                encoder_begin)
+                          .count();
       }
 
       const auto copy_begin = std::chrono::steady_clock::now();
       mlvc::codec::CloneTensorInto(encoder_feature, &ref_feature);
       const auto copy_end = std::chrono::steady_clock::now();
       if (measure) {
-        feature_copy_ms += std::chrono::duration<double, std::milli>(copy_end - copy_begin).count();
+        feature_copy_ms +=
+            std::chrono::duration<double, std::milli>(copy_end - copy_begin)
+                .count();
       }
       if (save_ltr_feature) {
         mlvc::codec::CloneTensorInto(ref_feature, &ltr_feature);
@@ -487,17 +533,20 @@ int main(int argc, char** argv) {
         mlvc::codec::TensorData job_y_raw_0 = mlvc::codec::CloneTensor(y_raw_0);
         mlvc::codec::TensorData job_y_raw_1 = mlvc::codec::CloneTensor(y_raw_1);
         pending_entropy_jobs.push_back(entropy_worker.SubmitVoid(
-            [&, frame_index, frame_type, frame_q_index, measure, job_z_raw = std::move(job_z_raw),
-             job_y_raw_0 = std::move(job_y_raw_0), job_y_raw_1 = std::move(job_y_raw_1)]() {
-              encode_and_write(frame_index, frame_type, frame_q_index, job_z_raw, job_y_raw_0,
-                               job_y_raw_1, measure);
+            [&, frame_index, frame_type, frame_q_index, measure,
+             job_z_raw = std::move(job_z_raw),
+             job_y_raw_0 = std::move(job_y_raw_0),
+             job_y_raw_1 = std::move(job_y_raw_1)]() {
+              encode_and_write(frame_index, frame_type, frame_q_index,
+                               job_z_raw, job_y_raw_0, job_y_raw_1, measure);
             }));
         if (pending_entropy_jobs.size() > kMaxPendingEntropyJobs) {
           pending_entropy_jobs.front().get();
           pending_entropy_jobs.pop_front();
         }
       } else {
-        encode_and_write(frame_index, frame_type, frame_q_index, z_raw, y_raw_0, y_raw_1, measure);
+        encode_and_write(frame_index, frame_type, frame_q_index, z_raw, y_raw_0,
+                         y_raw_1, measure);
       }
       if (frame_type == mlvc::codec::MlvcFrameType::kIFrame) {
         ++i_frames;
@@ -513,7 +562,8 @@ int main(int argc, char** argv) {
       if (prepared_frame.eof) {
         throw mlvc::Error("input ended before warmup frames completed");
       }
-      mlvc::Check(prepared_frame.frame != nullptr, "prepared frame slot is empty");
+      mlvc::Check(prepared_frame.frame != nullptr,
+                  "prepared frame slot is empty");
       mlvc::Check(prepared_frame.frame_index == i,
                   "async frame prepare queue returned out-of-order frame");
       run_frame(i, *prepared_frame.frame, false);
@@ -531,7 +581,8 @@ int main(int argc, char** argv) {
         break;
       }
       const int frame_index = warmup + processed;
-      mlvc::Check(prepared_frame.frame != nullptr, "prepared frame slot is empty");
+      mlvc::Check(prepared_frame.frame != nullptr,
+                  "prepared frame slot is empty");
       mlvc::Check(prepared_frame.frame_index == frame_index,
                   "async frame prepare queue returned out-of-order frame");
       run_frame(frame_index, *prepared_frame.frame, true);
@@ -540,18 +591,25 @@ int main(int argc, char** argv) {
     }
     drain_entropy_jobs();
     const auto end = std::chrono::steady_clock::now();
-    const mlvc::app::AsyncFrameInputQueue::Stats prepare_stats = prepare_queue.stats();
+    const mlvc::app::AsyncFrameInputQueue::Stats prepare_stats =
+        prepare_queue.stats();
     bitstream_writer.Close();
-    const uint64_t bitstream_bytes = std::filesystem::exists(output_bitstream_path)
-                                         ? std::filesystem::file_size(output_bitstream_path)
-                                         : 0;
+    const uint64_t bitstream_bytes =
+        std::filesystem::exists(output_bitstream_path)
+            ? std::filesystem::file_size(output_bitstream_path)
+            : 0;
 
-    const double total_ms = std::chrono::duration<double, std::milli>(end - begin).count();
-    const double fps = processed > 0 ? (1000.0 * static_cast<double>(processed) / total_ms) : 0.0;
+    const double total_ms =
+        std::chrono::duration<double, std::milli>(end - begin).count();
+    const double fps =
+        processed > 0 ? (1000.0 * static_cast<double>(processed) / total_ms)
+                      : 0.0;
     std::cout << "stage=MLVCEncoder\n";
-    std::cout << "pipeline=" << (entropy_pipeline ? "input+npu-rans" : "input-only") << "\n";
+    std::cout << "pipeline="
+              << (entropy_pipeline ? "input+npu-rans" : "input-only") << "\n";
     std::cout << "entropy_pipeline=" << (entropy_pipeline ? 1 : 0) << "\n";
-    std::cout << "entropy_pipeline_max_pending=" << kMaxPendingEntropyJobs << "\n";
+    std::cout << "entropy_pipeline_max_pending=" << kMaxPendingEntropyJobs
+              << "\n";
     if (input_frame_dir.empty()) {
       std::cout << "input_mode=video\n";
       std::cout << "input_video=" << input_path.string() << "\n";
@@ -566,23 +624,30 @@ int main(int argc, char** argv) {
     std::cout << "ltr_period=" << ltr_period << "\n";
     std::cout << "ltr_qp_shift=" << ltr_qp_shift << "\n";
     std::cout << "target_bitrate_bps=" << target_bitrate_bps << "\n";
-    std::cout << "rate_control_enabled=" << (rate_control.enabled() ? 1 : 0) << "\n";
+    std::cout << "rate_control_enabled=" << (rate_control.enabled() ? 1 : 0)
+              << "\n";
     std::cout << "frames=" << processed << "\n";
     std::cout << "total_ms=" << total_ms << "\n";
-    std::cout << "avg_ms=" << (processed > 0 ? total_ms / static_cast<double>(processed) : 0.0)
+    std::cout << "avg_ms="
+              << (processed > 0 ? total_ms / static_cast<double>(processed)
+                                : 0.0)
               << "\n";
     std::cout << "fps=" << fps << "\n";
     std::cout << "breakdown:\n";
-    std::cout << "  queue_consumer_wait_ms=" << prepare_stats.consumer_wait_ms << " avg="
+    std::cout << "  queue_consumer_wait_ms=" << prepare_stats.consumer_wait_ms
+              << " avg="
               << (prepare_stats.consumer_wait_count > 0
                       ? prepare_stats.consumer_wait_ms /
-                            static_cast<double>(prepare_stats.consumer_wait_count)
+                            static_cast<double>(
+                                prepare_stats.consumer_wait_count)
                       : 0.0)
               << "\n";
-    std::cout << "  queue_producer_wait_ms=" << prepare_stats.producer_wait_ms << " avg="
+    std::cout << "  queue_producer_wait_ms=" << prepare_stats.producer_wait_ms
+              << " avg="
               << (prepare_stats.producer_wait_count > 0
                       ? prepare_stats.producer_wait_ms /
-                            static_cast<double>(prepare_stats.producer_wait_count)
+                            static_cast<double>(
+                                prepare_stats.producer_wait_count)
                       : 0.0)
               << "\n";
     std::cout << "  prepare_ms=" << prepare_stats.prepare_ms << " avg="
@@ -591,42 +656,55 @@ int main(int argc, char** argv) {
                             static_cast<double>(prepare_stats.prepared_frames)
                       : 0.0)
               << "\n";
-    std::cout << "  prepare_video_read_ms=" << prepare_stats.video_read_ms << " avg="
+    std::cout << "  prepare_video_read_ms=" << prepare_stats.video_read_ms
+              << " avg="
               << (prepare_stats.prepared_frames > 0
                       ? prepare_stats.video_read_ms /
                             static_cast<double>(prepare_stats.prepared_frames)
                       : 0.0)
               << "\n";
-    std::cout << "  prepare_fp16_read_ms=" << prepare_stats.fp16_read_ms << " avg="
+    std::cout << "  prepare_fp16_read_ms=" << prepare_stats.fp16_read_ms
+              << " avg="
               << (prepare_stats.prepared_frames > 0
                       ? prepare_stats.fp16_read_ms /
                             static_cast<double>(prepare_stats.prepared_frames)
                       : 0.0)
               << "\n";
-    std::cout << "  prepare_synthetic_ms=" << prepare_stats.synthetic_read_ms << " avg="
+    std::cout << "  prepare_synthetic_ms=" << prepare_stats.synthetic_read_ms
+              << " avg="
               << (prepare_stats.prepared_frames > 0
                       ? prepare_stats.synthetic_read_ms /
                             static_cast<double>(prepare_stats.prepared_frames)
                       : 0.0)
               << "\n";
-    std::cout << "  encoder_ms=" << encoder_ms
-              << " avg=" << (processed > 0 ? encoder_ms / static_cast<double>(processed) : 0.0)
+    std::cout << "  encoder_ms=" << encoder_ms << " avg="
+              << (processed > 0 ? encoder_ms / static_cast<double>(processed)
+                                : 0.0)
               << "\n";
-    std::cout << "  feature_copy_ms=" << feature_copy_ms
-              << " avg=" << (processed > 0 ? feature_copy_ms / static_cast<double>(processed) : 0.0)
+    std::cout << "  feature_copy_ms=" << feature_copy_ms << " avg="
+              << (processed > 0
+                      ? feature_copy_ms / static_cast<double>(processed)
+                      : 0.0)
               << "\n";
-    std::cout << "  rate_control_ms=" << rate_control_ms
-              << " avg=" << (processed > 0 ? rate_control_ms / static_cast<double>(processed) : 0.0)
+    std::cout << "  rate_control_ms=" << rate_control_ms << " avg="
+              << (processed > 0
+                      ? rate_control_ms / static_cast<double>(processed)
+                      : 0.0)
               << "\n";
     std::cout << "  entropy_encode_ms=" << entropy_encode_ms << " avg="
-              << (processed > 0 ? entropy_encode_ms / static_cast<double>(processed) : 0.0) << "\n";
+              << (processed > 0
+                      ? entropy_encode_ms / static_cast<double>(processed)
+                      : 0.0)
+              << "\n";
     std::cout << "  bitstream_write_ms=" << bitstream_write_ms << " avg="
-              << (processed > 0 ? bitstream_write_ms / static_cast<double>(processed) : 0.0)
+              << (processed > 0
+                      ? bitstream_write_ms / static_cast<double>(processed)
+                      : 0.0)
               << "\n";
     std::cout << "output_bitstream=" << output_bitstream_path.string() << "\n";
     std::cout << "bitstream_bytes=" << bitstream_bytes << "\n";
-    std::cout << "frame_counts=i:" << i_frames << ",p:" << p_frames << ",ltr:" << ltr_frames
-              << "\n";
+    std::cout << "frame_counts=i:" << i_frames << ",p:" << p_frames
+              << ",ltr:" << ltr_frames << "\n";
     return 0;
   } catch (const std::exception& error) {
     std::cerr << "benchmark_acl_encoder failed: " << error.what() << "\n";

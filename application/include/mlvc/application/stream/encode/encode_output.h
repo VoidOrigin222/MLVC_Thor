@@ -1,24 +1,26 @@
 #ifndef MLVC_APPLICATION_STREAM_ENCODE_ENCODE_OUTPUT_H_
 #define MLVC_APPLICATION_STREAM_ENCODE_ENCODE_OUTPUT_H_
 
-#include <mlvc/application/stream/mlvc_internal.h>
-#include <mlvc/application/stream/mlvc_stream.h>
-#include <mlvc/codec/mlvc_rate_control.h>
-#include <mlvc/framework/profiler.h>
-#include <mlvc/io/mlvc_bitstream.h>
-#include <mlvc/io/udp_frame_transport.h>
-
 #include <cstdint>
 #include <exception>
 #include <filesystem>
 #include <optional>
 
+#include "mlvc/application/stream/mlvc_internal.h"
+#include "mlvc/application/stream/mlvc_stream.h"
+#include "mlvc/codec/mlvc_rate_control.h"
+#include "mlvc/framework/profiler.h"
+#include "mlvc/io/mlvc_bitstream.h"
+#include "mlvc/io/udp_frame_transport.h"
+
 namespace mlvc::codec {
 
 class EncodeOutput {
  public:
-  EncodeOutput(const EncodeStreamOptions& options, const mlvc::io::MlvcBitstreamHeader& header,
-               const MlvcRateControlOptions& rate_options, mlvc::Profiler* profiler);
+  EncodeOutput(const EncodeStreamOptions& options,
+               const mlvc::io::MlvcBitstreamHeader& header,
+               const MlvcRateControlOptions& rate_options,
+               mlvc::Profiler* profiler);
   ~EncodeOutput();
 
   EncodeOutput(const EncodeOutput&) = delete;
@@ -29,8 +31,9 @@ class EncodeOutput {
   void SendEnd();
   bool ConsumeRandomAccessRequest();
   bool PopMlvcControl(mlvc::transport::MlvcControlMessage* message);
-  void SendMlvcControlResponse(const mlvc::transport::MlvcControlMessage& request, bool accepted,
-                               const std::string& reason);
+  void SendMlvcControlResponse(
+      const mlvc::transport::MlvcControlMessage& request, bool accepted,
+      const std::string& reason);
 
   MlvcRateController& rate_controller() { return rate_controller_; }
 

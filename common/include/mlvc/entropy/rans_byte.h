@@ -29,7 +29,8 @@ inline void RansEncRenorm(RansState& state, uint8_t*& ptr, uint32_t freq) {
   }
 }
 
-inline void RansEncPut(RansState& state, uint8_t*& ptr, uint32_t start, uint32_t freq) {
+inline void RansEncPut(RansState& state, uint8_t*& ptr, uint32_t start,
+                       uint32_t freq) {
   RansEncRenorm(state, ptr, freq);
   state = ((state / freq) << kRansScaleBits) + (state % freq) + start;
 }
@@ -51,7 +52,8 @@ inline void RansDecInit(RansState& state, uint8_t*& ptr) {
 
 inline uint32_t RansDecGet(RansState& state) { return state & kRansDecMask; }
 
-inline void RansDecAdvance(RansState& state, uint8_t*& ptr, uint32_t start, uint32_t freq) {
+inline void RansDecAdvance(RansState& state, uint8_t*& ptr, uint32_t start,
+                           uint32_t freq) {
   state = freq * (state >> kRansScaleBits) + (state & kRansDecMask) - start;
   while (state < kRansByteL) {
     state = (state << 8) | *ptr++;

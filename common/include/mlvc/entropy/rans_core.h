@@ -28,12 +28,13 @@ class RansEncoderCore {
   void ReserveOutputBytes(std::size_t capacity);
   void Reset();
   void EncodeY(std::vector<int16_t> symbols, int cdf_group_index);
-  void EncodeY(const std::vector<int16_t>* symbols, std::size_t begin, std::size_t count,
-               int cdf_group_index);
-  void EncodeZ(std::vector<int8_t> symbols, int cdf_group_index, int start_offset,
+  void EncodeY(const std::vector<int16_t>* symbols, std::size_t begin,
+               std::size_t count, int cdf_group_index);
+  void EncodeZ(std::vector<int8_t> symbols, int cdf_group_index,
+               int start_offset, int per_channel_size);
+  void EncodeZ(const std::vector<int8_t>* symbols, std::size_t begin,
+               std::size_t count, int cdf_group_index, int start_offset,
                int per_channel_size);
-  void EncodeZ(const std::vector<int8_t>* symbols, std::size_t begin, std::size_t count,
-               int cdf_group_index, int start_offset, int per_channel_size);
   void Flush();
   const std::vector<uint8_t>& stream() const { return stream_; }
 
@@ -55,10 +56,13 @@ class RansEncoderCore {
   static std::size_t SymbolCount(const PendingTask& task);
   static int16_t YSymbolAt(const PendingTask& task, std::size_t index);
   static int8_t ZSymbolAt(const PendingTask& task, std::size_t index);
-  void EncodeOneSymbol(uint8_t*& ptr, RansState& state, int32_t symbol, int32_t cdf_size,
-                       int32_t offset, const std::vector<RansSymbol>& symbols);
-  void EncodeYInternal(uint8_t*& ptr, RansState& state, const PendingTask& task);
-  void EncodeZInternal(uint8_t*& ptr, RansState& state, const PendingTask& task);
+  void EncodeOneSymbol(uint8_t*& ptr, RansState& state, int32_t symbol,
+                       int32_t cdf_size, int32_t offset,
+                       const std::vector<RansSymbol>& symbols);
+  void EncodeYInternal(uint8_t*& ptr, RansState& state,
+                       const PendingTask& task);
+  void EncodeZInternal(uint8_t*& ptr, RansState& state,
+                       const PendingTask& task);
 
   std::vector<std::shared_ptr<CdfGroup>> cdf_groups_;
   std::vector<PendingTask> pending_;
@@ -72,16 +76,20 @@ class RansDecoderCore {
   void ReserveStream(std::size_t capacity);
   void SetStream(std::vector<uint8_t> stream);
   void SetStreamView(const std::vector<uint8_t>& stream);
-  std::vector<int8_t> DecodeY(const std::vector<uint8_t>& indexes, int cdf_group_index);
-  void DecodeYInto(const std::vector<uint8_t>& indexes, std::size_t begin, std::size_t count,
-                   int cdf_group_index, std::vector<int8_t>* output, std::size_t output_begin);
-  std::vector<int8_t> DecodeZ(int total_size, int cdf_group_index, int start_offset,
-                              int per_channel_size);
-  void DecodeZInto(int total_size, int cdf_group_index, int start_offset, int per_channel_size,
+  std::vector<int8_t> DecodeY(const std::vector<uint8_t>& indexes,
+                              int cdf_group_index);
+  void DecodeYInto(const std::vector<uint8_t>& indexes, std::size_t begin,
+                   std::size_t count, int cdf_group_index,
                    std::vector<int8_t>* output, std::size_t output_begin);
+  std::vector<int8_t> DecodeZ(int total_size, int cdf_group_index,
+                              int start_offset, int per_channel_size);
+  void DecodeZInto(int total_size, int cdf_group_index, int start_offset,
+                   int per_channel_size, std::vector<int8_t>* output,
+                   std::size_t output_begin);
 
  private:
-  int8_t DecodeOneSymbol(const std::vector<int32_t>& cdf, int32_t cdf_size, int32_t offset);
+  int8_t DecodeOneSymbol(const std::vector<int32_t>& cdf, int32_t cdf_size,
+                         int32_t offset);
 
   std::vector<std::shared_ptr<CdfGroup>> cdf_groups_;
   std::vector<uint8_t> stream_;

@@ -69,9 +69,11 @@ class CodecGraphExecutor {
   void RecordTemplate(Profiler* profiler) const;
   CodecFramePacket* AcquireFramePacket(int frame_index, Profiler* profiler);
   void ReleaseFramePacket(CodecFramePacket* packet, Profiler* profiler);
-  void RecordNode(Profiler* profiler, CodecGraphNodeType type, const std::string& name,
-                  const std::string& detail, std::chrono::steady_clock::time_point begin,
-                  std::chrono::steady_clock::time_point end, int frame_index = -1) const;
+  void RecordNode(Profiler* profiler, CodecGraphNodeType type,
+                  const std::string& name, const std::string& detail,
+                  std::chrono::steady_clock::time_point begin,
+                  std::chrono::steady_clock::time_point end,
+                  int frame_index = -1) const;
 
  private:
   BoundedFramePacketPool packet_pool_;
@@ -80,8 +82,8 @@ class CodecGraphExecutor {
 class ScopedCodecGraphNode {
  public:
   ScopedCodecGraphNode(const CodecGraphExecutor* executor, Profiler* profiler,
-                       CodecGraphNodeType type, std::string name, std::string detail,
-                       int frame_index = -1);
+                       CodecGraphNodeType type, std::string name,
+                       std::string detail, int frame_index = -1);
   ~ScopedCodecGraphNode();
 
   ScopedCodecGraphNode(const ScopedCodecGraphNode&) = delete;

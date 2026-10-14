@@ -1,9 +1,6 @@
 #ifndef MLVC_IO_VIDEO_IO_H_
 #define MLVC_IO_VIDEO_IO_H_
 
-#include <mlvc/codec/tensor_data.h>
-#include <acl/acl.h>
-
 #include <condition_variable>
 #include <cstddef>
 #include <cstdint>
@@ -13,13 +10,22 @@
 #include <filesystem>
 #include <memory>
 #include <mutex>
-#include <opencv2/core/mat.hpp>
-#include <string>
 #include <optional>
+#include <string>
 #include <thread>
 #include <vector>
 
+#include "mlvc/codec/tensor_data.h"
+#include <acl/acl.h>
+#include <opencv2/core/mat.hpp>
+
 namespace mlvc::io {
+
+#ifdef MLVC_TENSORRT
+inline constexpr char kDefaultVideoDecodeBackend[] = "nvdec";
+#else
+inline constexpr char kDefaultVideoDecodeBackend[] = "opencv";
+#endif
 
 struct VideoInfo {
   int width = 0;
@@ -38,7 +44,8 @@ struct CameraCaptureOptions {
   uint32_t rtsp_bitrate_bps = 8'000'000;
   uint32_t rtsp_gop = 96;
   std::size_t rtsp_queue_capacity = 3;
-  // Benchmark only: capture this many native MJPEG frames before timed processing.
+  // Benchmark only: capture this many native MJPEG frames before timed
+  // processing.
   std::size_t preload_frames = 0;
   // Optional compact NV12 sidecar for the motion proxy; main pixels unchanged.
   bool motion_nv12 = false;
@@ -48,15 +55,24 @@ class VideoFrameReader {
  public:
   explicit VideoFrameReader(const std::filesystem::path& input_path);
   VideoFrameReader(const std::filesystem::path& input_path,
-                   const CameraCaptureOptions& camera_options, aclrtContext context);
+                   const CameraCaptureOptions& camera_options,
+                   aclrtContext context);
   VideoFrameReader(const VideoFrameReader&) = delete;
   VideoFrameReader& operator=(const VideoFrameReader&) = delete;
   ~VideoFrameReader();
 
   const VideoInfo& info() const { return info_; }
-  bool ReadFrameAsTensor(const mlvc::TensorSpec& frame_spec, codec::TensorData* tensor,
+  bool ReadFrameAsTensor(const mlvc::TensorSpec& frame_spec,
+                         codec::TensorData* tensor,
                          std::vector<uint8_t>* motion_nv12 = nullptr);
   void Close();
+#ifdef MLVC_TENSORRT
+  void SetTargetFps(double target_fps);
+  uint64_t last_source_ready_ns() const;
+  void SetDeviceResident(bool enabled);
+  VideoFrameReader(const std::filesystem::path& input_path,
+                   const std::string& decoder_backend);
+#endif
 
  private:
   class Impl;
@@ -67,8 +83,9 @@ class VideoFrameReader {
 
 class DecodedVideoWriter {
  public:
-  DecodedVideoWriter(const std::filesystem::path& output_path, const std::string& output_format,
-                     double fps, int width, int height, int crf, const std::string& bitrate,
+  DecodedVideoWriter(const std::filesystem::path& output_path,
+                     const std::string& output_format, double fps, int width,
+                     int height, int crf, const std::string& bitrate,
                      const std::string& preset);
   DecodedVideoWriter(const DecodedVideoWriter&) = delete;
   DecodedVideoWriter& operator=(const DecodedVideoWriter&) = delete;
@@ -97,7 +114,8 @@ class RtspVideoPublisher {
  public:
   RtspVideoPublisher(const std::string& url, double fps, int width, int height,
                      const std::string& preset = "ultrafast", int crf = 0,
-                     std::size_t queue_capacity = 3, const std::string& transport = "udp",
+                     std::size_t queue_capacity = 3,
+                     const std::string& transport = "udp",
                      bool h264_copy = false);
   RtspVideoPublisher(const RtspVideoPublisher&) = delete;
   RtspVideoPublisher& operator=(const RtspVideoPublisher&) = delete;
@@ -136,9 +154,10 @@ class RtspVideoPublisher {
 bool IsVideoPath(const std::filesystem::path& path);
 std::string GuessDecodeOutputFormat(const std::filesystem::path& output_path,
                                     const std::string& configured_format);
-cv::Mat ConvertTensorToBgr(const codec::TensorData& tensor, int width, int height);
-void WriteTensorFrameAsPng(const codec::TensorData& tensor, int width, int height,
-                           const std::filesystem::path& path);
+cv::Mat ConvertTensorToBgr(const codec::TensorData& tensor, int width,
+                           int height);
+void WriteTensorFrameAsPng(const codec::TensorData& tensor, int width,
+                           int height, const std::filesystem::path& path);
 
 }  // namespace mlvc::io
 

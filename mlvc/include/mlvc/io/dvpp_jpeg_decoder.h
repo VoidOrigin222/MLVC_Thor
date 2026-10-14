@@ -1,13 +1,13 @@
 #ifndef MLVC_IO_DVPP_JPEG_DECODER_H_
 #define MLVC_IO_DVPP_JPEG_DECODER_H_
 
-#include <acl/acl.h>
-
-#include <cstdint>
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <utility>
 #include <vector>
+
+#include <acl/acl.h>
 
 namespace mlvc::io {
 
@@ -20,8 +20,8 @@ struct DvppJpegDecodeConfig {
 class DvppJpegDecodedFrame {
  public:
   DvppJpegDecodedFrame() = default;
-  DvppJpegDecodedFrame(std::shared_ptr<void> owner, std::size_t bytes, int width_stride,
-                       int height_stride)
+  DvppJpegDecodedFrame(std::shared_ptr<void> owner, std::size_t bytes,
+                       int width_stride, int height_stride)
       : owner_(std::move(owner)),
         bytes_(bytes),
         width_stride_(width_stride),
@@ -49,7 +49,8 @@ class DvppJpegDecoder {
   DvppJpegDecoder& operator=(const DvppJpegDecoder&) = delete;
 
   std::vector<uint8_t> Decode(const std::vector<uint8_t>& jpeg);
-  // Keeps the decoded NV12 allocation on the device for downstream ACL operators.
+  // Keeps the decoded NV12 allocation on the device for downstream ACL
+  // operators.
   DvppJpegDecodedFrame DecodeDevice(const std::vector<uint8_t>& jpeg);
   DvppJpegDecodedFrame DecodeDevice(const void* jpeg, std::size_t jpeg_bytes);
 

@@ -1,8 +1,8 @@
 #ifndef MLVC_IO_MLVC_BITSTREAM_H_
 #define MLVC_IO_MLVC_BITSTREAM_H_
 
-#include <cstdint>
 #include <array>
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <string>
@@ -63,8 +63,10 @@ ForcedLtrFrames ResolveForcedLtrFrames(const MlvcBitstreamHeader& header,
                                        int requested_recovery_frame,
                                        int requested_reference_frame);
 uint64_t MaxMlvcFramePayloadBytes(int width, int height);
-void ValidateMlvcFrameMetadata(int frame_index, mlvc::codec::MlvcFrameType frame_type, int q_index,
-                               int expected_frame_index, bool require_i_frame);
+void ValidateMlvcFrameMetadata(int frame_index,
+                               mlvc::codec::MlvcFrameType frame_type,
+                               int q_index, int expected_frame_index,
+                               bool require_i_frame);
 
 constexpr std::size_t kMlvcBitstreamFrameOverheadBytes = 17;
 constexpr std::size_t kOfficialMlvcFrameOverheadBytes = 8;
@@ -73,7 +75,8 @@ class OfficialMlvcBitstreamWriter {
  public:
   explicit OfficialMlvcBitstreamWriter(const std::filesystem::path& path);
   OfficialMlvcBitstreamWriter(const OfficialMlvcBitstreamWriter&) = delete;
-  OfficialMlvcBitstreamWriter& operator=(const OfficialMlvcBitstreamWriter&) = delete;
+  OfficialMlvcBitstreamWriter& operator=(const OfficialMlvcBitstreamWriter&) =
+      delete;
   ~OfficialMlvcBitstreamWriter();
 
   void WriteFrame(int q_index, const std::vector<uint8_t>& payload);
@@ -89,7 +92,8 @@ class OfficialMlvcBitstreamReader {
  public:
   explicit OfficialMlvcBitstreamReader(const std::filesystem::path& path);
   OfficialMlvcBitstreamReader(const OfficialMlvcBitstreamReader&) = delete;
-  OfficialMlvcBitstreamReader& operator=(const OfficialMlvcBitstreamReader&) = delete;
+  OfficialMlvcBitstreamReader& operator=(const OfficialMlvcBitstreamReader&) =
+      delete;
   ~OfficialMlvcBitstreamReader() = default;
 
   bool ReadFrame(int* frame_index, int* q_index, std::vector<uint8_t>* payload);
@@ -102,16 +106,19 @@ class OfficialMlvcBitstreamReader {
 
 class MlvcBitstreamWriter {
  public:
-  MlvcBitstreamWriter(const std::filesystem::path& path, const MlvcBitstreamHeader& header);
+  MlvcBitstreamWriter(const std::filesystem::path& path,
+                      const MlvcBitstreamHeader& header);
   MlvcBitstreamWriter(const MlvcBitstreamWriter&) = delete;
   MlvcBitstreamWriter& operator=(const MlvcBitstreamWriter&) = delete;
   ~MlvcBitstreamWriter();
 
-  void WriteFrame(int frame_index, mlvc::codec::MlvcFrameType frame_type, int q_index,
+  void WriteFrame(int frame_index, mlvc::codec::MlvcFrameType frame_type,
+                  int q_index, const std::vector<uint8_t>& payload);
+  void WriteFrame(int frame_index, mlvc::codec::MlvcFrameType frame_type,
+                  int q_index, const MlvcFrameMetadata& metadata,
                   const std::vector<uint8_t>& payload);
-  void WriteFrame(int frame_index, mlvc::codec::MlvcFrameType frame_type, int q_index,
-                  const MlvcFrameMetadata& metadata, const std::vector<uint8_t>& payload);
-  void SwitchConfiguration(uint32_t config_id, const MlvcBitstreamHeader& header);
+  void SwitchConfiguration(uint32_t config_id,
+                           const MlvcBitstreamHeader& header);
   void Close();
 
  private:
@@ -134,9 +141,11 @@ class MlvcBitstreamReader {
   ~MlvcBitstreamReader();
 
   const MlvcBitstreamHeader& header() const { return header_; }
-  const MlvcFrameMetadata& last_frame_metadata() const { return last_frame_metadata_; }
-  bool ReadFrame(int* frame_index, mlvc::codec::MlvcFrameType* frame_type, int* q_index,
-                 std::vector<uint8_t>* payload);
+  const MlvcFrameMetadata& last_frame_metadata() const {
+    return last_frame_metadata_;
+  }
+  bool ReadFrame(int* frame_index, mlvc::codec::MlvcFrameType* frame_type,
+                 int* q_index, std::vector<uint8_t>* payload);
 
  private:
   std::filesystem::path path_;

@@ -54,7 +54,8 @@ bool MultiplyWouldOverflow(uint64_t a, uint64_t b) {
 std::string ReadText(const std::filesystem::path& path) {
   std::ifstream input(path);
   Check(input.good(), "failed to open model metadata: " + path.string());
-  return {std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()};
+  return {std::istreambuf_iterator<char>(input),
+          std::istreambuf_iterator<char>()};
 }
 
 std::size_t FindJsonValue(const std::string& json, const std::string& key) {
@@ -67,12 +68,14 @@ std::size_t FindJsonValue(const std::string& json, const std::string& key) {
 }
 
 void SkipJsonWhitespace(const std::string& json, std::size_t* pos) {
-  while (*pos < json.size() && std::isspace(static_cast<unsigned char>(json[*pos]))) {
+  while (*pos < json.size() &&
+         std::isspace(static_cast<unsigned char>(json[*pos]))) {
     ++*pos;
   }
 }
 
-int32_t ReadJsonInt(const std::string& json, std::size_t* pos, const std::string& key) {
+int32_t ReadJsonInt(const std::string& json, std::size_t* pos,
+                    const std::string& key) {
   SkipJsonWhitespace(json, pos);
   bool negative = false;
   if (*pos < json.size() && json[*pos] == '-') {
@@ -81,7 +84,8 @@ int32_t ReadJsonInt(const std::string& json, std::size_t* pos, const std::string
   }
   const std::size_t digits_begin = *pos;
   int64_t value = 0;
-  while (*pos < json.size() && std::isdigit(static_cast<unsigned char>(json[*pos]))) {
+  while (*pos < json.size() &&
+         std::isdigit(static_cast<unsigned char>(json[*pos]))) {
     const int digit = json[*pos] - '0';
     Check(value <= (std::numeric_limits<int64_t>::max() - digit) / 10,
           "model metadata integer overflows: " + key);
@@ -96,10 +100,12 @@ int32_t ReadJsonInt(const std::string& json, std::size_t* pos, const std::string
   return static_cast<int32_t>(value);
 }
 
-std::vector<int32_t> ReadJsonIntArray(const std::string& json, const std::string& key) {
+std::vector<int32_t> ReadJsonIntArray(const std::string& json,
+                                      const std::string& key) {
   std::size_t pos = FindJsonValue(json, key);
   SkipJsonWhitespace(json, &pos);
-  Check(pos < json.size() && json[pos] == '[', "model metadata value is not an array: " + key);
+  Check(pos < json.size() && json[pos] == '[',
+        "model metadata value is not an array: " + key);
   ++pos;
   std::vector<int32_t> values;
   while (true) {
@@ -137,7 +143,8 @@ std::size_t SidecarArray::ElementCount() const {
   }
   std::size_t count = 1;
   for (const auto dim : shape) {
-    Check(dim >= 0, "sidecar array dimension must be non-negative, got " + std::to_string(dim));
+    Check(dim >= 0, "sidecar array dimension must be non-negative, got " +
+                        std::to_string(dim));
     if (MultiplyWouldOverflow(count, static_cast<uint64_t>(dim))) {
       throw Error("sidecar array element count overflow");
     }
@@ -149,12 +156,14 @@ std::size_t SidecarArray::ElementCount() const {
 std::vector<int32_t> SidecarArray::AsInt32() const {
   Check(dtype == DataType::kInt32, "sidecar array is not int32");
   const std::size_t element_count = ElementCount();
-  Check(element_count <= std::numeric_limits<std::size_t>::max() / sizeof(int32_t),
+  Check(element_count <=
+            std::numeric_limits<std::size_t>::max() / sizeof(int32_t),
         "sidecar int32 byte count overflow");
   const std::size_t expected_bytes = element_count * sizeof(int32_t);
-  Check(bytes.size() == expected_bytes, "sidecar array byte count mismatch: expected " +
-                                            std::to_string(expected_bytes) + ", got " +
-                                            std::to_string(bytes.size()));
+  Check(bytes.size() == expected_bytes,
+        "sidecar array byte count mismatch: expected " +
+            std::to_string(expected_bytes) + ", got " +
+            std::to_string(bytes.size()));
   std::vector<int32_t> result(element_count);
   std::memcpy(result.data(), bytes.data(), expected_bytes);
   return result;
@@ -163,12 +172,14 @@ std::vector<int32_t> SidecarArray::AsInt32() const {
 std::vector<uint16_t> SidecarArray::AsFloat16Bits() const {
   Check(dtype == DataType::kFloat16, "sidecar array is not float16");
   const std::size_t element_count = ElementCount();
-  Check(element_count <= std::numeric_limits<std::size_t>::max() / sizeof(uint16_t),
+  Check(element_count <=
+            std::numeric_limits<std::size_t>::max() / sizeof(uint16_t),
         "sidecar float16 byte count overflow");
   const std::size_t expected_bytes = element_count * sizeof(uint16_t);
-  Check(bytes.size() == expected_bytes, "sidecar array byte count mismatch: expected " +
-                                            std::to_string(expected_bytes) + ", got " +
-                                            std::to_string(bytes.size()));
+  Check(bytes.size() == expected_bytes,
+        "sidecar array byte count mismatch: expected " +
+            std::to_string(expected_bytes) + ", got " +
+            std::to_string(bytes.size()));
   std::vector<uint16_t> result(element_count);
   std::memcpy(result.data(), bytes.data(), expected_bytes);
   return result;
@@ -177,7 +188,8 @@ std::vector<uint16_t> SidecarArray::AsFloat16Bits() const {
 float SidecarArray::ScalarFloat32() const {
   Check(dtype == DataType::kFloat32, "sidecar array is not float32");
   Check(shape.size() == 1 && shape[0] == 1, "sidecar array is not scalar");
-  Check(bytes.size() == sizeof(float), "sidecar scalar has incorrect byte count");
+  Check(bytes.size() == sizeof(float),
+        "sidecar scalar has incorrect byte count");
   float value = 0.0f;
   std::memcpy(&value, bytes.data(), sizeof(float));
   return value;
@@ -201,12 +213,13 @@ RuntimeSidecar RuntimeSidecar::Load(const std::filesystem::path& path) {
         "invalid sidecar magic: " + path.string());
 
   const uint32_t version = ReadPod<uint32_t>(input);
-  Check(version == kVersion, "unsupported sidecar version: " + std::to_string(version));
+  Check(version == kVersion,
+        "unsupported sidecar version: " + std::to_string(version));
 
   const uint32_t array_count = ReadPod<uint32_t>(input);
   Check(array_count <= kMaxArrayCount,
-        "sidecar array count exceeds maximum: " + std::to_string(array_count) + " > " +
-            std::to_string(kMaxArrayCount));
+        "sidecar array count exceeds maximum: " + std::to_string(array_count) +
+            " > " + std::to_string(kMaxArrayCount));
 
   RuntimeSidecar sidecar;
   uint64_t total_bytes_read = 16;
@@ -216,7 +229,8 @@ RuntimeSidecar RuntimeSidecar::Load(const std::filesystem::path& path) {
 
     const uint32_t name_length = ReadPod<uint32_t>(input);
     Check(name_length > 0 && name_length <= kMaxNameLength,
-          "sidecar array name length out of range: " + std::to_string(name_length));
+          "sidecar array name length out of range: " +
+              std::to_string(name_length));
     total_bytes_read += sizeof(uint32_t);
 
     array.name.resize(name_length);
@@ -228,13 +242,15 @@ RuntimeSidecar RuntimeSidecar::Load(const std::filesystem::path& path) {
     total_bytes_read += sizeof(uint32_t);
 
     const uint32_t rank = ReadPod<uint32_t>(input);
-    Check(rank > 0 && rank <= kMaxRank, "sidecar array rank out of range: " + std::to_string(rank));
+    Check(rank > 0 && rank <= kMaxRank,
+          "sidecar array rank out of range: " + std::to_string(rank));
     total_bytes_read += sizeof(uint32_t);
 
     array.shape.resize(rank);
     for (uint32_t j = 0; j < rank; ++j) {
       const int64_t dim = ReadPod<int64_t>(input);
-      Check(dim >= 0, "sidecar array dimension must be non-negative, got " + std::to_string(dim));
+      Check(dim >= 0, "sidecar array dimension must be non-negative, got " +
+                          std::to_string(dim));
       array.shape[j] = dim;
       total_bytes_read += sizeof(int64_t);
     }
@@ -245,19 +261,23 @@ RuntimeSidecar RuntimeSidecar::Load(const std::filesystem::path& path) {
     const std::size_t element_count = array.ElementCount();
     const std::size_t element_size = ElementSize(array.dtype);
     if (MultiplyWouldOverflow(element_count, element_size)) {
-      throw Error("sidecar array byte count calculation overflow for array: " + array.name);
+      throw Error("sidecar array byte count calculation overflow for array: " +
+                  array.name);
     }
     const uint64_t expected_byte_count = element_count * element_size;
     Check(byte_count == expected_byte_count,
-          "sidecar array byte count mismatch for " + array.name + ": declared " +
-              std::to_string(byte_count) + ", expected " + std::to_string(expected_byte_count));
+          "sidecar array byte count mismatch for " + array.name +
+              ": declared " + std::to_string(byte_count) + ", expected " +
+              std::to_string(expected_byte_count));
 
-    Check(byte_count <= kMaxSingleArraySize, "sidecar array too large: " + array.name + " has " +
-                                                 std::to_string(byte_count) + " bytes > " +
-                                                 std::to_string(kMaxSingleArraySize));
+    Check(byte_count <= kMaxSingleArraySize,
+          "sidecar array too large: " + array.name + " has " +
+              std::to_string(byte_count) + " bytes > " +
+              std::to_string(kMaxSingleArraySize));
 
     Check(total_bytes_read + byte_count <= static_cast<uint64_t>(file_size),
-          "sidecar array byte count exceeds remaining file size for " + array.name);
+          "sidecar array byte count exceeds remaining file size for " +
+              array.name);
 
     array.bytes.resize(static_cast<std::size_t>(byte_count));
     input.read(reinterpret_cast<char*>(array.bytes.data()),
@@ -272,20 +292,22 @@ RuntimeSidecar RuntimeSidecar::Load(const std::filesystem::path& path) {
 
   Check(total_bytes_read == static_cast<uint64_t>(file_size),
         "sidecar contains trailing or truncated bytes: consumed " +
-            std::to_string(total_bytes_read) + " of " + std::to_string(file_size));
+            std::to_string(total_bytes_read) + " of " +
+            std::to_string(file_size));
 
   return sidecar;
 }
 
-RuntimeSidecar RuntimeSidecar::LoadQpShiftMetadata(const std::filesystem::path& path) {
+RuntimeSidecar RuntimeSidecar::LoadQpShiftMetadata(
+    const std::filesystem::path& path) {
   const std::string json = ReadText(path);
   RuntimeSidecar metadata;
   metadata.metadata_qp_shift_ = ReadJsonIntArray(json, "qp_shift");
   metadata.metadata_qp_index_count_ = ReadJsonIntValue(json, "total_qp_num");
   Check(metadata.metadata_qp_index_count_ > 0,
         "model metadata total_qp_num must be positive");
-  const int32_t max_shift = *std::max_element(metadata.metadata_qp_shift_.begin(),
-                                               metadata.metadata_qp_shift_.end());
+  const int32_t max_shift = *std::max_element(
+      metadata.metadata_qp_shift_.begin(), metadata.metadata_qp_shift_.end());
   Check(max_shift < metadata.metadata_qp_index_count_,
         "model metadata qp_shift exceeds total_qp_num");
   return metadata;
@@ -297,7 +319,9 @@ const SidecarArray& RuntimeSidecar::Get(const std::string& name) const {
   return it->second;
 }
 
-float RuntimeSidecar::force_zero_thres() const { return Get("force_zero_thres").ScalarFloat32(); }
+float RuntimeSidecar::force_zero_thres() const {
+  return Get("force_zero_thres").ScalarFloat32();
+}
 
 float RuntimeSidecar::python_fast_force_zero_thres() const {
   return Get("python_fast_force_zero_thres").ScalarFloat32();
@@ -305,8 +329,10 @@ float RuntimeSidecar::python_fast_force_zero_thres() const {
 
 int RuntimeSidecar::z_channel(const std::string& prefix) const {
   const SidecarArray& array = Get(prefix + "_z_channel");
-  Check(array.dtype == DataType::kInt32, "z_channel array is not int32: " + prefix);
-  Check(array.shape.size() == 1 && array.shape[0] == 1, "z_channel array is not scalar");
+  Check(array.dtype == DataType::kInt32,
+        "z_channel array is not int32: " + prefix);
+  Check(array.shape.size() == 1 && array.shape[0] == 1,
+        "z_channel array is not scalar");
   const auto values = array.AsInt32();
   return values[0];
 }
@@ -316,8 +342,10 @@ int RuntimeSidecar::q_index_count() const {
   int qp_rows = 64;
   bool found_q_scale = false;
   for (const auto& [name, candidate] : arrays_) {
-    if (name.find("_q_scale") == std::string::npos || candidate.shape.empty()) continue;
-    Check(candidate.shape[0] > 0 && candidate.shape[0] <= std::numeric_limits<int>::max(),
+    if (name.find("_q_scale") == std::string::npos || candidate.shape.empty())
+      continue;
+    Check(candidate.shape[0] > 0 &&
+              candidate.shape[0] <= std::numeric_limits<int>::max(),
           "invalid Q scale row count: " + name);
     qp_rows = std::min(qp_rows, static_cast<int>(candidate.shape[0]));
     found_q_scale = true;
@@ -327,12 +355,15 @@ int RuntimeSidecar::q_index_count() const {
 }
 
 int RuntimeSidecar::ShiftedQp(int base_qp, int frame_adaptation_index) const {
-  Check(frame_adaptation_index >= 0, "frame adaptation index must be non-negative");
+  Check(frame_adaptation_index >= 0,
+        "frame adaptation index must be non-negative");
   if (!metadata_qp_shift_.empty()) {
-    Check(static_cast<std::size_t>(frame_adaptation_index) < metadata_qp_shift_.size(),
+    Check(static_cast<std::size_t>(frame_adaptation_index) <
+              metadata_qp_shift_.size(),
           "frame adaptation index out of range");
-    const int64_t shifted = static_cast<int64_t>(base_qp) +
-                            metadata_qp_shift_[static_cast<std::size_t>(frame_adaptation_index)];
+    const int64_t shifted =
+        static_cast<int64_t>(base_qp) +
+        metadata_qp_shift_[static_cast<std::size_t>(frame_adaptation_index)];
     Check(shifted >= std::numeric_limits<int>::min() &&
               shifted <= std::numeric_limits<int>::max(),
           "shifted QP integer overflow");
@@ -365,14 +396,17 @@ int RuntimeSidecar::ShiftedQp(int base_qp, int frame_adaptation_index) const {
   return std::clamp(static_cast<int>(shifted), 0, qp_rows - 1);
 }
 
-const uint16_t* RuntimeSidecar::QScaleData(const std::string& name, int qp) const {
+const uint16_t* RuntimeSidecar::QScaleData(const std::string& name,
+                                           int qp) const {
   const SidecarArray& array = Get(name);
-  Check(array.dtype == DataType::kFloat16, "Q scale array is not fp16: " + name);
+  Check(array.dtype == DataType::kFloat16,
+        "Q scale array is not fp16: " + name);
   Check(!array.shape.empty(), "Q scale array has empty shape: " + name);
   Check(qp >= 0 && qp < array.shape[0], "QP is out of range for " + name);
   std::size_t row_elements = 1;
   for (std::size_t axis = 1; axis < array.shape.size(); ++axis) {
-    Check(array.shape[axis] >= 0, "Q scale shape has a negative dimension: " + name);
+    Check(array.shape[axis] >= 0,
+          "Q scale shape has a negative dimension: " + name);
     const std::size_t dim = static_cast<std::size_t>(array.shape[axis]);
     if (dim == 0) {
       row_elements = 0;
@@ -382,19 +416,22 @@ const uint16_t* RuntimeSidecar::QScaleData(const std::string& name, int qp) cons
           "Q scale row element count overflow: " + name);
     row_elements *= dim;
   }
-  Check(array.ElementCount() <= std::numeric_limits<std::size_t>::max() / sizeof(uint16_t) &&
+  Check(array.ElementCount() <=
+                std::numeric_limits<std::size_t>::max() / sizeof(uint16_t) &&
             array.bytes.size() == array.ElementCount() * sizeof(uint16_t),
         "Q scale byte count mismatch: " + name);
-  return reinterpret_cast<const uint16_t*>(array.bytes.data()) + qp * row_elements;
+  return reinterpret_cast<const uint16_t*>(array.bytes.data()) +
+         qp * row_elements;
 }
 
-std::shared_ptr<CdfGroup> RuntimeSidecar::MakeCdfGroupForPrefix(const std::string& prefix,
-                                                                bool z_table) const {
+std::shared_ptr<CdfGroup> RuntimeSidecar::MakeCdfGroupForPrefix(
+    const std::string& prefix, bool z_table) const {
   const std::string kind = z_table ? "z" : "gaussian";
   const SidecarArray& cdf = Get(prefix + "_" + kind + "_cdf");
   const SidecarArray& cdf_length = Get(prefix + "_" + kind + "_cdf_length");
   const SidecarArray& offset = Get(prefix + "_" + kind + "_offset");
-  return MakeCdfGroup(cdf.AsInt32(), cdf.shape, cdf_length.AsInt32(), offset.AsInt32());
+  return MakeCdfGroup(cdf.AsInt32(), cdf.shape, cdf_length.AsInt32(),
+                      offset.AsInt32());
 }
 
 }  // namespace mlvc

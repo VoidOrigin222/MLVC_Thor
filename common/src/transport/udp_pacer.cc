@@ -13,20 +13,24 @@ UdpPacer::UdpPacer(uint64_t rate_bps, std::size_t max_burst_bytes)
       max_burst_bytes_(max_burst_bytes),
       tokens_(static_cast<double>(max_burst_bytes)),
       last_update_(std::chrono::steady_clock::now()) {
-  if (max_burst_bytes_ == 0) throw std::invalid_argument("UDP pacer burst must be positive");
+  if (max_burst_bytes_ == 0)
+    throw std::invalid_argument("UDP pacer burst must be positive");
 }
 
-std::chrono::microseconds UdpPacer::ConsumeAndGetDelay(std::size_t bytes_to_send) {
+std::chrono::microseconds UdpPacer::ConsumeAndGetDelay(
+    std::size_t bytes_to_send) {
   if (rate_bps_ == 0) {
     return std::chrono::microseconds(0);
   }
   if (bytes_to_send == 0) return std::chrono::microseconds(0);
   if (bytes_to_send > max_burst_bytes_) {
-    throw std::invalid_argument("UDP packet exceeds the configured pacer burst");
+    throw std::invalid_argument(
+        "UDP packet exceeds the configured pacer burst");
   }
 
   const auto now = std::chrono::steady_clock::now();
-  const auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(now - last_update_);
+  const auto elapsed =
+      std::chrono::duration_cast<std::chrono::microseconds>(now - last_update_);
   if (elapsed.count() > 0) {
     const long double tokens_to_add =
         (static_cast<long double>(rate_bps_) / 8.0L) * (elapsed.count() / 1e6L);
@@ -51,7 +55,8 @@ std::chrono::microseconds UdpPacer::ConsumeAndGetDelay(std::size_t bytes_to_send
   const long double delay_value =
       std::ceil(deficit * 8000000.0L / static_cast<long double>(rate_bps_));
   if (!std::isfinite(delay_value) ||
-      delay_value > static_cast<long double>(std::numeric_limits<int64_t>::max())) {
+      delay_value >
+          static_cast<long double>(std::numeric_limits<int64_t>::max())) {
     throw std::overflow_error("UDP pacer delay exceeds the clock range");
   }
   const auto delay_us = static_cast<int64_t>(delay_value);

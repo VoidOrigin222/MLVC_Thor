@@ -1,18 +1,18 @@
 #include "mlvc/core/buffer.h"
 
-#include <acl/acl.h>
-
 #include <cstring>
 #include <utility>
 
 #include "mlvc/core/status.h"
+#include <acl/acl.h>
 
 namespace mlvc {
 namespace {
 
 void CheckAclStatus(aclError status, const char* operation) {
   if (status != ACL_ERROR_NONE) {
-    throw Error(std::string(operation) + " failed: ret=" + std::to_string(status));
+    throw Error(std::string(operation) +
+                " failed: ret=" + std::to_string(status));
   }
 }
 
@@ -33,9 +33,11 @@ DeviceHostBuffer::DeviceHostBuffer(std::size_t bytes) { Allocate(bytes); }
 DeviceHostBuffer::~DeviceHostBuffer() { Reset(); }
 
 DeviceHostBuffer::DeviceHostBuffer(DeviceHostBuffer&& other) noexcept
-    : data_(std::exchange(other.data_, nullptr)), bytes_(std::exchange(other.bytes_, 0)) {}
+    : data_(std::exchange(other.data_, nullptr)),
+      bytes_(std::exchange(other.bytes_, 0)) {}
 
-DeviceHostBuffer& DeviceHostBuffer::operator=(DeviceHostBuffer&& other) noexcept {
+DeviceHostBuffer& DeviceHostBuffer::operator=(
+    DeviceHostBuffer&& other) noexcept {
   if (this != &other) {
     Reset();
     data_ = std::exchange(other.data_, nullptr);
@@ -64,7 +66,8 @@ void DeviceHostBuffer::Reset() {
 TensorView DeviceHostBuffer::View(const TensorShape& shape, DataType dtype) {
   Check(shape.NumElements() * ElementSize(dtype) <= bytes_,
         "host staging buffer view exceeds buffer");
-  return TensorView::Borrowed(data(), &shape, dtype, MemoryLocation::kPinnedCpu);
+  return TensorView::Borrowed(data(), &shape, dtype,
+                              MemoryLocation::kPinnedCpu);
 }
 
 DeviceBuffer::DeviceBuffer(std::size_t bytes) { Allocate(bytes); }
@@ -72,7 +75,8 @@ DeviceBuffer::DeviceBuffer(std::size_t bytes) { Allocate(bytes); }
 DeviceBuffer::~DeviceBuffer() { Reset(); }
 
 DeviceBuffer::DeviceBuffer(DeviceBuffer&& other) noexcept
-    : data_(std::exchange(other.data_, nullptr)), bytes_(std::exchange(other.bytes_, 0)) {}
+    : data_(std::exchange(other.data_, nullptr)),
+      bytes_(std::exchange(other.bytes_, 0)) {}
 
 DeviceBuffer& DeviceBuffer::operator=(DeviceBuffer&& other) noexcept {
   if (this != &other) {
@@ -88,7 +92,8 @@ void DeviceBuffer::Allocate(std::size_t bytes) {
   if (bytes == 0) {
     return;
   }
-  CheckAclStatus(aclrtMalloc(&data_, bytes, ACL_MEM_MALLOC_NORMAL_ONLY), "aclrtMalloc");
+  CheckAclStatus(aclrtMalloc(&data_, bytes, ACL_MEM_MALLOC_NORMAL_ONLY),
+                 "aclrtMalloc");
   bytes_ = bytes;
 }
 
@@ -101,7 +106,8 @@ void DeviceBuffer::Reset() {
 }
 
 TensorView DeviceBuffer::View(const TensorShape& shape, DataType dtype) {
-  Check(shape.NumElements() * ElementSize(dtype) <= bytes_, "device buffer view exceeds buffer");
+  Check(shape.NumElements() * ElementSize(dtype) <= bytes_,
+        "device buffer view exceeds buffer");
   return TensorView::Borrowed(data(), &shape, dtype, MemoryLocation::kAcl);
 }
 

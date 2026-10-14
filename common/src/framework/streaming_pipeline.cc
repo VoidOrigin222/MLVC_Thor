@@ -7,7 +7,8 @@
 
 namespace mlvc {
 
-StreamingPipeline::StreamingPipeline(std::size_t worker_count, std::size_t queue_capacity)
+StreamingPipeline::StreamingPipeline(std::size_t worker_count,
+                                     std::size_t queue_capacity)
     : worker_count_(std::max<std::size_t>(1, worker_count)),
       queue_capacity_(std::max<std::size_t>(1, queue_capacity)),
       input_queue_(queue_capacity_),

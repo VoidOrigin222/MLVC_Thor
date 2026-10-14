@@ -13,11 +13,11 @@
 #include <cstdint>
 
 struct PostSigmoidMulTilingData {
-    uint32_t totalElements;
-    uint32_t elementsPerCore;
-    uint32_t tailCoreElements;
-    uint32_t tileElements;
-    uint32_t dataType;
+  uint32_t totalElements;
+  uint32_t elementsPerCore;
+  uint32_t tailCoreElements;
+  uint32_t tileElements;
+  uint32_t dataType;
 };
 
-#endif // POST_SIGMOID_MUL_TILING_H
+#endif  // POST_SIGMOID_MUL_TILING_H

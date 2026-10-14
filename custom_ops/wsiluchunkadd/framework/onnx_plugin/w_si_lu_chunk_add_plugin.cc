@@ -5,13 +5,13 @@
  * MindStudio is licensed under Mulan PSL v2.
  * ------------------------------------------------------------------------- */
 
-#include "register/register.h"
 #include <vector>
 
+#include "register/register.h"
+
 namespace domi {
-Status ParseParamNoop(const ge::Operator& op_src, ge::Operator& op_dest)
-{
-    return SUCCESS;
+Status ParseParamNoop(const ge::Operator& op_src, ge::Operator& op_dest) {
+  return SUCCESS;
 }
 
 static const std::vector<ge::AscendString> kPostSigmoidChunkAddOriginOpTypes = {
@@ -43,4 +43,4 @@ REGISTER_CUSTOM_OP("ScaledSiLUMul")
     .FrameworkType(ONNX)
     .OriginOpType(kScaledSiLUMulOriginOpTypes)
     .ParseParamsByOperatorFn(ParseParamNoop);
-} // namespace domi
+}  // namespace domi

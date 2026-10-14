@@ -62,14 +62,16 @@ std::string ValidAclModelFields() {
 
 int main(int argc, char** argv) {
   if (argc != 3) {
-    std::cerr << "usage: " << argv[0] << " <legacy-manifest.json> <acl-manifest.json>\n";
+    std::cerr << "usage: " << argv[0]
+              << " <legacy-manifest.json> <acl-manifest.json>\n";
     return 2;
   }
 
   try {
     try {
       mlvc::ValidateAclManifestForAclRuntime(LoadManifest(argv[1]));
-      throw mlvc::Error("legacy manifest was unexpectedly accepted by ACL runtime");
+      throw mlvc::Error(
+          "legacy manifest was unexpectedly accepted by ACL runtime");
     } catch (const mlvc::Error& error) {
       ExpectErrorContains("legacy manifest", error.what(), "runtime = \"acl\"");
     }
@@ -77,13 +79,17 @@ int main(int argc, char** argv) {
     try {
       const mlvc::ModelManifest manifest = LoadManifest(argv[2]);
       mlvc::ValidateAclManifestForAclRuntime(manifest);
-      mlvc::Check(manifest.runtime() == "acl", "accepted manifest did not preserve runtime = acl");
+      mlvc::Check(manifest.runtime() == "acl",
+                  "accepted manifest did not preserve runtime = acl");
     } catch (const std::exception& error) {
-      throw mlvc::Error(std::string("ACL manifest was unexpectedly rejected: ") + error.what());
+      throw mlvc::Error(
+          std::string("ACL manifest was unexpectedly rejected: ") +
+          error.what());
     }
 
     const std::filesystem::path temp_dir =
-        std::filesystem::temp_directory_path() / "mlvc_acl_manifest_policy_check";
+        std::filesystem::temp_directory_path() /
+        "mlvc_acl_manifest_policy_check";
     std::filesystem::create_directories(temp_dir);
     const std::filesystem::path bad_backend = temp_dir / "bad_backend.json";
     WriteText(bad_backend, AclManifestWithModelFields(R"json(
@@ -97,7 +103,8 @@ int main(int argc, char** argv) {
       mlvc::ValidateAclManifestForAclRuntime(LoadManifest(bad_backend));
       throw mlvc::Error("bad backend ACL manifest was unexpectedly accepted");
     } catch (const mlvc::Error& error) {
-      ExpectErrorContains("bad backend manifest", error.what(), "backend = \"acl\"");
+      ExpectErrorContains("bad backend manifest", error.what(),
+                          "backend = \"acl\"");
     }
 
     const std::filesystem::path bad_path = temp_dir / "bad_path.json";
@@ -127,7 +134,8 @@ int main(int argc, char** argv) {
       mlvc::ValidateAclManifestForAclRuntime(LoadManifest(bad_ext));
       throw mlvc::Error("bad extension ACL manifest was unexpectedly accepted");
     } catch (const mlvc::Error& error) {
-      ExpectErrorContains("bad extension manifest", error.what(), "OM model files");
+      ExpectErrorContains("bad extension manifest", error.what(),
+                          "OM model files");
     }
 
     const std::filesystem::path bad_dtype = temp_dir / "bad_dtype.json";
@@ -158,19 +166,24 @@ int main(int argc, char** argv) {
       ExpectErrorContains("bad dtype manifest", error.what(), "dtype = fp16");
     }
 
-    const std::filesystem::path missing_traceability = temp_dir / "missing_traceability.json";
+    const std::filesystem::path missing_traceability =
+        temp_dir / "missing_traceability.json";
     WriteText(missing_traceability, AclManifestWithModelFields(R"json(
       "file": "om_aoe/stage.sim.om",
       "backend": "acl"
 )json"));
     try {
-      mlvc::ValidateAclManifestForAclRuntime(LoadManifest(missing_traceability));
-      throw mlvc::Error("missing traceability ACL manifest was unexpectedly accepted");
+      mlvc::ValidateAclManifestForAclRuntime(
+          LoadManifest(missing_traceability));
+      throw mlvc::Error(
+          "missing traceability ACL manifest was unexpectedly accepted");
     } catch (const mlvc::Error& error) {
-      ExpectErrorContains("missing traceability manifest", error.what(), "onnx_file");
+      ExpectErrorContains("missing traceability manifest", error.what(),
+                          "onnx_file");
     }
 
-    const std::filesystem::path bad_input_dtype = temp_dir / "bad_input_dtype.json";
+    const std::filesystem::path bad_input_dtype =
+        temp_dir / "bad_input_dtype.json";
     WriteText(bad_input_dtype, R"json({
   "created_at": "2026-05-16T00:00:00Z",
   "runtime": "acl",
@@ -192,9 +205,11 @@ int main(int argc, char** argv) {
 })json");
     try {
       mlvc::ValidateAclManifestForAclRuntime(LoadManifest(bad_input_dtype));
-      throw mlvc::Error("bad input dtype ACL manifest was unexpectedly accepted");
+      throw mlvc::Error(
+          "bad input dtype ACL manifest was unexpectedly accepted");
     } catch (const mlvc::Error& error) {
-      ExpectErrorContains("bad input dtype manifest", error.what(), "requires FP16 input");
+      ExpectErrorContains("bad input dtype manifest", error.what(),
+                          "requires FP16 input");
     }
 
     const std::filesystem::path int8_z_output = temp_dir / "int8_z_output.json";
@@ -219,9 +234,11 @@ int main(int argc, char** argv) {
 })json");
     try {
       mlvc::ValidateAclManifestForAclRuntime(LoadManifest(int8_z_output));
-      throw mlvc::Error("int8 z_symbols ACL manifest was unexpectedly accepted");
+      throw mlvc::Error(
+          "int8 z_symbols ACL manifest was unexpectedly accepted");
     } catch (const mlvc::Error& error) {
-      ExpectErrorContains("int8 z_symbols manifest", error.what(), "requires FP16 output");
+      ExpectErrorContains("int8 z_symbols manifest", error.what(),
+                          "requires FP16 output");
     }
 
     std::cout << "acl_manifest_policy status=ok\n";

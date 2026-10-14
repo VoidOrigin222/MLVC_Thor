@@ -8,10 +8,16 @@ command -v "${format_binary}" >/dev/null 2>&1 || {
 }
 
 mapfile -d '' source_files < <(
-  find common mlvc application apps tools -type f \( -name '*.h' -o -name '*.cc' \) -print0
+  find common mlvc application apps tools ports custom_ops -type f \
+    \( -name '*.h' -o -name '*.hpp' -o -name '*.cc' -o -name '*.cpp' \
+       -o -name '*.cu' -o -name '*.cuh' \) -print0
 )
 if ((${#source_files[@]} == 0)); then
   exit 0
 fi
 
-"${format_binary}" -i "${source_files[@]}"
+if [[ "${1:-}" == "--check" ]]; then
+  "${format_binary}" --dry-run --Werror "${source_files[@]}"
+else
+  "${format_binary}" -i "${source_files[@]}"
+fi

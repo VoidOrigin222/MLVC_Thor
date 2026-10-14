@@ -1,13 +1,14 @@
-#include <mlvc/codec/detail/stage/constants.h>
-#include <mlvc/codec/detail/stage/stage_output_policy.h>
+#include "mlvc/codec/detail/stage/stage_output_policy.h"
 
 #include <string_view>
 
+#include "mlvc/codec/detail/stage/constants.h"
 #include "mlvc/core/status.h"
 
 namespace mlvc::codec {
 
-bool IsEntropyOnlyStageOutput(std::string_view stage_name, std::string_view tensor_name) {
+bool IsEntropyOnlyStageOutput(std::string_view stage_name,
+                              std::string_view tensor_name) {
   if ((stage_name == "i_hyper_encoder" || stage_name == "p_hyper_encoder" ||
        stage_name == "i_hyper_fused" || stage_name == "p_hyper_fused") &&
       tensor_name == "z_symbols") {
@@ -15,14 +16,16 @@ bool IsEntropyOnlyStageOutput(std::string_view stage_name, std::string_view tens
   }
   if (stage_name == "i_spatial_prior") {
     for (int part = 0; part < 4; ++part) {
-      if (tensor_name == kYResidualPartNames[part] || tensor_name == kScalePartNames[part]) {
+      if (tensor_name == kYResidualPartNames[part] ||
+          tensor_name == kScalePartNames[part]) {
         return true;
       }
     }
   }
   if (stage_name == "p_spatial_prior") {
     for (int part = 0; part < 2; ++part) {
-      if (tensor_name == kYResidualPartNames[part] || tensor_name == kScalePartNames[part]) {
+      if (tensor_name == kYResidualPartNames[part] ||
+          tensor_name == kScalePartNames[part]) {
         return true;
       }
     }
@@ -32,7 +35,8 @@ bool IsEntropyOnlyStageOutput(std::string_view stage_name, std::string_view tens
 
 bool IsQScaleInput(std::string_view input_name) {
   return input_name == "encoder_q_step" || input_name == "decoder_q_step" ||
-         input_name == "feature_q_step" || input_name == "reconstruction_q_step";
+         input_name == "feature_q_step" ||
+         input_name == "reconstruction_q_step";
 }
 
 const char* MaterializationReasonName(MaterializationReason reason) {
@@ -55,8 +59,8 @@ const char* MaterializationReasonName(MaterializationReason reason) {
   return "fallback_cpu_stage";
 }
 
-MaterializationReason StageOutputMaterializationReason(std::string_view stage_name,
-                                                       std::string_view tensor_name) {
+MaterializationReason StageOutputMaterializationReason(
+    std::string_view stage_name, std::string_view tensor_name) {
   if (IsEntropyOnlyStageOutput(stage_name, tensor_name)) {
     return MaterializationReason::kEntropyEncode;
   }
@@ -64,9 +68,10 @@ MaterializationReason StageOutputMaterializationReason(std::string_view stage_na
       stage_name == "i_spatial_prior_decode_step_1" ||
       stage_name == "i_spatial_prior_decode_step_2" ||
       stage_name == "i_spatial_prior_decode_step_3" ||
-      stage_name == "p_spatial_prior_decode_init" || stage_name == "p_spatial_prior_decode_step") {
-    if (tensor_name == "decoder_y_quant_step" || tensor_name == "scale_params" ||
-        tensor_name == "mean_params") {
+      stage_name == "p_spatial_prior_decode_init" ||
+      stage_name == "p_spatial_prior_decode_step") {
+    if (tensor_name == "decoder_y_quant_step" ||
+        tensor_name == "scale_params" || tensor_name == "mean_params") {
       return MaterializationReason::kEntropyDecode;
     }
   }
@@ -83,34 +88,48 @@ MaterializationReason StageOutputMaterializationReason(std::string_view stage_na
 }
 
 const char* StageOutputCpuMirrorSkipReason(
-    std::string_view stage_name, const mlvc::TensorSpec& tensor, MaterializationReason reason,
-    bool skip_entropy_cpu_mirror, bool skip_encode_acl_only_cpu_mirror,
-    bool skip_decode_acl_only_cpu_mirror, bool decode_prior_acl_available,
+    std::string_view stage_name, const mlvc::TensorSpec& tensor,
+    MaterializationReason reason, bool skip_entropy_cpu_mirror,
+    bool skip_encode_acl_only_cpu_mirror, bool skip_decode_acl_only_cpu_mirror,
+    bool decode_prior_acl_available,
     bool force_decode_video_output_cpu_mirror) {
-  if (skip_entropy_cpu_mirror && reason == MaterializationReason::kEntropyEncode) {
+  if (skip_entropy_cpu_mirror &&
+      reason == MaterializationReason::kEntropyEncode) {
     return "deferred_pinned_copy";
   }
-  if (skip_encode_acl_only_cpu_mirror && reason == MaterializationReason::kAclOnlyDownstream) {
+  if (skip_encode_acl_only_cpu_mirror &&
+      reason == MaterializationReason::kAclOnlyDownstream) {
     return "acl_only_downstream";
   }
-  if (skip_decode_acl_only_cpu_mirror && reason == MaterializationReason::kAclOnlyDownstream) {
+  if (skip_decode_acl_only_cpu_mirror &&
+      reason == MaterializationReason::kAclOnlyDownstream) {
     if (force_decode_video_output_cpu_mirror && stage_name == "MLVCDecoder" &&
         tensor.name == "x_hat") {
       return nullptr;
     }
     return "acl_only_downstream";
   }
-  if (skip_decode_acl_only_cpu_mirror && reason == MaterializationReason::kEntropyDecode &&
-      tensor.name == "scale_params" && tensor.dtype == mlvc::DataType::kFloat16 &&
-      decode_prior_acl_available) {
+  if (skip_decode_acl_only_cpu_mirror &&
+      reason == MaterializationReason::kEntropyDecode &&
+      tensor.name == "scale_params" &&
+      tensor.dtype == mlvc::DataType::kFloat16 && decode_prior_acl_available) {
     return "acl_prior_single_part";
   }
   (void)stage_name;
   return nullptr;
 }
 
-bool IsAsyncEncodeAclOnlyStageOutput(std::string_view stage_name, std::string_view tensor_name) {
-  if ((stage_name == "p_reference_feature_adaptor" || stage_name == "p_reference_frame_adaptor") &&
+bool IsAsyncEncodeAclOnlyStageOutput(std::string_view stage_name,
+                                     std::string_view tensor_name) {
+#ifdef MLVC_TENSORRT
+  if ((stage_name == "MLVCEncoder" && tensor_name == "feature") ||
+      (stage_name == "MLVCDecoder" &&
+       (tensor_name == "feature" || tensor_name == "x_hat")) ||
+      (stage_name == "MLVCReferenceFromFrame" && tensor_name == "ref_feature"))
+    return true;
+#endif
+  if ((stage_name == "p_reference_feature_adaptor" ||
+       stage_name == "p_reference_frame_adaptor") &&
       tensor_name == "reference_feature") {
     return true;
   }
@@ -126,14 +145,17 @@ bool IsAsyncEncodeAclOnlyStageOutput(std::string_view stage_name, std::string_vi
   if (stage_name == "i_hyper_fused" && tensor_name == "fused_prior_params") {
     return true;
   }
-  if (stage_name == "i_hyper_decoder_prior" && tensor_name == "fused_prior_params") {
+  if (stage_name == "i_hyper_decoder_prior" &&
+      tensor_name == "fused_prior_params") {
     return true;
   }
-  if (stage_name == "i_spatial_prior" && tensor_name == "reconstructed_y_latent") {
+  if (stage_name == "i_spatial_prior" &&
+      tensor_name == "reconstructed_y_latent") {
     return true;
   }
   if (stage_name == "p_reference_context" &&
-      (tensor_name == "reference_context" || tensor_name == "temporal_prior_context")) {
+      (tensor_name == "reference_context" ||
+       tensor_name == "temporal_prior_context")) {
     return true;
   }
   if (stage_name == "p_analysis_encoder" && tensor_name == "y_latent") {
@@ -148,10 +170,12 @@ bool IsAsyncEncodeAclOnlyStageOutput(std::string_view stage_name, std::string_vi
   if (stage_name == "p_hyper_fused" && tensor_name == "fused_prior_params") {
     return true;
   }
-  if (stage_name == "p_hyper_temporal_prior" && tensor_name == "fused_prior_params") {
+  if (stage_name == "p_hyper_temporal_prior" &&
+      tensor_name == "fused_prior_params") {
     return true;
   }
-  if (stage_name == "p_spatial_prior" && tensor_name == "reconstructed_y_latent") {
+  if (stage_name == "p_spatial_prior" &&
+      tensor_name == "reconstructed_y_latent") {
     return true;
   }
   if (stage_name == "p_synthesis_decoder" && tensor_name == "decoded_feature") {
@@ -163,31 +187,38 @@ bool IsAsyncEncodeAclOnlyStageOutput(std::string_view stage_name, std::string_vi
   return false;
 }
 
-bool IsAsyncDecodeAclOnlyStageOutput(std::string_view stage_name, std::string_view tensor_name) {
-  if (stage_name == "MLVCDecoder" && (tensor_name == "x_hat" || tensor_name == "feature")) {
+bool IsAsyncDecodeAclOnlyStageOutput(std::string_view stage_name,
+                                     std::string_view tensor_name) {
+  if (stage_name == "MLVCDecoder" &&
+      (tensor_name == "x_hat" || tensor_name == "feature")) {
     return true;
   }
-  if ((stage_name == "p_reference_feature_adaptor" || stage_name == "p_reference_frame_adaptor") &&
+  if ((stage_name == "p_reference_feature_adaptor" ||
+       stage_name == "p_reference_frame_adaptor") &&
       tensor_name == "reference_feature") {
     return true;
   }
   if (stage_name == "i_hyper_fused" && tensor_name == "fused_prior_params") {
     return true;
   }
-  if (stage_name == "i_hyper_decoder_prior" && tensor_name == "fused_prior_params") {
+  if (stage_name == "i_hyper_decoder_prior" &&
+      tensor_name == "fused_prior_params") {
     return true;
   }
-  if (stage_name == "i_spatial_prior_decode_init" && tensor_name == "reduced_prior_params") {
+  if (stage_name == "i_spatial_prior_decode_init" &&
+      tensor_name == "reduced_prior_params") {
     return true;
   }
   if (stage_name == "p_reference_context" &&
-      (tensor_name == "reference_context" || tensor_name == "temporal_prior_context")) {
+      (tensor_name == "reference_context" ||
+       tensor_name == "temporal_prior_context")) {
     return true;
   }
   if (stage_name == "p_hyper_fused" && tensor_name == "fused_prior_params") {
     return true;
   }
-  if (stage_name == "p_hyper_temporal_prior" && tensor_name == "fused_prior_params") {
+  if (stage_name == "p_hyper_temporal_prior" &&
+      tensor_name == "fused_prior_params") {
     return true;
   }
   return false;

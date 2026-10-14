@@ -14,7 +14,9 @@ class DataObject {
  public:
   virtual ~DataObject() = default;
 
-  virtual std::type_index type() const { return std::type_index(typeid(*this)); }
+  virtual std::type_index type() const {
+    return std::type_index(typeid(*this));
+  }
   virtual std::string type_name() const { return typeid(*this).name(); }
 
   template <typename T>

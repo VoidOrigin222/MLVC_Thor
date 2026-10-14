@@ -8,7 +8,8 @@ namespace mlvc {
 ThreadPool::ThreadPool(std::size_t thread_count, std::size_t max_queue_size)
     : max_queue_size_(max_queue_size) {
   if (thread_count == 0) {
-    thread_count = std::max<std::size_t>(1, std::thread::hardware_concurrency());
+    thread_count =
+        std::max<std::size_t>(1, std::thread::hardware_concurrency());
   }
   workers_.reserve(thread_count);
   for (std::size_t index = 0; index < thread_count; ++index) {
@@ -23,7 +24,8 @@ void ThreadPool::Enqueue(std::function<void()> task) {
   {
     std::lock_guard<std::mutex> lock(mutex_);
     Check(!stopping_, "cannot submit task after thread pool stop");
-    Check(max_queue_size_ == 0 || tasks_.size() < max_queue_size_, "thread-pool queue is full");
+    Check(max_queue_size_ == 0 || tasks_.size() < max_queue_size_,
+          "thread-pool queue is full");
     tasks_.push(std::move(task));
   }
   condition_.notify_one();

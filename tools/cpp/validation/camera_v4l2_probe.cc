@@ -1,17 +1,18 @@
+#include <fcntl.h>
+#include <linux/videodev2.h>
+#include <sys/ioctl.h>
+#include <sys/mman.h>
+#include <unistd.h>
+
 #include <cerrno>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
-#include <fcntl.h>
 #include <fstream>
 #include <iostream>
-#include <linux/videodev2.h>
 #include <sstream>
 #include <stdexcept>
 #include <string>
-#include <sys/ioctl.h>
-#include <sys/mman.h>
-#include <unistd.h>
 #include <vector>
 
 namespace {
@@ -25,7 +26,8 @@ void CheckIoctl(int fd, unsigned long request, void* arg, const char* name) {
 }
 
 uint32_t Fourcc(const std::string& value) {
-  if (value.size() != 4) throw std::runtime_error("pixfmt must contain four characters");
+  if (value.size() != 4)
+    throw std::runtime_error("pixfmt must contain four characters");
   return v4l2_fourcc(value[0], value[1], value[2], value[3]);
 }
 
@@ -45,7 +47,8 @@ int main(int argc, char** argv) {
 
   int fd = open(device.c_str(), O_RDWR | O_NONBLOCK);
   if (fd < 0) {
-    std::cerr << "open " << device << " failed: " << std::strerror(errno) << "\n";
+    std::cerr << "open " << device << " failed: " << std::strerror(errno)
+              << "\n";
     return 1;
   }
 
@@ -55,7 +58,8 @@ int main(int argc, char** argv) {
     CheckIoctl(fd, VIDIOC_QUERYCAP, &capability, "VIDIOC_QUERYCAP");
     if (!(capability.capabilities & V4L2_CAP_VIDEO_CAPTURE) ||
         !(capability.capabilities & V4L2_CAP_STREAMING)) {
-      throw std::runtime_error("device does not support video capture and streaming");
+      throw std::runtime_error(
+          "device does not support video capture and streaming");
     }
 
     v4l2_format format{};
@@ -67,11 +71,13 @@ int main(int argc, char** argv) {
     CheckIoctl(fd, VIDIOC_S_FMT, &format, "VIDIOC_S_FMT");
     std::cout << "device=" << device << " driver=" << capability.driver
               << " card=" << capability.card << "\n"
-              << "format=" << static_cast<char>(format.fmt.pix.pixelformat & 0xff)
+              << "format="
+              << static_cast<char>(format.fmt.pix.pixelformat & 0xff)
               << static_cast<char>((format.fmt.pix.pixelformat >> 8) & 0xff)
               << static_cast<char>((format.fmt.pix.pixelformat >> 16) & 0xff)
               << static_cast<char>((format.fmt.pix.pixelformat >> 24) & 0xff)
-              << " width=" << format.fmt.pix.width << " height=" << format.fmt.pix.height
+              << " width=" << format.fmt.pix.width
+              << " height=" << format.fmt.pix.height
               << " bytesperline=" << format.fmt.pix.bytesperline
               << " sizeimage=" << format.fmt.pix.sizeimage << "\n";
 
@@ -80,7 +86,8 @@ int main(int argc, char** argv) {
     request.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
     request.memory = V4L2_MEMORY_MMAP;
     CheckIoctl(fd, VIDIOC_REQBUFS, &request, "VIDIOC_REQBUFS");
-    if (request.count == 0) throw std::runtime_error("driver returned zero buffers");
+    if (request.count == 0)
+      throw std::runtime_error("driver returned zero buffers");
     buffers.resize(request.count);
 
     for (uint32_t i = 0; i < request.count; ++i) {
@@ -90,9 +97,10 @@ int main(int argc, char** argv) {
       buffer.index = i;
       CheckIoctl(fd, VIDIOC_QUERYBUF, &buffer, "VIDIOC_QUERYBUF");
       buffers[i].length = buffer.length;
-      buffers[i].address = mmap(nullptr, buffer.length, PROT_READ | PROT_WRITE, MAP_SHARED,
-                                 fd, buffer.m.offset);
-      if (buffers[i].address == MAP_FAILED) throw std::runtime_error("mmap failed");
+      buffers[i].address = mmap(nullptr, buffer.length, PROT_READ | PROT_WRITE,
+                                MAP_SHARED, fd, buffer.m.offset);
+      if (buffers[i].address == MAP_FAILED)
+        throw std::runtime_error("mmap failed");
       CheckIoctl(fd, VIDIOC_QBUF, &buffer, "VIDIOC_QBUF");
     }
 
@@ -108,18 +116,22 @@ int main(int argc, char** argv) {
           usleep(10000);
           continue;
         }
-        throw std::runtime_error(std::string("VIDIOC_DQBUF failed: ") + std::strerror(errno));
+        throw std::runtime_error(std::string("VIDIOC_DQBUF failed: ") +
+                                 std::strerror(errno));
       }
       std::ofstream file(output, std::ios::binary);
-      file.write(static_cast<const char*>(buffers[buffer.index].address), buffer.bytesused);
+      file.write(static_cast<const char*>(buffers[buffer.index].address),
+                 buffer.bytesused);
       if (!file) throw std::runtime_error("failed to write output frame");
-      std::cout << "captured_bytes=" << buffer.bytesused << " output=" << output << "\n";
+      std::cout << "captured_bytes=" << buffer.bytesused << " output=" << output
+                << "\n";
       CheckIoctl(fd, VIDIOC_QBUF, &buffer, "VIDIOC_QBUF");
       CheckIoctl(fd, VIDIOC_STREAMOFF, &type, "VIDIOC_STREAMOFF");
       streaming = false;
       break;
     }
-    if (streaming) throw std::runtime_error("timed out waiting for a camera frame");
+    if (streaming)
+      throw std::runtime_error("timed out waiting for a camera frame");
     for (const Buffer& buffer : buffers) munmap(buffer.address, buffer.length);
     close(fd);
     return 0;

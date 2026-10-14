@@ -13,13 +13,13 @@
 #include <cstdint>
 
 struct PostSigmoidChunkAddTilingData {
-    uint32_t totalOutputElements;
-    uint32_t elementsPerCore;
-    uint32_t tailCoreElements;
-    uint32_t tileElements;
-    uint32_t inputHalfOffset;
-    uint32_t dataType;
-    uint32_t barrierMode;
+  uint32_t totalOutputElements;
+  uint32_t elementsPerCore;
+  uint32_t tailCoreElements;
+  uint32_t tileElements;
+  uint32_t inputHalfOffset;
+  uint32_t dataType;
+  uint32_t barrierMode;
 };
 
-#endif // POST_SIGMOID_CHUNK_ADD_TILING_H
+#endif  // POST_SIGMOID_CHUNK_ADD_TILING_H

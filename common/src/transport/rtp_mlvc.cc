@@ -1,8 +1,5 @@
 ﻿#include "mlvc/transport/rtp_mlvc.h"
 
-#include "mlvc/transport/rtcp_session.h"
-
-#include <arpa/inet.h>
 #include <netdb.h>
 #include <sys/socket.h>
 #include <unistd.h>
@@ -16,13 +13,16 @@
 #include <exception>
 #include <iterator>
 #include <limits>
-#include <mutex>
 #include <map>
-#include <stdexcept>
-#include <thread>
+#include <mutex>
 #include <random>
 #include <set>
+#include <stdexcept>
+#include <thread>
+
 #include "mlvc/transport/mlvc_media_unit.h"
+#include "mlvc/transport/rtcp_session.h"
+#include <arpa/inet.h>
 namespace mlvc::transport {
 namespace {
 constexpr std::size_t kIpv4UdpOverheadBytes = 28;
@@ -50,18 +50,23 @@ std::size_t MaxUnitBytesForType(RtpUnitType type) {
 }
 
 void ValidateUnitLengthForType(RtpUnitType type, uint32_t length) {
-  if (length < kMlvcMediaUnitCommonHeaderBytes || length > MaxUnitBytesForType(type) ||
-      (type == RtpUnitType::kEos && length != kMlvcMediaUnitCommonHeaderBytes)) {
-    throw std::runtime_error("RTP MLVC unit length exceeds the type-specific limit");
+  if (length < kMlvcMediaUnitCommonHeaderBytes ||
+      length > MaxUnitBytesForType(type) ||
+      (type == RtpUnitType::kEos &&
+       length != kMlvcMediaUnitCommonHeaderBytes)) {
+    throw std::runtime_error(
+        "RTP MLVC unit length exceeds the type-specific limit");
   }
 }
 
-void ValidateFragmentIdentity(RtpUnitType type, uint32_t config_id, uint32_t unit_id) {
+void ValidateFragmentIdentity(RtpUnitType type, uint32_t config_id,
+                              uint32_t unit_id) {
   if (type != RtpUnitType::kScu && type != RtpUnitType::kEfu &&
       type != RtpUnitType::kEos) {
     return;
   }
-  if (config_id == 0) throw std::runtime_error("RTP MLVC fragment has a zero config ID");
+  if (config_id == 0)
+    throw std::runtime_error("RTP MLVC fragment has a zero config ID");
   if (type == RtpUnitType::kScu && unit_id != config_id) {
     throw std::runtime_error("RTP MLVC SCU unit ID must equal its config ID");
   }
@@ -70,14 +75,15 @@ void ValidateFragmentIdentity(RtpUnitType type, uint32_t config_id, uint32_t uni
   }
   if (type == RtpUnitType::kEos && unit_id != kMlvcNoReference &&
       unit_id > static_cast<uint32_t>(std::numeric_limits<int>::max())) {
-    throw std::runtime_error("RTP MLVC EOS frame boundary is outside the application range");
+    throw std::runtime_error(
+        "RTP MLVC EOS frame boundary is outside the application range");
   }
 }
 }  // namespace
 std::vector<uint8_t> EncodeRtpMlvcFragment(const RtpMlvcFragment& f) {
   const uint8_t packet_flags = f.flags;
-  if (!IsValidUnitType(static_cast<uint8_t>(f.unit_type)) || f.payload.empty() ||
-      (packet_flags & (0x1fu | kRtpMlvcExtension)) != 0 ||
+  if (!IsValidUnitType(static_cast<uint8_t>(f.unit_type)) ||
+      f.payload.empty() || (packet_flags & (0x1fu | kRtpMlvcExtension)) != 0 ||
       uint64_t(f.fragment_offset) + f.payload.size() > f.unit_length ||
       ((packet_flags & kRtpMlvcStart) != 0) != (f.fragment_offset == 0) ||
       ((packet_flags & kRtpMlvcEnd) != 0) !=
@@ -110,7 +116,8 @@ RtpMlvcFragment DecodeRtpMlvcFragment(const std::vector<uint8_t>& b) {
   uint8_t flags = b[p++];
   if (!IsValidUnitType(type) || (flags & 0x1fu) != 0 || b[p++] != 0)
     throw std::runtime_error("invalid RTP MLVC header");
-  const uint16_t descriptor_length = static_cast<uint16_t>(b[p] << 8 | b[p + 1]);
+  const uint16_t descriptor_length =
+      static_cast<uint16_t>(b[p] << 8 | b[p + 1]);
   p += 2;
   if (descriptor_length < 24 || (descriptor_length & 3u) != 0 ||
       descriptor_length > b.size() || b[p] != 0 || b[p + 1] != 0 ||
@@ -122,16 +129,23 @@ RtpMlvcFragment DecodeRtpMlvcFragment(const std::vector<uint8_t>& b) {
   // aligned length is checked, strip X before handing the fragment to the
   // version-1 reassembler.
   RtpMlvcFragment f{(RtpUnitType)type,
-                    static_cast<uint8_t>(flags & ~kRtpMlvcExtension), 0, 0, 0, 0, {}};
+                    static_cast<uint8_t>(flags & ~kRtpMlvcExtension),
+                    0,
+                    0,
+                    0,
+                    0,
+                    {}};
   f.config_id = Get(b, p);
   f.unit_id = Get(b, p);
   f.fragment_offset = Get(b, p);
   f.unit_length = Get(b, p);
   if (f.unit_length < kMlvcMediaUnitCommonHeaderBytes ||
-      uint64_t(f.fragment_offset) + (b.size() - descriptor_length) > f.unit_length ||
+      uint64_t(f.fragment_offset) + (b.size() - descriptor_length) >
+          f.unit_length ||
       ((flags & kRtpMlvcStart) != 0) != (f.fragment_offset == 0) ||
       ((flags & kRtpMlvcEnd) != 0) !=
-          (uint64_t(f.fragment_offset) + (b.size() - descriptor_length) == f.unit_length) ||
+          (uint64_t(f.fragment_offset) + (b.size() - descriptor_length) ==
+           f.unit_length) ||
       b.size() == descriptor_length)
     throw std::runtime_error("invalid RTP MLVC payload");
   ValidateUnitLengthForType(f.unit_type, f.unit_length);
@@ -139,22 +153,24 @@ RtpMlvcFragment DecodeRtpMlvcFragment(const std::vector<uint8_t>& b) {
   f.payload.assign(b.begin() + descriptor_length, b.end());
   return f;
 }
-RtpMlvcReassembler::RtpMlvcReassembler(std::size_t max_unit_bytes,
-                                       std::size_t max_pending_units,
-                                       std::chrono::milliseconds fragment_timeout)
+RtpMlvcReassembler::RtpMlvcReassembler(
+    std::size_t max_unit_bytes, std::size_t max_pending_units,
+    std::chrono::milliseconds fragment_timeout)
     : max_unit_bytes_(max_unit_bytes),
       max_pending_units_(max_pending_units),
       max_completed_units_(max_pending_units),
       max_pending_bytes_(max_unit_bytes),
       fragment_timeout_(fragment_timeout),
       last_cleanup_(std::chrono::steady_clock::now()) {
-  if (max_unit_bytes_ == 0 || max_pending_units_ == 0 || fragment_timeout_.count() <= 0)
+  if (max_unit_bytes_ == 0 || max_pending_units_ == 0 ||
+      fragment_timeout_.count() <= 0)
     throw std::runtime_error("invalid RTP reassembler limits");
 }
-bool RtpMlvcReassembler::Push(const RtpMlvcFragment& f, std::vector<uint8_t>* unit) {
-  if (!unit || !IsValidUnitType(static_cast<uint8_t>(f.unit_type)) || f.unit_length == 0 ||
-      f.payload.empty() || f.unit_length > max_unit_bytes_ ||
-      (f.flags & 0x1fu) != 0 ||
+bool RtpMlvcReassembler::Push(const RtpMlvcFragment& f,
+                              std::vector<uint8_t>* unit) {
+  if (!unit || !IsValidUnitType(static_cast<uint8_t>(f.unit_type)) ||
+      f.unit_length == 0 || f.payload.empty() ||
+      f.unit_length > max_unit_bytes_ || (f.flags & 0x1fu) != 0 ||
       uint64_t(f.fragment_offset) + f.payload.size() > f.unit_length ||
       ((f.flags & kRtpMlvcStart) != 0) != (f.fragment_offset == 0) ||
       ((f.flags & kRtpMlvcEnd) != 0) !=
@@ -179,11 +195,13 @@ bool RtpMlvcReassembler::Push(const RtpMlvcFragment& f, std::vector<uint8_t>* un
     }
     last_cleanup_ = now;
   }
-  auto key = std::make_tuple(f.ssrc, f.timestamp, static_cast<uint8_t>(f.unit_type),
-                             f.config_id, f.unit_id);
+  auto key =
+      std::make_tuple(f.ssrc, f.timestamp, static_cast<uint8_t>(f.unit_type),
+                      f.config_id, f.unit_id);
   const auto completed = completed_.find(key);
   if (completed != completed_.end()) {
-    const uint64_t fragment_end = static_cast<uint64_t>(f.fragment_offset) + f.payload.size();
+    const uint64_t fragment_end =
+        static_cast<uint64_t>(f.fragment_offset) + f.payload.size();
     if (fragment_end > completed->second.size() ||
         !std::equal(f.payload.begin(), f.payload.end(),
                     completed->second.begin() + f.fragment_offset)) {
@@ -194,17 +212,21 @@ bool RtpMlvcReassembler::Push(const RtpMlvcFragment& f, std::vector<uint8_t>* un
   auto it = pending_.find(key);
   if (it == pending_.end()) {
     if (f.unit_length > max_pending_bytes_)
-      throw std::runtime_error("RTP unit exceeds aggregate reassembly byte limit");
-    while (completed_bytes_ > max_pending_bytes_ - f.unit_length && !completed_.empty()) {
+      throw std::runtime_error(
+          "RTP unit exceeds aggregate reassembly byte limit");
+    while (completed_bytes_ > max_pending_bytes_ - f.unit_length &&
+           !completed_.empty()) {
       completed_bytes_ -= completed_.begin()->second.size();
       completed_.erase(completed_.begin());
     }
     while (!pending_.empty() &&
            (pending_.size() >= max_pending_units_ ||
-            f.unit_length > max_pending_bytes_ - pending_bytes_ - completed_bytes_)) {
+            f.unit_length >
+                max_pending_bytes_ - pending_bytes_ - completed_bytes_)) {
       auto oldest = std::min_element(pending_.begin(), pending_.end(),
                                      [](const auto& left, const auto& right) {
-                                       return left.second.last_updated < right.second.last_updated;
+                                       return left.second.last_updated <
+                                              right.second.last_updated;
                                      });
       erase_pending(oldest);
     }
@@ -216,18 +238,22 @@ bool RtpMlvcReassembler::Push(const RtpMlvcFragment& f, std::vector<uint8_t>* un
   auto& p = it->second;
   if (p.type != f.unit_type || p.length != f.unit_length)
     throw std::runtime_error("conflicting RTP fragment");
-  const uint32_t fragment_end =
-      static_cast<uint32_t>(f.fragment_offset + static_cast<uint32_t>(f.payload.size()));
+  const uint32_t fragment_end = static_cast<uint32_t>(
+      f.fragment_offset + static_cast<uint32_t>(f.payload.size()));
   auto next_range = p.fragment_ranges.lower_bound(f.fragment_offset);
   const auto matches_existing_payload = [&] {
     if (p.data.empty()) {
       const auto existing = p.pre_start_fragments.find(f.fragment_offset);
-      return existing != p.pre_start_fragments.end() && existing->second == f.payload;
+      return existing != p.pre_start_fragments.end() &&
+             existing->second == f.payload;
     }
-    return std::equal(f.payload.begin(), f.payload.end(), p.data.begin() + f.fragment_offset);
+    return std::equal(f.payload.begin(), f.payload.end(),
+                      p.data.begin() + f.fragment_offset);
   };
-  if (next_range != p.fragment_ranges.end() && next_range->first < fragment_end) {
-    if (f.fragment_offset == next_range->first && fragment_end == next_range->second) {
+  if (next_range != p.fragment_ranges.end() &&
+      next_range->first < fragment_end) {
+    if (f.fragment_offset == next_range->first &&
+        fragment_end == next_range->second) {
       if (!matches_existing_payload())
         throw std::runtime_error("conflicting duplicate RTP fragment");
       return false;
@@ -237,7 +263,8 @@ bool RtpMlvcReassembler::Push(const RtpMlvcFragment& f, std::vector<uint8_t>* un
   if (next_range != p.fragment_ranges.begin()) {
     const auto previous_range = std::prev(next_range);
     if (previous_range->second > f.fragment_offset) {
-      if (f.fragment_offset == previous_range->first && fragment_end == previous_range->second) {
+      if (f.fragment_offset == previous_range->first &&
+          fragment_end == previous_range->second) {
         if (!matches_existing_payload())
           throw std::runtime_error("conflicting duplicate RTP fragment");
         return false;
@@ -262,7 +289,8 @@ bool RtpMlvcReassembler::Push(const RtpMlvcFragment& f, std::vector<uint8_t>* un
   if (p.data.empty()) {
     const std::size_t pending_budget =
         max_pending_bytes_ - pending_bytes_ - completed_bytes_;
-    if (f.payload.size() > kMaxPreStartFragmentBytes - pre_start_fragment_bytes_ ||
+    if (f.payload.size() >
+            kMaxPreStartFragmentBytes - pre_start_fragment_bytes_ ||
         f.payload.size() > pending_budget) {
       erase_pending(it);
       return false;
@@ -271,7 +299,8 @@ bool RtpMlvcReassembler::Push(const RtpMlvcFragment& f, std::vector<uint8_t>* un
     p.pre_start_bytes += f.payload.size();
     pre_start_fragment_bytes_ += f.payload.size();
   } else {
-    std::copy(f.payload.begin(), f.payload.end(), p.data.begin() + f.fragment_offset);
+    std::copy(f.payload.begin(), f.payload.end(),
+              p.data.begin() + f.fragment_offset);
   }
   p.count += f.payload.size();
   if (!f.payload.empty()) {
@@ -356,7 +385,8 @@ struct RtpMlvcSender::Impl {
   std::mutex packet_history_mutex;
   std::map<uint16_t, std::vector<uint8_t>> packet_history;
   std::deque<uint16_t> packet_history_order;
-  std::map<uint16_t, std::chrono::steady_clock::time_point> last_retransmit_time;
+  std::map<uint16_t, std::chrono::steady_clock::time_point>
+      last_retransmit_time;
   static constexpr std::size_t kPacketHistoryLimit = 2048;
 
   ~Impl() {
@@ -377,21 +407,27 @@ struct RtpMlvcSender::Impl {
   }
 
   void ReserveQueueBytes(std::size_t bytes) {
-    if (bytes > max_queue_bytes) throw std::runtime_error("RTP unit exceeds send queue bytes");
+    if (bytes > max_queue_bytes)
+      throw std::runtime_error("RTP unit exceeds send queue bytes");
     if (pacing_rate_bps > 0 && max_queue_delay_ms > 0) {
       const long double unit_delay_us =
           static_cast<long double>(bytes) * 8000000.0L / pacing_rate_bps;
-      if (unit_delay_us > static_cast<long double>(max_queue_delay_ms) * 1000.0L)
+      if (unit_delay_us >
+          static_cast<long double>(max_queue_delay_ms) * 1000.0L)
         throw std::runtime_error("RTP unit exceeds maximum send queue delay");
     }
     std::unique_lock<std::mutex> lock(queue_mutex);
     queue_cv.wait(lock, [this, bytes] {
       if (send_error != nullptr || stopping) return true;
-      if (queued_bytes > max_queue_bytes || bytes > max_queue_bytes - queued_bytes) return false;
+      if (queued_bytes > max_queue_bytes ||
+          bytes > max_queue_bytes - queued_bytes)
+        return false;
       if (max_queue_delay_ms == 0 || pacing_rate_bps == 0) return true;
-      const long double estimated_us = static_cast<long double>(queued_bytes + bytes) *
-                                       8000000.0L / pacing_rate_bps;
-      return estimated_us <= static_cast<long double>(max_queue_delay_ms) * 1000.0L;
+      const long double estimated_us =
+          static_cast<long double>(queued_bytes + bytes) * 8000000.0L /
+          pacing_rate_bps;
+      return estimated_us <=
+             static_cast<long double>(max_queue_delay_ms) * 1000.0L;
     });
     if (send_error != nullptr) std::rethrow_exception(send_error);
     if (stopping) throw std::runtime_error("RTP sender is stopping");
@@ -410,7 +446,8 @@ struct RtpMlvcSender::Impl {
         (static_cast<uint16_t>(packet[2]) << 8) | packet[3]);
     std::lock_guard<std::mutex> lock(packet_history_mutex);
     const auto existing = packet_history.find(packet_sequence);
-    if (existing == packet_history.end()) packet_history_order.push_back(packet_sequence);
+    if (existing == packet_history.end())
+      packet_history_order.push_back(packet_sequence);
     packet_history[packet_sequence] = packet;
     while (packet_history_order.size() > kPacketHistoryLimit) {
       const uint16_t expired = packet_history_order.front();
@@ -442,8 +479,10 @@ struct RtpMlvcSender::Impl {
     if (packets.empty()) return;
     std::size_t reservation = 0;
     for (const auto& packet : packets) {
-      const std::size_t packet_bytes = packet.bytes.size() + kIpv4UdpOverheadBytes;
-      if (reservation > std::numeric_limits<std::size_t>::max() - packet_bytes) return;
+      const std::size_t packet_bytes =
+          packet.bytes.size() + kIpv4UdpOverheadBytes;
+      if (reservation > std::numeric_limits<std::size_t>::max() - packet_bytes)
+        return;
       reservation += packet_bytes;
     }
     std::lock_guard<std::mutex> lock(queue_mutex);
@@ -452,9 +491,11 @@ struct RtpMlvcSender::Impl {
       return;
     }
     if (pacing_rate_bps > 0 && max_queue_delay_ms > 0) {
-      const long double estimated_us = static_cast<long double>(queued_bytes + reservation) *
-                                       8000000.0L / pacing_rate_bps;
-      if (estimated_us > static_cast<long double>(max_queue_delay_ms) * 1000.0L) return;
+      const long double estimated_us =
+          static_cast<long double>(queued_bytes + reservation) * 8000000.0L /
+          pacing_rate_bps;
+      if (estimated_us > static_cast<long double>(max_queue_delay_ms) * 1000.0L)
+        return;
     }
     queued_bytes += reservation;
     for (auto& packet : packets) queue.push_back(std::move(packet));
@@ -466,20 +507,25 @@ struct RtpMlvcSender::Impl {
     uint32_t receiver_ssrc = compound.receiver_report.has_value()
                                  ? compound.receiver_report->sender_ssrc
                                  : 0;
-    if (receiver_ssrc == 0 && !compound.plis.empty()) receiver_ssrc = compound.plis.front().sender_ssrc;
-    if (receiver_ssrc == 0 && !compound.firs.empty()) receiver_ssrc = compound.firs.front().sender_ssrc;
+    if (receiver_ssrc == 0 && !compound.plis.empty())
+      receiver_ssrc = compound.plis.front().sender_ssrc;
+    if (receiver_ssrc == 0 && !compound.firs.empty())
+      receiver_ssrc = compound.firs.front().sender_ssrc;
     if (receiver_ssrc == 0) return;
     uint32_t expected_receiver_ssrc = remote_control_ssrc.load();
     if (expected_receiver_ssrc == 0) {
-      remote_control_ssrc.compare_exchange_strong(expected_receiver_ssrc, receiver_ssrc);
+      remote_control_ssrc.compare_exchange_strong(expected_receiver_ssrc,
+                                                  receiver_ssrc);
       expected_receiver_ssrc = remote_control_ssrc.load();
     }
     if (receiver_ssrc == 0 || receiver_ssrc != expected_receiver_ssrc) return;
     if (compound.receiver_report.has_value() &&
         std::none_of(compound.receiver_report->reports.begin(),
-                     compound.receiver_report->reports.end(), [this](const auto& report) {
+                     compound.receiver_report->reports.end(),
+                     [this](const auto& report) {
                        return report.source_ssrc == ssrc;
-                     }) && compound.plis.empty() && compound.firs.empty()) {
+                     }) &&
+        compound.plis.empty() && compound.firs.empty()) {
       return;
     }
     rtcp_endpoint->AcceptLastPeer();
@@ -504,11 +550,13 @@ struct RtpMlvcSender::Impl {
     }
     std::vector<uint16_t> requested_sequences;
     for (const auto& nack : compound.nacks) {
-      if (nack.sender_ssrc != receiver_ssrc || nack.media_ssrc != ssrc) continue;
+      if (nack.sender_ssrc != receiver_ssrc || nack.media_ssrc != ssrc)
+        continue;
       requested_sequences.push_back(nack.pid);
       for (uint8_t bit = 0; bit < 16; ++bit) {
         if ((nack.blp & (1u << bit)) != 0) {
-          requested_sequences.push_back(static_cast<uint16_t>(nack.pid + bit + 1u));
+          requested_sequences.push_back(
+              static_cast<uint16_t>(nack.pid + bit + 1u));
         }
       }
     }
@@ -523,12 +571,14 @@ struct RtpMlvcSender::Impl {
     queue_cv.notify_one();
   }
 
-  void SendUnitLocked(RtpUnitType type, uint8_t flags, uint32_t config_id, uint32_t unit_id,
-                      uint32_t timestamp, const std::vector<uint8_t>& unit) {
+  void SendUnitLocked(RtpUnitType type, uint8_t flags, uint32_t config_id,
+                      uint32_t unit_id, uint32_t timestamp,
+                      const std::vector<uint8_t>& unit) {
     (void)flags;  // Unit flags live in the serialized media-unit common header.
     if (type != RtpUnitType::kScu && type != RtpUnitType::kEfu &&
         type != RtpUnitType::kEos) {
-      throw std::runtime_error("RTP sender cannot emit an undefined MLVC media unit type");
+      throw std::runtime_error(
+          "RTP sender cannot emit an undefined MLVC media unit type");
     }
     constexpr std::size_t kRtpPacketBytes = 1200;
     constexpr std::size_t kFragmentHeaderBytes = 24;
@@ -537,8 +587,10 @@ struct RtpMlvcSender::Impl {
       throw std::runtime_error("RTP MLVC unit is empty or too large");
     const auto media_header = ParseMediaUnitHeader(unit);
     if (media_header.unit_type != type || media_header.config_id != config_id ||
-        media_header.unit_id != unit_id || media_header.unit_length != unit.size()) {
-      throw std::runtime_error("RTP MLVC descriptor metadata does not match media unit");
+        media_header.unit_id != unit_id ||
+        media_header.unit_length != unit.size()) {
+      throw std::runtime_error(
+          "RTP MLVC descriptor metadata does not match media unit");
     }
     if (type == RtpUnitType::kScu) {
       (void)ParseScu(unit);
@@ -548,23 +600,30 @@ struct RtpMlvcSender::Impl {
     ValidateMediaUnit(unit);
     if (pending_random_access_config_id != 0) {
       if (type == RtpUnitType::kScu) {
-        if (config_id != pending_random_access_config_id || unit != session_config) {
-          throw std::runtime_error("RTP configuration refresh does not match the active SCU");
+        if (config_id != pending_random_access_config_id ||
+            unit != session_config) {
+          throw std::runtime_error(
+              "RTP configuration refresh does not match the active SCU");
         }
       } else if (type != RtpUnitType::kEfu) {
-        throw std::runtime_error("RTP configuration switch requires a random-access EFU next");
+        throw std::runtime_error(
+            "RTP configuration switch requires a random-access EFU next");
       } else {
         const auto efu = ParseEfu(unit);
-        if (efu.config_id != pending_random_access_config_id || efu.frame_type != 0 ||
+        if (efu.config_id != pending_random_access_config_id ||
+            efu.frame_type != 0 ||
             (efu.unit_flags & (kEfuRandomAccess | kEfuResetReference)) !=
                 (kEfuRandomAccess | kEfuResetReference)) {
-          throw std::runtime_error("RTP configuration switch requires a random-access EFU next");
+          throw std::runtime_error(
+              "RTP configuration switch requires a random-access EFU next");
         }
       }
     }
     const std::size_t chunk = kRtpPacketBytes - kFragmentHeaderBytes;
-    const std::size_t count = std::max<std::size_t>(1, (unit.size() + chunk - 1) / chunk);
-    const std::size_t reserved_bytes = unit.size() + count * (36 + kIpv4UdpOverheadBytes);
+    const std::size_t count =
+        std::max<std::size_t>(1, (unit.size() + chunk - 1) / chunk);
+    const std::size_t reserved_bytes =
+        unit.size() + count * (36 + kIpv4UdpOverheadBytes);
     ReserveQueueBytes(reserved_bytes);
     std::vector<PendingPacket> packets;
     try {
@@ -572,9 +631,9 @@ struct RtpMlvcSender::Impl {
       for (std::size_t i = 0; i < count; ++i) {
         const std::size_t offset = i * chunk;
         const std::size_t size = std::min(chunk, unit.size() - offset);
-        const uint8_t packet_flags =
-            static_cast<uint8_t>((offset == 0 ? kRtpMlvcStart : 0) |
-                                 (offset + size == unit.size() ? kRtpMlvcEnd : 0));
+        const uint8_t packet_flags = static_cast<uint8_t>(
+            (offset == 0 ? kRtpMlvcStart : 0) |
+            (offset + size == unit.size() ? kRtpMlvcEnd : 0));
         RtpMlvcFragment fragment{
             type,
             packet_flags,
@@ -582,12 +641,16 @@ struct RtpMlvcSender::Impl {
             unit_id,
             static_cast<uint32_t>(offset),
             static_cast<uint32_t>(unit.size()),
-            std::vector<uint8_t>(unit.begin() + offset, unit.begin() + offset + size)};
+            std::vector<uint8_t>(unit.begin() + offset,
+                                 unit.begin() + offset + size)};
         const auto payload = EncodeRtpMlvcFragment(fragment);
         std::vector<uint8_t> packet(12 + payload.size());
         packet[0] = 0x80;
         packet[1] = static_cast<uint8_t>(
-            payload_type | (type == RtpUnitType::kEfu && (packet_flags & kRtpMlvcEnd) != 0 ? 0x80 : 0));
+            payload_type |
+            (type == RtpUnitType::kEfu && (packet_flags & kRtpMlvcEnd) != 0
+                 ? 0x80
+                 : 0));
         packet[2] = static_cast<uint8_t>(sequence >> 8);
         packet[3] = static_cast<uint8_t>(sequence++);
         packet[4] = static_cast<uint8_t>(timestamp >> 24);
@@ -599,7 +662,8 @@ struct RtpMlvcSender::Impl {
         packet[10] = static_cast<uint8_t>(ssrc >> 8);
         packet[11] = static_cast<uint8_t>(ssrc);
         std::copy(payload.begin(), payload.end(), packet.begin() + 12);
-        packets.push_back(PendingPacket{std::move(packet), std::chrono::steady_clock::now()});
+        packets.push_back(
+            PendingPacket{std::move(packet), std::chrono::steady_clock::now()});
       }
     } catch (...) {
       ReleaseQueueReservation(reserved_bytes);
@@ -620,13 +684,15 @@ struct RtpMlvcSender::Impl {
     }
   }
 
-  void SendUnit(RtpUnitType type, uint8_t flags, uint32_t config_id, uint32_t unit_id,
-                uint32_t timestamp, const std::vector<uint8_t>& unit) {
+  void SendUnit(RtpUnitType type, uint8_t flags, uint32_t config_id,
+                uint32_t unit_id, uint32_t timestamp,
+                const std::vector<uint8_t>& unit) {
     std::lock_guard<std::mutex> packetize_lock(packetize_mutex);
     SendUnitLocked(type, flags, config_id, unit_id, timestamp, unit);
   }
 
-  void SetSessionConfig(uint32_t config_id, const std::vector<uint8_t>& config_unit, uint8_t flags,
+  void SetSessionConfig(uint32_t config_id,
+                        const std::vector<uint8_t>& config_unit, uint8_t flags,
                         uint32_t timestamp) {
     std::lock_guard<std::mutex> packetize_lock(packetize_mutex);
     const auto parsed = ParseScu(config_unit);
@@ -635,7 +701,8 @@ struct RtpMlvcSender::Impl {
     }
     if (config_id == session_config_id && !session_config.empty() &&
         session_config != config_unit) {
-      throw std::runtime_error("RTP configuration ID was reused with different SCU bytes");
+      throw std::runtime_error(
+          "RTP configuration ID was reused with different SCU bytes");
     }
     const MlvcSerial32Order config_order =
         CompareMlvcSerial32(config_id, session_config_id);
@@ -648,8 +715,11 @@ struct RtpMlvcSender::Impl {
     const std::vector<uint8_t> old_session_config = session_config;
     const uint8_t old_session_config_flags = session_config_flags;
     const uint32_t old_pending_config_id = pending_random_access_config_id;
-    if (old_pending_config_id != 0 && config_order == MlvcSerial32Order::kNewer) {
-      throw std::runtime_error("RTP configuration switch is already waiting for a random-access EFU");
+    if (old_pending_config_id != 0 &&
+        config_order == MlvcSerial32Order::kNewer) {
+      throw std::runtime_error(
+          "RTP configuration switch is already waiting for a random-access "
+          "EFU");
     }
     session_config_id = config_id;
     session_config = config_unit;
@@ -657,12 +727,15 @@ struct RtpMlvcSender::Impl {
     const uint32_t new_pending_config_id =
         old_pending_config_id != 0
             ? old_pending_config_id
-            : (old_config_id != 0 && config_order == MlvcSerial32Order::kNewer ? config_id : 0);
+            : (old_config_id != 0 && config_order == MlvcSerial32Order::kNewer
+                   ? config_id
+                   : 0);
     // The SCU itself must be queued before the pending random-access gate is
     // armed; otherwise the gate would reject the SCU that establishes it.
     pending_random_access_config_id = 0;
     try {
-      SendUnitLocked(RtpUnitType::kScu, flags, config_id, config_id, timestamp, config_unit);
+      SendUnitLocked(RtpUnitType::kScu, flags, config_id, config_id, timestamp,
+                     config_unit);
       pending_random_access_config_id = new_pending_config_id;
     } catch (...) {
       session_config_id = old_config_id;
@@ -675,7 +748,9 @@ struct RtpMlvcSender::Impl {
 
   void Flush() {
     std::unique_lock<std::mutex> lock(queue_mutex);
-    queue_cv.wait(lock, [this] { return (queue.empty() && !sending) || send_error != nullptr; });
+    queue_cv.wait(lock, [this] {
+      return (queue.empty() && !sending) || send_error != nullptr;
+    });
     if (send_error != nullptr) std::rethrow_exception(send_error);
   }
 
@@ -692,40 +767,50 @@ struct RtpMlvcSender::Impl {
       }
       queue_cv.notify_all();
       try {
-        const auto queue_delay = std::chrono::duration_cast<std::chrono::microseconds>(
-            std::chrono::steady_clock::now() - pending.enqueued_at);
-        max_queue_delay_us.store(std::max<uint64_t>(max_queue_delay_us.load(),
-                                                    static_cast<uint64_t>(queue_delay.count())));
-        queue_delay_total_us.fetch_add(static_cast<uint64_t>(queue_delay.count()));
+        const auto queue_delay =
+            std::chrono::duration_cast<std::chrono::microseconds>(
+                std::chrono::steady_clock::now() - pending.enqueued_at);
+        max_queue_delay_us.store(
+            std::max<uint64_t>(max_queue_delay_us.load(),
+                               static_cast<uint64_t>(queue_delay.count())));
+        queue_delay_total_us.fetch_add(
+            static_cast<uint64_t>(queue_delay.count()));
         queue_delay_samples.fetch_add(1);
         const std::size_t estimated_wire_packet_size =
             pending.bytes.size() + kIpv4UdpOverheadBytes;
-        const auto delay = pacer->ConsumeAndGetDelay(estimated_wire_packet_size);
+        const auto delay =
+            pacer->ConsumeAndGetDelay(estimated_wire_packet_size);
         if (delay.count() > 0) std::this_thread::sleep_for(delay);
         const auto send_begin = std::chrono::steady_clock::now();
         if (::sendto(socket, pending.bytes.data(), pending.bytes.size(), 0,
-                     reinterpret_cast<const sockaddr*>(&address), address_length) < 0) {
+                     reinterpret_cast<const sockaddr*>(&address),
+                     address_length) < 0) {
           throw std::runtime_error("failed to send RTP packet");
         }
-        const auto blocked = std::chrono::duration_cast<std::chrono::microseconds>(
-            std::chrono::steady_clock::now() - send_begin);
+        const auto blocked =
+            std::chrono::duration_cast<std::chrono::microseconds>(
+                std::chrono::steady_clock::now() - send_begin);
         socket_block_us.fetch_add(static_cast<uint64_t>(blocked.count()));
         wire_bytes_sent.fetch_add(estimated_wire_packet_size);
         packets_sent.fetch_add(1);
-        rtp_octets_sent.fetch_add(pending.bytes.size() >= 12 ? pending.bytes.size() - 12 : 0);
-        last_rtp_timestamp.store((static_cast<uint32_t>(pending.bytes[4]) << 24) |
-                                 (static_cast<uint32_t>(pending.bytes[5]) << 16) |
-                                 (static_cast<uint32_t>(pending.bytes[6]) << 8) |
-                                 static_cast<uint32_t>(pending.bytes[7]));
+        rtp_octets_sent.fetch_add(
+            pending.bytes.size() >= 12 ? pending.bytes.size() - 12 : 0);
+        last_rtp_timestamp.store(
+            (static_cast<uint32_t>(pending.bytes[4]) << 24) |
+            (static_cast<uint32_t>(pending.bytes[5]) << 16) |
+            (static_cast<uint32_t>(pending.bytes[6]) << 8) |
+            static_cast<uint32_t>(pending.bytes[7]));
         RememberRtpPacket(pending.bytes);
-        const uint64_t burst = delay.count() > 0
-                                   ? estimated_wire_packet_size
-                                   : burst_bytes.fetch_add(estimated_wire_packet_size) +
-                                         estimated_wire_packet_size;
+        const uint64_t burst =
+            delay.count() > 0
+                ? estimated_wire_packet_size
+                : burst_bytes.fetch_add(estimated_wire_packet_size) +
+                      estimated_wire_packet_size;
         if (delay.count() > 0) burst_bytes.store(estimated_wire_packet_size);
         uint64_t previous = max_burst_bytes_observed.load();
-        while (burst > previous &&
-               !max_burst_bytes_observed.compare_exchange_weak(previous, burst)) {
+        while (
+            burst > previous &&
+            !max_burst_bytes_observed.compare_exchange_weak(previous, burst)) {
         }
         {
           std::lock_guard<std::mutex> lock(queue_mutex);
@@ -754,17 +839,21 @@ struct RtpMlvcSender::Impl {
       try {
         if (now >= next_report) {
           if (packets_sent.load() != 0) {
-            const auto wall_now = std::chrono::system_clock::now().time_since_epoch();
-            const auto seconds = std::chrono::duration_cast<std::chrono::seconds>(wall_now);
-            const auto nanoseconds = std::chrono::duration_cast<std::chrono::nanoseconds>(
-                wall_now - seconds);
+            const auto wall_now =
+                std::chrono::system_clock::now().time_since_epoch();
+            const auto seconds =
+                std::chrono::duration_cast<std::chrono::seconds>(wall_now);
+            const auto nanoseconds =
+                std::chrono::duration_cast<std::chrono::nanoseconds>(wall_now -
+                                                                     seconds);
             constexpr uint64_t kNtpEpochOffset = 2208988800ull;
             RtcpSenderReport report;
             report.sender_ssrc = ssrc;
             report.ntp_seconds = static_cast<uint32_t>(
                 static_cast<uint64_t>(seconds.count()) + kNtpEpochOffset);
             report.ntp_fraction = static_cast<uint32_t>(
-                (static_cast<uint64_t>(nanoseconds.count()) << 32) / 1000000000ull);
+                (static_cast<uint64_t>(nanoseconds.count()) << 32) /
+                1000000000ull);
             report.rtp_timestamp = last_rtp_timestamp.load();
             report.packet_count = static_cast<uint32_t>(packets_sent.load());
             report.octet_count = static_cast<uint32_t>(rtp_octets_sent.load());
@@ -773,10 +862,12 @@ struct RtpMlvcSender::Impl {
           }
           next_report = std::chrono::steady_clock::now() + rtcp_interval;
         }
-        const auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
-            next_report - std::chrono::steady_clock::now());
-        const auto timeout = std::max(std::chrono::milliseconds(1),
-                                      std::min(std::chrono::milliseconds(100), remaining));
+        const auto remaining =
+            std::chrono::duration_cast<std::chrono::milliseconds>(
+                next_report - std::chrono::steady_clock::now());
+        const auto timeout =
+            std::max(std::chrono::milliseconds(1),
+                     std::min(std::chrono::milliseconds(100), remaining));
         std::vector<uint8_t> packet;
         if (!rtcp_endpoint->Receive(&packet, timeout)) continue;
         HandleRtcpPacket(packet);
@@ -788,15 +879,18 @@ struct RtpMlvcSender::Impl {
     }
   }
 };
-RtpMlvcSender::RtpMlvcSender(const std::string& host, uint16_t port, uint32_t ssrc,
-                             uint64_t pacing_rate_bps, std::size_t max_burst_bytes,
-                             std::size_t max_queue_bytes, uint64_t max_queue_delay_ms,
-                             uint8_t payload_type, std::chrono::milliseconds rtcp_interval) {
+RtpMlvcSender::RtpMlvcSender(const std::string& host, uint16_t port,
+                             uint32_t ssrc, uint64_t pacing_rate_bps,
+                             std::size_t max_burst_bytes,
+                             std::size_t max_queue_bytes,
+                             uint64_t max_queue_delay_ms, uint8_t payload_type,
+                             std::chrono::milliseconds rtcp_interval) {
   impl_ = std::make_unique<Impl>();
   if (payload_type < 96 || payload_type > 127)
     throw std::invalid_argument("RTP payload type must be in [96, 127]");
   if (port == std::numeric_limits<uint16_t>::max())
-    throw std::invalid_argument("RTP destination port 65535 has no adjacent RTCP port");
+    throw std::invalid_argument(
+        "RTP destination port 65535 has no adjacent RTCP port");
   if (rtcp_interval.count() <= 0)
     throw std::invalid_argument("RTCP sender-report interval must be positive");
   std::random_device rd;
@@ -812,18 +906,22 @@ RtpMlvcSender::RtpMlvcSender(const std::string& host, uint16_t port, uint32_t ss
   impl_->pacing_rate_bps = pacing_rate_bps;
   impl_->max_queue_bytes = max_queue_bytes;
   impl_->max_queue_delay_ms = max_queue_delay_ms;
-  if (max_queue_bytes == 0) throw std::runtime_error("RTP send queue bytes must be positive");
+  if (max_queue_bytes == 0)
+    throw std::runtime_error("RTP send queue bytes must be positive");
   // A full RTP packet carries a 24-byte MLVC descriptor in a 1200-byte
   // packetization budget, plus the 12-byte RTP header and IPv4/UDP overhead.
-  constexpr std::size_t kMaxRtpWirePacketBytes = 12 + 1200 + kIpv4UdpOverheadBytes;
+  constexpr std::size_t kMaxRtpWirePacketBytes =
+      12 + 1200 + kIpv4UdpOverheadBytes;
   if (max_burst_bytes < kMaxRtpWirePacketBytes)
-    throw std::runtime_error("RTP max burst bytes must be at least one RTP packet");
+    throw std::runtime_error(
+        "RTP max burst bytes must be at least one RTP packet");
   addrinfo hints{};
   hints.ai_family = AF_INET;
   hints.ai_socktype = SOCK_DGRAM;
   addrinfo* result = nullptr;
   const std::string service = std::to_string(port);
-  if (getaddrinfo(host.c_str(), service.c_str(), &hints, &result) != 0 || result == nullptr)
+  if (getaddrinfo(host.c_str(), service.c_str(), &hints, &result) != 0 ||
+      result == nullptr)
     throw std::runtime_error("failed to resolve RTP destination");
   std::memcpy(&impl_->address, result->ai_addr, result->ai_addrlen);
   impl_->address_length = static_cast<socklen_t>(result->ai_addrlen);
@@ -836,17 +934,20 @@ RtpMlvcSender::RtpMlvcSender(const std::string& host, uint16_t port, uint32_t ss
     local.sin_family = AF_INET;
     local.sin_addr.s_addr = htonl(INADDR_ANY);
     local.sin_port = 0;
-    if (::bind(candidate, reinterpret_cast<sockaddr*>(&local), sizeof(local)) < 0) {
+    if (::bind(candidate, reinterpret_cast<sockaddr*>(&local), sizeof(local)) <
+        0) {
       ::close(candidate);
       continue;
     }
     socklen_t local_length = sizeof(local);
-    if (::getsockname(candidate, reinterpret_cast<sockaddr*>(&local), &local_length) < 0) {
+    if (::getsockname(candidate, reinterpret_cast<sockaddr*>(&local),
+                      &local_length) < 0) {
       ::close(candidate);
       continue;
     }
     const uint16_t local_rtp_port = ntohs(local.sin_port);
-    if ((local_rtp_port & 1u) != 0 || local_rtp_port == 0 || local_rtp_port >= 65534) {
+    if ((local_rtp_port & 1u) != 0 || local_rtp_port == 0 ||
+        local_rtp_port >= 65534) {
       ::close(candidate);
       continue;
     }
@@ -866,26 +967,32 @@ RtpMlvcSender::RtpMlvcSender(const std::string& host, uint16_t port, uint32_t ss
     throw std::runtime_error("failed to bind a paired RTP/RTCP UDP port");
   }
   impl_->send_thread = std::thread([impl = impl_.get()] { impl->SendLoop(); });
-  impl_->rtcp_thread = std::thread([impl = impl_.get()] { impl->SendRtcpLoop(); });
+  impl_->rtcp_thread =
+      std::thread([impl = impl_.get()] { impl->SendRtcpLoop(); });
 }
 RtpMlvcSender::~RtpMlvcSender() = default;
-void RtpMlvcSender::SendUnit(RtpUnitType type, uint8_t flags, uint32_t config_id, uint32_t unit_id,
-                             uint32_t timestamp, const std::vector<uint8_t>& unit) {
+void RtpMlvcSender::SendUnit(RtpUnitType type, uint8_t flags,
+                             uint32_t config_id, uint32_t unit_id,
+                             uint32_t timestamp,
+                             const std::vector<uint8_t>& unit) {
   impl_->SendUnit(type, flags, config_id, unit_id, timestamp, unit);
 }
 void RtpMlvcSender::Flush() { impl_->Flush(); }
 void RtpMlvcSender::Close() { impl_->Flush(); }
-void RtpMlvcSender::SetSessionConfig(uint32_t config_id, const std::vector<uint8_t>& config_unit,
+void RtpMlvcSender::SetSessionConfig(uint32_t config_id,
+                                     const std::vector<uint8_t>& config_unit,
                                      uint8_t flags, uint32_t timestamp) {
   const auto scu = ParseScu(config_unit);
-  if (scu.config_id != config_id) throw std::runtime_error("RTP SCU config ID mismatch");
+  if (scu.config_id != config_id)
+    throw std::runtime_error("RTP SCU config ID mismatch");
   impl_->SetSessionConfig(config_id, config_unit, flags, timestamp);
 }
 void RtpMlvcSender::ResendSessionConfig(uint32_t timestamp) {
-  if (impl_->session_config.empty()) throw std::runtime_error("RTP session config is not set");
-  impl_->SendUnit(RtpUnitType::kScu, impl_->session_config_flags, impl_->session_config_id,
-                  impl_->session_config_id,
-                  timestamp, impl_->session_config);
+  if (impl_->session_config.empty())
+    throw std::runtime_error("RTP session config is not set");
+  impl_->SendUnit(RtpUnitType::kScu, impl_->session_config_flags,
+                  impl_->session_config_id, impl_->session_config_id, timestamp,
+                  impl_->session_config);
 }
 RtpTransportStats RtpMlvcSender::Stats() const {
   RtpTransportStats stats;
@@ -894,7 +1001,8 @@ RtpTransportStats RtpMlvcSender::Stats() const {
   stats.max_burst_bytes = impl_->max_burst_bytes_observed.load();
   stats.max_queue_delay_us = impl_->max_queue_delay_us.load();
   const uint64_t samples = impl_->queue_delay_samples.load();
-  stats.average_queue_delay_us = samples == 0 ? 0 : impl_->queue_delay_total_us.load() / samples;
+  stats.average_queue_delay_us =
+      samples == 0 ? 0 : impl_->queue_delay_total_us.load() / samples;
   stats.socket_block_us = impl_->socket_block_us.load();
   stats.rtcp_packets_sent = impl_->rtcp_packets_sent.load();
   stats.rtcp_packets_received = impl_->rtcp_packets_received.load();
@@ -902,8 +1010,8 @@ RtpTransportStats RtpMlvcSender::Stats() const {
 }
 bool RtpMlvcSender::ConsumeRandomAccessRequest() {
   uint64_t pending = impl_->random_access_requests.load();
-  while (pending != 0 &&
-         !impl_->random_access_requests.compare_exchange_weak(pending, pending - 1)) {
+  while (pending != 0 && !impl_->random_access_requests.compare_exchange_weak(
+                             pending, pending - 1)) {
   }
   return pending != 0;
 }
@@ -916,34 +1024,43 @@ bool RtpMlvcSender::PopMlvcControl(MlvcControlMessage* message) {
   return true;
 }
 uint16_t RtpMlvcSender::rtcp_local_port() const {
-  return impl_->rtcp_endpoint == nullptr ? 0 : impl_->rtcp_endpoint->local_port();
+  return impl_->rtcp_endpoint == nullptr ? 0
+                                         : impl_->rtcp_endpoint->local_port();
 }
-void RtpMlvcSender::SendMlvcControlResponse(const MlvcControlMessage& request, bool accepted,
+void RtpMlvcSender::SendMlvcControlResponse(const MlvcControlMessage& request,
+                                            bool accepted,
                                             const std::string& reason) {
   MlvcControlMessage response;
   response.type = accepted ? MlvcControlType::kAck : MlvcControlType::kReject;
   response.transaction_id = request.transaction_id;
   response.media_ssrc = impl_->ssrc;
-  response.tlvs.push_back(MlvcControlTlv{1, std::vector<uint8_t>(reason.begin(), reason.end())});
+  response.tlvs.push_back(
+      MlvcControlTlv{1, std::vector<uint8_t>(reason.begin(), reason.end())});
   RtcpReceiverReport report;
   report.sender_ssrc = impl_->ssrc;
   const auto app = EncodeMlvcRtcpApp(impl_->ssrc, response);
-  const auto compound = EncodeRtcpReceiverReport(report, std::string("mlvc-") + std::to_string(impl_->ssrc), {app});
+  const auto compound = EncodeRtcpReceiverReport(
+      report, std::string("mlvc-") + std::to_string(impl_->ssrc), {app});
   impl_->rtcp_endpoint->SendToLastPeer(compound);
 }
-RtpPacket DecodeRtpPacket(const std::vector<uint8_t>& b, uint8_t expected_payload_type) {
-  if (b.size() < 12 || (b[0] >> 6) != 2) throw std::runtime_error("invalid RTP packet");
+RtpPacket DecodeRtpPacket(const std::vector<uint8_t>& b,
+                          uint8_t expected_payload_type) {
+  if (b.size() < 12 || (b[0] >> 6) != 2)
+    throw std::runtime_error("invalid RTP packet");
   if ((b[1] & 0x7f) != expected_payload_type || expected_payload_type < 96 ||
       expected_payload_type > 127)
     throw std::runtime_error("unsupported RTP payload type");
   const std::size_t csrc_bytes = static_cast<std::size_t>(b[0] & 0x0f) * 4;
   std::size_t payload_offset = 12 + csrc_bytes;
-  if (payload_offset > b.size()) throw std::runtime_error("truncated RTP CSRC list");
+  if (payload_offset > b.size())
+    throw std::runtime_error("truncated RTP CSRC list");
   if ((b[0] & 0x10) != 0) {
-    if (payload_offset + 4 > b.size()) throw std::runtime_error("truncated RTP extension header");
+    if (payload_offset + 4 > b.size())
+      throw std::runtime_error("truncated RTP extension header");
     const std::size_t extension_bytes =
-        static_cast<std::size_t>((static_cast<uint16_t>(b[payload_offset + 2]) << 8) |
-                                  b[payload_offset + 3]) *
+        static_cast<std::size_t>(
+            (static_cast<uint16_t>(b[payload_offset + 2]) << 8) |
+            b[payload_offset + 3]) *
         4;
     payload_offset += 4;
     if (extension_bytes > b.size() - payload_offset)
@@ -957,11 +1074,14 @@ RtpPacket DecodeRtpPacket(const std::vector<uint8_t>& b, uint8_t expected_payloa
       throw std::runtime_error("invalid RTP padding");
     payload_end -= padding_bytes;
   }
-  if (payload_offset > payload_end) throw std::runtime_error("RTP header exceeds packet");
+  if (payload_offset > payload_end)
+    throw std::runtime_error("RTP header exceeds packet");
   RtpPacket p;
   p.sequence = (b[2] << 8) | b[3];
-  p.timestamp = (uint32_t(b[4]) << 24) | (uint32_t(b[5]) << 16) | (uint32_t(b[6]) << 8) | b[7];
-  p.ssrc = (uint32_t(b[8]) << 24) | (uint32_t(b[9]) << 16) | (uint32_t(b[10]) << 8) | b[11];
+  p.timestamp = (uint32_t(b[4]) << 24) | (uint32_t(b[5]) << 16) |
+                (uint32_t(b[6]) << 8) | b[7];
+  p.ssrc = (uint32_t(b[8]) << 24) | (uint32_t(b[9]) << 16) |
+           (uint32_t(b[10]) << 8) | b[11];
   p.marker = (b[1] & 0x80) != 0;
   p.payload.assign(b.begin() + static_cast<std::ptrdiff_t>(payload_offset),
                    b.begin() + static_cast<std::ptrdiff_t>(payload_end));

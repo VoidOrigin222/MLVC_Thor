@@ -27,10 +27,12 @@ class AsyncFramePlan {
   EntropyWorker& entropy_worker() { return entropy_worker_; }
 
   void RecordCopy(const std::string& name, std::size_t bytes);
-  void RecordCopy(const std::string& name, std::size_t bytes, double start_ms, double duration_ms,
-                  const std::string& timing_source);
+  void RecordCopy(const std::string& name, std::size_t bytes, double start_ms,
+                  double duration_ms, const std::string& timing_source);
   void ClearCopyRecords();
-  const std::vector<AsyncCopyRecord>& copy_records() const { return copy_records_; }
+  const std::vector<AsyncCopyRecord>& copy_records() const {
+    return copy_records_;
+  }
 
  private:
   std::vector<PinnedHostBuffer> pinned_slots_;

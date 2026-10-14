@@ -7,7 +7,7 @@
 #include <optional>
 #include <string>
 
-#include <mlvc/io/video_io.h>
+#include "mlvc/io/video_io.h"
 
 namespace mlvc::codec {
 
@@ -31,15 +31,34 @@ struct EncodeStreamOptions {
   std::string execution_profile;
   bool enable_stage_fusion = false;
   bool translation_warp = false;
+#ifdef MLVC_TENSORRT
+  std::string motion_backend = "nvenc";
+#else
   std::string motion_backend = "libx264";
+#endif
   int motion_prefetch_frames = 0;
+#ifdef MLVC_TENSORRT
+  int motion_decode_threads = 4;
+#else
+  int motion_decode_threads = 1;
+#endif
+#ifndef MLVC_TENSORRT
   std::string motion_x264_preset = "medium";
   int motion_x264_threads = 1;
+#endif
   bool motion_skip_loop_filter = false;
   bool motion_camera_nv12 = false;
   // Optional full-frame CSV: frame_index,kx,ky, including zero GOP starts.
   std::filesystem::path motion_shifts_file;
   double fps = 30.0;
+  std::string video_decode_backend = mlvc::io::kDefaultVideoDecodeBackend;
+#ifdef MLVC_TENSORRT
+  double target_fps = 30.0;
+  bool input_device_resident = true;
+#else
+  double target_fps = 0.0;
+  bool input_device_resident = false;
+#endif
   int qp = 18;
   int frame_num = -1;
   int profile_warmup_frames = 0;
@@ -67,4 +86,4 @@ struct EncodeStreamOptions {
 
 }  // namespace mlvc::codec
 
-#endif  // MLVC_APPLICATION_STREAM_STREAM_ENCODER_H
+#endif  // MLVC_APPLICATION_STREAM_STREAM_ENCODER_H_

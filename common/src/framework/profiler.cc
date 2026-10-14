@@ -91,35 +91,43 @@ void Profiler::ReserveEvents(std::size_t capacity) {
   events_.reserve(capacity);
 }
 
-void Profiler::AddEvent(const std::string& name, double start_ms, double duration_ms) {
-  AddEventWithArgs(name, InferCategory(name), InferThread(name), start_ms, duration_ms, {});
+void Profiler::AddEvent(const std::string& name, double start_ms,
+                        double duration_ms) {
+  AddEventWithArgs(name, InferCategory(name), InferThread(name), start_ms,
+                   duration_ms, {});
 }
 
 void Profiler::AddEvent(const char* name, double start_ms, double duration_ms) {
   AddEvent(std::string(name), start_ms, duration_ms);
 }
 
-void Profiler::AddEventWithArgs(std::string name, std::string category, std::string thread,
-                                double start_ms, double duration_ms,
+void Profiler::AddEventWithArgs(std::string name, std::string category,
+                                std::string thread, double start_ms,
+                                double duration_ms,
                                 std::vector<ProfileArgument> args) {
   std::lock_guard<std::mutex> lock(mutex_);
-  events_.push_back(ProfileEvent{std::move(name), std::move(category), std::move(thread), start_ms,
-                                 duration_ms, false, std::move(args)});
+  events_.push_back(ProfileEvent{std::move(name), std::move(category),
+                                 std::move(thread), start_ms, duration_ms,
+                                 false, std::move(args)});
 }
 
-void Profiler::AddCounter(std::string name, std::string category, std::string thread,
-                          double start_ms, std::vector<ProfileArgument> args) {
+void Profiler::AddCounter(std::string name, std::string category,
+                          std::string thread, double start_ms,
+                          std::vector<ProfileArgument> args) {
   std::lock_guard<std::mutex> lock(mutex_);
-  events_.push_back(ProfileEvent{std::move(name), std::move(category), std::move(thread), start_ms,
-                                 0.0, true, std::move(args)});
+  events_.push_back(ProfileEvent{std::move(name), std::move(category),
+                                 std::move(thread), start_ms, 0.0, true,
+                                 std::move(args)});
 }
 
-void Profiler::AddDurationNow(const std::string& name, std::chrono::steady_clock::time_point begin,
+void Profiler::AddDurationNow(const std::string& name,
+                              std::chrono::steady_clock::time_point begin,
                               std::chrono::steady_clock::time_point end) {
   AddEvent(name, StartMs(begin), DurationMs(begin, end));
 }
 
-void Profiler::AddDurationNow(const char* name, std::chrono::steady_clock::time_point begin,
+void Profiler::AddDurationNow(const char* name,
+                              std::chrono::steady_clock::time_point begin,
                               std::chrono::steady_clock::time_point end) {
   AddEvent(name, StartMs(begin), DurationMs(begin, end));
 }
@@ -163,7 +171,8 @@ void Profiler::WriteChromeTrace(const std::filesystem::path& path) const {
     }
     first = false;
     output << "    {\"ph\":\"M\",\"pid\":1,\"tid\":" << tid
-           << ",\"name\":\"thread_name\",\"args\":{\"name\":\"" << EscapeJson(name) << "\"}}";
+           << ",\"name\":\"thread_name\",\"args\":{\"name\":\""
+           << EscapeJson(name) << "\"}}";
   };
   write_metadata("main", 0);
   write_metadata("acl", 1);
@@ -177,9 +186,9 @@ void Profiler::WriteChromeTrace(const std::filesystem::path& path) const {
   output << std::fixed << std::setprecision(3);
   for (const ProfileEvent& event : events) {
     output << ",\n    {\"ph\":\"" << (event.counter ? "C" : "X")
-           << "\",\"pid\":1,\"tid\":" << ThreadIdFor(event.thread) << ",\"cat\":\""
-           << EscapeJson(event.category) << "\",\"name\":\"" << EscapeJson(event.name)
-           << "\",\"ts\":" << event.start_ms * 1000.0;
+           << "\",\"pid\":1,\"tid\":" << ThreadIdFor(event.thread)
+           << ",\"cat\":\"" << EscapeJson(event.category) << "\",\"name\":\""
+           << EscapeJson(event.name) << "\",\"ts\":" << event.start_ms * 1000.0;
     if (!event.counter) {
       output << ",\"dur\":" << event.duration_ms * 1000.0;
     }
@@ -201,11 +210,13 @@ void Profiler::WriteChromeTrace(const std::filesystem::path& path) const {
     output << "}}";
   }
   output << "\n  ],\n  \"displayTimeUnit\": \"ms\"\n}\n";
-  Check(output.good(), "failed to write profile trace output: " + path.string());
+  Check(output.good(),
+        "failed to write profile trace output: " + path.string());
 }
 
 ProfileArgument Profiler::Arg(std::string key, std::string value) {
-  return ProfileArgument{std::move(key), std::move(value), ProfileArgType::kString};
+  return ProfileArgument{std::move(key), std::move(value),
+                         ProfileArgType::kString};
 }
 
 ProfileArgument Profiler::Arg(std::string key, const char* value) {
@@ -213,15 +224,18 @@ ProfileArgument Profiler::Arg(std::string key, const char* value) {
 }
 
 ProfileArgument Profiler::Arg(std::string key, uint64_t value) {
-  return ProfileArgument{std::move(key), std::to_string(value), ProfileArgType::kNumber};
+  return ProfileArgument{std::move(key), std::to_string(value),
+                         ProfileArgType::kNumber};
 }
 
 ProfileArgument Profiler::Arg(std::string key, int64_t value) {
-  return ProfileArgument{std::move(key), std::to_string(value), ProfileArgType::kNumber};
+  return ProfileArgument{std::move(key), std::to_string(value),
+                         ProfileArgType::kNumber};
 }
 
 ProfileArgument Profiler::Arg(std::string key, int value) {
-  return ProfileArgument{std::move(key), std::to_string(value), ProfileArgType::kNumber};
+  return ProfileArgument{std::move(key), std::to_string(value),
+                         ProfileArgType::kNumber};
 }
 
 ProfileArgument Profiler::Arg(std::string key, double value) {
@@ -231,7 +245,8 @@ ProfileArgument Profiler::Arg(std::string key, double value) {
 }
 
 ProfileArgument Profiler::BoolArg(std::string key, bool value) {
-  return ProfileArgument{std::move(key), value ? "true" : "false", ProfileArgType::kBool};
+  return ProfileArgument{std::move(key), value ? "true" : "false",
+                         ProfileArgType::kBool};
 }
 
 std::string Profiler::InferCategory(const std::string& name) {
@@ -271,7 +286,9 @@ std::string Profiler::InferThread(const std::string& name) {
 }
 
 ScopedCpuTimer::ScopedCpuTimer(Profiler* profiler, std::string name)
-    : profiler_(profiler), name_(std::move(name)), begin_(std::chrono::steady_clock::now()) {}
+    : profiler_(profiler),
+      name_(std::move(name)),
+      begin_(std::chrono::steady_clock::now()) {}
 
 ScopedCpuTimer::~ScopedCpuTimer() {
   if (profiler_ == nullptr) {

@@ -28,20 +28,23 @@ class TensorShape {
 class TensorView {
  public:
   TensorView() = default;
-  TensorView(void* data, TensorShape shape, DataType dtype, MemoryLocation location);
+  TensorView(void* data, TensorShape shape, DataType dtype,
+             MemoryLocation location);
   TensorView(const TensorView& other);
   TensorView& operator=(const TensorView& other);
   TensorView(TensorView&& other) noexcept;
   TensorView& operator=(TensorView&& other) noexcept;
-  static TensorView Borrowed(void* data, const TensorShape* shape, DataType dtype,
-                             MemoryLocation location);
+  static TensorView Borrowed(void* data, const TensorShape* shape,
+                             DataType dtype, MemoryLocation location);
 
   void* data() const { return data_; }
   const TensorShape& shape() const { return *shape_; }
   DataType dtype() const { return dtype_; }
   MemoryLocation location() const { return location_; }
   const std::vector<int64_t>& strides() const { return strides_; }
-  std::size_t bytes() const { return shape().NumElements() * ElementSize(dtype_); }
+  std::size_t bytes() const {
+    return shape().NumElements() * ElementSize(dtype_);
+  }
   bool empty() const { return data_ == nullptr || shape().NumElements() == 0; }
 
  private:

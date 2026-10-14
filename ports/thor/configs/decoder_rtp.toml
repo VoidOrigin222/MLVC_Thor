@@ -1,0 +1,20 @@
+mode = "decode"
+manifest = "models/manifest_thor.json"
+frame_num = -1
+format = "none"
+device = 0
+input_transport_mode = "rtp"
+input_transport_port = 39340
+input_transport_payload_type = 96
+output_transport_mode = "rtsp"
+output_transport_rtsp_encoder = "nvenc"
+output_transport_rtsp_url = "rtsp://192.168.5.3:8554/ulbvc"
+output_transport_rtsp_transport = "tcp"
+output_transport_queue_capacity = 3
+
+[pipeline]
+stream_workers = 1
+queue_capacity = 3
+frame_buffer_slots = 3
+entropy_workers = 4
+graph_packet_capacity = 2

@@ -1,12 +1,12 @@
-#include <mlvc/application/cli/decoder_app.h>
-#include <mlvc/core/status.h>
-
 #include <exception>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <string>
 #include <utility>
+
+#include "mlvc/application/cli/decoder_app.h"
+#include "mlvc/core/status.h"
 
 namespace {
 
@@ -28,8 +28,10 @@ void WriteManifest(const std::filesystem::path& path) {
 int main() {
   try {
     const auto temp_dir = std::filesystem::temp_directory_path();
-    const std::filesystem::path config = temp_dir / "mlvc_test_decode_config.toml";
-    const std::filesystem::path manifest = temp_dir / "mlvc_test_decode_manifest.json";
+    const std::filesystem::path config =
+        temp_dir / "mlvc_test_decode_config.toml";
+    const std::filesystem::path manifest =
+        temp_dir / "mlvc_test_decode_manifest.json";
     WriteManifest(manifest);
     std::ofstream output(config);
     output << "mode = \"decode\"\n"
@@ -44,7 +46,8 @@ int main() {
            << "entropy_workers = 2\n";
     output.close();
     mlvc::Check(output.good(), "failed to write decode config fixture");
-    const mlvc::DecoderApplicationConfig parsed = mlvc::LoadDecoderConfig(config);
+    const mlvc::DecoderApplicationConfig parsed =
+        mlvc::LoadDecoderConfig(config);
     mlvc::Check(parsed.stream.input_transport_port == 39089,
                 "input transport port was not preserved");
     mlvc::Check(parsed.stream.input_transport_mode == "rtp",
@@ -69,15 +72,18 @@ int main() {
            << "output_transport_rtsp_transport = \"udp\"\n"
            << "output_transport_rtsp_crf = 0\n";
       rtsp.close();
-      const mlvc::DecoderApplicationConfig parsed_rtsp = mlvc::LoadDecoderConfig(config);
+      const mlvc::DecoderApplicationConfig parsed_rtsp =
+          mlvc::LoadDecoderConfig(config);
       mlvc::Check(parsed_rtsp.stream.output_transport_mode == "rtsp",
                   "RTSP output mode was not preserved");
-      mlvc::Check(parsed_rtsp.stream.output_transport_rtsp_url == "rtsp://127.0.0.1:8554/mlvc",
+      mlvc::Check(parsed_rtsp.stream.output_transport_rtsp_url ==
+                      "rtsp://127.0.0.1:8554/mlvc",
                   "RTSP URL was not preserved");
       mlvc::Check(parsed_rtsp.stream.output_transport_rtsp_encoder == "dvpp",
                   "RTSP encoder was not preserved");
-      mlvc::Check(parsed_rtsp.stream.output_transport_rtsp_preset == "ultrafast",
-                  "RTSP preset was not preserved");
+      mlvc::Check(
+          parsed_rtsp.stream.output_transport_rtsp_preset == "ultrafast",
+          "RTSP preset was not preserved");
       mlvc::Check(parsed_rtsp.stream.output_transport_rtsp_transport == "udp",
                   "RTSP transport was not preserved");
       mlvc::Check(parsed_rtsp.stream.output_transport_queue_capacity == 5,
@@ -96,20 +102,25 @@ int main() {
         rejected_profile = true;
       }
     }
-    mlvc::Check(rejected_profile, "unsupported execution profile must be rejected");
+    mlvc::Check(rejected_profile,
+                "unsupported execution profile must be rejected");
 
     {
       std::ofstream valid(config);
-      valid << "mode = \"decode\"\nmanifest = \"" << manifest.string() << "\"\nfps = 25.0\n";
+      valid << "mode = \"decode\"\nmanifest = \"" << manifest.string()
+            << "\"\nfps = 25.0\n";
       valid.close();
-      const mlvc::DecoderApplicationConfig parsed_fps = mlvc::LoadDecoderConfig(config);
-      mlvc::Check(parsed_fps.stream.fps == 25.0, "floating-point fps was not preserved");
+      const mlvc::DecoderApplicationConfig parsed_fps =
+          mlvc::LoadDecoderConfig(config);
+      mlvc::Check(parsed_fps.stream.fps == 25.0,
+                  "floating-point fps was not preserved");
     }
 
     bool rejected_frame_num = false;
     {
       std::ofstream invalid(config);
-      invalid << "mode = \"decode\"\nmanifest = \"" << manifest.string() << "\"\nframe_num = 0\n";
+      invalid << "mode = \"decode\"\nmanifest = \"" << manifest.string()
+              << "\"\nframe_num = 0\n";
       invalid.close();
       try {
         (void)mlvc::LoadDecoderConfig(config);
@@ -131,7 +142,8 @@ int main() {
         rejected_capacity = true;
       }
     }
-    mlvc::Check(rejected_capacity, "zero forwarding queue capacity must be rejected");
+    mlvc::Check(rejected_capacity,
+                "zero forwarding queue capacity must be rejected");
 
     for (const std::string& removed_mode : {"jpeg_async", "raw_fp16_yuv444"}) {
       bool rejected_mode = false;
@@ -159,7 +171,8 @@ int main() {
         rejected_rtsp_without_url = true;
       }
     }
-    mlvc::Check(rejected_rtsp_without_url, "RTSP mode without URL must be rejected");
+    mlvc::Check(rejected_rtsp_without_url,
+                "RTSP mode without URL must be rejected");
 
     bool rejected_rtsp_transport = false;
     {
@@ -175,7 +188,8 @@ int main() {
         rejected_rtsp_transport = true;
       }
     }
-    mlvc::Check(rejected_rtsp_transport, "unsupported RTSP transport must be rejected");
+    mlvc::Check(rejected_rtsp_transport,
+                "unsupported RTSP transport must be rejected");
 
     bool rejected_rtsp_encoder = false;
     {
@@ -189,14 +203,16 @@ int main() {
         rejected_rtsp_encoder = true;
       }
     }
-    mlvc::Check(rejected_rtsp_encoder, "unsupported RTSP encoder must be rejected");
+    mlvc::Check(rejected_rtsp_encoder,
+                "unsupported RTSP encoder must be rejected");
 
     for (const std::string& invalid_execution :
          {"rans-convert-pipeline", "rans-narrow-convert-pipeline", "unknown"}) {
       bool rejected_entropy_execution = false;
       std::ofstream invalid(config);
       invalid << "mode = \"decode\"\nmanifest = \"" << manifest.string()
-              << "\"\n[pipeline]\nentropy_execution = \"" << invalid_execution << "\"\n";
+              << "\"\n[pipeline]\nentropy_execution = \"" << invalid_execution
+              << "\"\n";
       invalid.close();
       try {
         (void)mlvc::LoadDecoderConfig(config);
@@ -209,16 +225,19 @@ int main() {
 
     for (const auto& invalid_case :
          {std::pair<const char*, const char*>{"fps = \"25\"\n", "string FPS"},
-         {"execution_profile = 123\n", "non-string execution profile"},
+          {"execution_profile = 123\n", "non-string execution profile"},
           {"device = -1\n", "negative device index"},
           {"input_transport_port = \"39089\"\n", "string input port"},
-          {"output_transport_queue_capacity = 1.5\n", "floating-point output queue capacity"},
+          {"output_transport_queue_capacity = 1.5\n",
+           "floating-point output queue capacity"},
           {"[pipeline]\nqueue_capacity = \"4\"\n", "string pipeline capacity"},
-         {"pipeline = 4\n", "non-table pipeline section"},
-         {"input_transprot_port = 39089\n", "misspelled input transport port"}}) {
+          {"pipeline = 4\n", "non-table pipeline section"},
+          {"input_transprot_port = 39089\n",
+           "misspelled input transport port"}}) {
       bool rejected_type = false;
       std::ofstream invalid(config);
-      invalid << "mode = \"decode\"\nmanifest = \"" << manifest.string() << "\"\n"
+      invalid << "mode = \"decode\"\nmanifest = \"" << manifest.string()
+              << "\"\n"
               << invalid_case.first;
       invalid.close();
       try {
@@ -227,7 +246,8 @@ int main() {
         rejected_type = true;
       }
       mlvc::Check(rejected_type,
-                  std::string("invalid decoder config type was accepted: ") + invalid_case.second);
+                  std::string("invalid decoder config type was accepted: ") +
+                      invalid_case.second);
     }
 
     for (int payload_type : {95, 128}) {
@@ -241,7 +261,8 @@ int main() {
       } catch (const std::exception&) {
         rejected_payload_type = true;
       }
-      mlvc::Check(rejected_payload_type, "RTP payload type outside the dynamic range was accepted");
+      mlvc::Check(rejected_payload_type,
+                  "RTP payload type outside the dynamic range was accepted");
     }
 
     std::cout << "decode config test passed\n";

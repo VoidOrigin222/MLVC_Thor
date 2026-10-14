@@ -16,7 +16,8 @@ void WriteText(const std::filesystem::path& path, const std::string& text) {
 
 void ExpectErrorContains(const std::string& label, const std::string& actual,
                          const std::string& expected) {
-  mlvc::Check(actual.find(expected) != std::string::npos, label + " error mismatch: " + actual);
+  mlvc::Check(actual.find(expected) != std::string::npos,
+              label + " error mismatch: " + actual);
 }
 
 std::string ManifestWithModels(const std::string& models) {
@@ -71,23 +72,31 @@ int main() {
     WriteText(valid_path, ManifestWithModels(model));
     const mlvc::ModelManifest valid = mlvc::ModelManifest::Load(valid_path);
     mlvc::Check(valid.runtime() == "acl", "runtime field was not parsed");
-    mlvc::Check(valid.soc_version() == "Ascend310P3", "soc_version field was not parsed");
-    mlvc::Check(valid.models().size() == 1, "valid manifest model count mismatch");
+    mlvc::Check(valid.soc_version() == "Ascend310P3",
+                "soc_version field was not parsed");
+    mlvc::Check(valid.models().size() == 1,
+                "valid manifest model count mismatch");
     const mlvc::ModelRecord& parsed = valid.GetModel("i_encoder");
-    mlvc::Check(parsed.model == "om_aoe/i_encoder.sim.om", "model file was not parsed");
+    mlvc::Check(parsed.model == "om_aoe/i_encoder.sim.om",
+                "model file was not parsed");
     mlvc::Check(parsed.onnx_model == "onnx_original/i_encoder.sim.onnx",
                 "onnx_file was not parsed");
-    mlvc::Check(parsed.optimized_onnx_model == "onnx_optimized/i_encoder.sim.onnx",
-                "optimized_onnx_file was not parsed");
-    mlvc::Check(parsed.atc_model == "om_atc/i_encoder.sim.om", "atc_om_file was not parsed");
-    mlvc::Check(parsed.replaces.size() == 1 && parsed.replaces[0] == "i_encoder_unfused",
+    mlvc::Check(
+        parsed.optimized_onnx_model == "onnx_optimized/i_encoder.sim.onnx",
+        "optimized_onnx_file was not parsed");
+    mlvc::Check(parsed.atc_model == "om_atc/i_encoder.sim.om",
+                "atc_om_file was not parsed");
+    mlvc::Check(parsed.replaces.size() == 1 &&
+                    parsed.replaces[0] == "i_encoder_unfused",
                 "replaces was not parsed");
-    mlvc::Check(parsed.inputs.size() == 2, "valid manifest inputs were not parsed");
+    mlvc::Check(parsed.inputs.size() == 2,
+                "valid manifest inputs were not parsed");
     mlvc::Check(parsed.inputs[0].dtype == mlvc::DataType::kFloat16,
                 "float16 input dtype was not parsed");
     mlvc::Check(parsed.inputs[1].dtype == mlvc::DataType::kInt32,
                 "int32 input dtype was not parsed");
-    mlvc::Check(parsed.outputs.size() == 5, "valid manifest outputs were not parsed");
+    mlvc::Check(parsed.outputs.size() == 5,
+                "valid manifest outputs were not parsed");
     mlvc::Check(parsed.outputs[1].dtype == mlvc::DataType::kFloat16,
                 "z_symbols output dtype was not parsed");
     mlvc::Check(parsed.outputs[2].dtype == mlvc::DataType::kUInt8,
@@ -105,7 +114,8 @@ int main() {
       (void)mlvc::ModelManifest::Load(duplicate_path);
       throw mlvc::Error("duplicate manifest was unexpectedly accepted");
     } catch (const mlvc::Error& error) {
-      ExpectErrorContains("duplicate manifest", error.what(), "duplicated model name");
+      ExpectErrorContains("duplicate manifest", error.what(),
+                          "duplicated model name");
     }
 
     std::cout << "model_manifest_parser status=ok\n";

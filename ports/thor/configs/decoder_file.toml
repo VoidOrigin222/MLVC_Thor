@@ -1,0 +1,15 @@
+mode = "decode"
+manifest = "models/manifest_thor.json"
+frame_num = -1
+format = "png"
+device = 0
+input = "data/bitstreams/fp16.mlvc"
+output = "data/decoded/fp16"
+output_transport_mode = "none"
+
+[pipeline]
+stream_workers = 1
+queue_capacity = 3
+frame_buffer_slots = 3
+entropy_workers = 4
+graph_packet_capacity = 2

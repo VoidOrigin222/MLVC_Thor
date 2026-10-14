@@ -16,12 +16,11 @@ struct EncodeIndexAclResult {
 
 bool EncodeIndexAclAvailable();
 
-EncodeIndexAclResult BuildIndexEncodeAcl(const void* symbols, DataType symbol_dtype,
-                                         const void* scales, DataType scale_dtype,
-                                         const int64_t* shape, std::size_t rank, std::size_t count,
-                                         float force_zero_thres, int16_t* combined,
-                                         uint8_t* keep_mask, void* stream = nullptr,
-                                         Profiler* profiler = nullptr);
+EncodeIndexAclResult BuildIndexEncodeAcl(
+    const void* symbols, DataType symbol_dtype, const void* scales,
+    DataType scale_dtype, const int64_t* shape, std::size_t rank,
+    std::size_t count, float force_zero_thres, int16_t* combined,
+    uint8_t* keep_mask, void* stream = nullptr, Profiler* profiler = nullptr);
 
 }  // namespace mlvc
 

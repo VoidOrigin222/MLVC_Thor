@@ -20,7 +20,8 @@ class EntropyWorker final : public TaskExecutor {
   EntropyWorker(const EntropyWorker&) = delete;
   EntropyWorker& operator=(const EntropyWorker&) = delete;
 
-  std::future<std::vector<uint8_t>> Submit(std::function<std::vector<uint8_t>()> task);
+  std::future<std::vector<uint8_t>> Submit(
+      std::function<std::vector<uint8_t>()> task);
   std::future<void> SubmitVoid(std::function<void()> task);
   std::future<void> SubmitTask(std::unique_ptr<Task> task) override;
 

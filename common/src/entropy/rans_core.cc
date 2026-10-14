@@ -48,9 +48,12 @@ std::shared_ptr<CdfGroup> MakeCdfGroup(const std::vector<int32_t>& cdfs,
   const int64_t rows = cdf_shape[0];
   const int64_t cols = cdf_shape[1];
   Check(rows >= 0 && cols >= 0, "CDF shape must be non-negative");
-  Check(static_cast<std::size_t>(rows * cols) == cdfs.size(), "CDF data size mismatch");
-  Check(static_cast<std::size_t>(rows) == cdf_lengths.size(), "CDF length size mismatch");
-  Check(static_cast<std::size_t>(rows) == offsets.size(), "CDF offset size mismatch");
+  Check(static_cast<std::size_t>(rows * cols) == cdfs.size(),
+        "CDF data size mismatch");
+  Check(static_cast<std::size_t>(rows) == cdf_lengths.size(),
+        "CDF length size mismatch");
+  Check(static_cast<std::size_t>(rows) == offsets.size(),
+        "CDF offset size mismatch");
 
   auto group = std::make_shared<CdfGroup>();
   group->cdf_lengths = cdf_lengths;
@@ -64,8 +67,8 @@ std::shared_ptr<CdfGroup> MakeCdfGroup(const std::vector<int32_t>& cdfs,
     for (int64_t col = 0; col < cols - 1; ++col) {
       const int32_t start = group->cdfs[row][col];
       const int32_t range = group->cdfs[row][col + 1] - group->cdfs[row][col];
-      group->symbols[row][col] =
-          RansSymbol{static_cast<uint16_t>(start), static_cast<uint16_t>(range)};
+      group->symbols[row][col] = RansSymbol{static_cast<uint16_t>(start),
+                                            static_cast<uint16_t>(range)};
     }
   }
   return group;
@@ -76,7 +79,9 @@ int RansEncoderCore::AddCdf(std::shared_ptr<CdfGroup> group) {
   return static_cast<int>(cdf_groups_.size()) - 1;
 }
 
-void RansEncoderCore::ReservePending(std::size_t capacity) { pending_.reserve(capacity); }
+void RansEncoderCore::ReservePending(std::size_t capacity) {
+  pending_.reserve(capacity);
+}
 
 void RansEncoderCore::ReserveOutputBytes(std::size_t capacity) {
   output_scratch_.reserve(capacity);
@@ -88,7 +93,8 @@ void RansEncoderCore::Reset() {
   stream_.clear();
 }
 
-void RansEncoderCore::EncodeY(std::vector<int16_t> symbols, int cdf_group_index) {
+void RansEncoderCore::EncodeY(std::vector<int16_t> symbols,
+                              int cdf_group_index) {
   const std::size_t symbol_count = symbols.size();
   pending_.push_back(PendingTask{PendingTask::Type::kY,
                                  std::move(symbols),
@@ -102,10 +108,12 @@ void RansEncoderCore::EncodeY(std::vector<int16_t> symbols, int cdf_group_index)
                                  0});
 }
 
-void RansEncoderCore::EncodeY(const std::vector<int16_t>* symbols, std::size_t begin,
-                              std::size_t count, int cdf_group_index) {
+void RansEncoderCore::EncodeY(const std::vector<int16_t>* symbols,
+                              std::size_t begin, std::size_t count,
+                              int cdf_group_index) {
   Check(symbols != nullptr, "EncodeY shared symbols must not be null");
-  Check(begin <= symbols->size() && count <= symbols->size() - begin, "EncodeY symbol range");
+  Check(begin <= symbols->size() && count <= symbols->size() - begin,
+        "EncodeY symbol range");
   PendingTask task;
   task.type = PendingTask::Type::kY;
   task.borrowed_symbols_y = symbols;
@@ -115,8 +123,8 @@ void RansEncoderCore::EncodeY(const std::vector<int16_t>* symbols, std::size_t b
   pending_.push_back(std::move(task));
 }
 
-void RansEncoderCore::EncodeZ(std::vector<int8_t> symbols, int cdf_group_index, int start_offset,
-                              int per_channel_size) {
+void RansEncoderCore::EncodeZ(std::vector<int8_t> symbols, int cdf_group_index,
+                              int start_offset, int per_channel_size) {
   const std::size_t symbol_count = symbols.size();
   PendingTask task;
   task.type = PendingTask::Type::kZ;
@@ -128,11 +136,13 @@ void RansEncoderCore::EncodeZ(std::vector<int8_t> symbols, int cdf_group_index, 
   pending_.push_back(std::move(task));
 }
 
-void RansEncoderCore::EncodeZ(const std::vector<int8_t>* symbols, std::size_t begin,
-                              std::size_t count, int cdf_group_index, int start_offset,
+void RansEncoderCore::EncodeZ(const std::vector<int8_t>* symbols,
+                              std::size_t begin, std::size_t count,
+                              int cdf_group_index, int start_offset,
                               int per_channel_size) {
   Check(symbols != nullptr, "EncodeZ shared symbols must not be null");
-  Check(begin <= symbols->size() && count <= symbols->size() - begin, "EncodeZ symbol range");
+  Check(begin <= symbols->size() && count <= symbols->size() - begin,
+        "EncodeZ symbol range");
   PendingTask task;
   task.type = PendingTask::Type::kZ;
   task.borrowed_symbols_z = symbols;
@@ -148,7 +158,8 @@ std::size_t RansEncoderCore::SymbolCount(const PendingTask& task) {
   if (task.symbol_count != 0) {
     return task.symbol_count;
   }
-  return task.type == PendingTask::Type::kY ? task.symbols_y.size() : task.symbols_z.size();
+  return task.type == PendingTask::Type::kY ? task.symbols_y.size()
+                                            : task.symbols_z.size();
 }
 
 int16_t RansEncoderCore::YSymbolAt(const PendingTask& task, std::size_t index) {
@@ -165,8 +176,9 @@ int8_t RansEncoderCore::ZSymbolAt(const PendingTask& task, std::size_t index) {
   return task.symbols_z.at(task.symbol_begin + index);
 }
 
-void RansEncoderCore::EncodeOneSymbol(uint8_t*& ptr, RansState& state, int32_t symbol,
-                                      int32_t cdf_size, int32_t offset,
+void RansEncoderCore::EncodeOneSymbol(uint8_t*& ptr, RansState& state,
+                                      int32_t symbol, int32_t cdf_size,
+                                      int32_t offset,
                                       const std::vector<RansSymbol>& symbols) {
   const int32_t max_value = cdf_size - 2;
   int32_t value = symbol - offset;
@@ -196,7 +208,8 @@ void RansEncoderCore::EncodeOneSymbol(uint8_t*& ptr, RansState& state, int32_t s
     bypass_bins.at(bypass_bin_count++) = static_cast<uint16_t>(remaining);
 
     for (int32_t i = 0; i < bypass_count; ++i) {
-      const int32_t bin = (raw_value >> (i * kBypassPrecision)) & kMaxBypassValue;
+      const int32_t bin =
+          (raw_value >> (i * kBypassPrecision)) & kMaxBypassValue;
       bypass_bins.at(bypass_bin_count++) = static_cast<uint16_t>(bin);
     }
 
@@ -207,19 +220,22 @@ void RansEncoderCore::EncodeOneSymbol(uint8_t*& ptr, RansState& state, int32_t s
   RansEncPut(state, ptr, symbols[value].start, symbols[value].range);
 }
 
-void RansEncoderCore::EncodeYInternal(uint8_t*& ptr, RansState& state, const PendingTask& task) {
+void RansEncoderCore::EncodeYInternal(uint8_t*& ptr, RansState& state,
+                                      const PendingTask& task) {
   MLVC_PROFILE_RANGE_FUNCTION();
   const CdfGroup& group = *cdf_groups_.at(task.cdf_group_index);
   for (int i = static_cast<int>(SymbolCount(task)) - 1; i >= 0; --i) {
-    const int32_t combined_symbol = YSymbolAt(task, static_cast<std::size_t>(i));
+    const int32_t combined_symbol =
+        YSymbolAt(task, static_cast<std::size_t>(i));
     const int32_t cdf_index = combined_symbol & 0xff;
     const int32_t symbol = combined_symbol >> 8;
-    EncodeOneSymbol(ptr, state, symbol, group.cdf_lengths[cdf_index], group.offsets[cdf_index],
-                    group.symbols[cdf_index]);
+    EncodeOneSymbol(ptr, state, symbol, group.cdf_lengths[cdf_index],
+                    group.offsets[cdf_index], group.symbols[cdf_index]);
   }
 }
 
-void RansEncoderCore::EncodeZInternal(uint8_t*& ptr, RansState& state, const PendingTask& task) {
+void RansEncoderCore::EncodeZInternal(uint8_t*& ptr, RansState& state,
+                                      const PendingTask& task) {
   MLVC_PROFILE_RANGE_FUNCTION();
   const CdfGroup& group = *cdf_groups_.at(task.cdf_group_index);
   for (int i = static_cast<int>(SymbolCount(task)) - 1; i >= 0; --i) {
@@ -245,7 +261,8 @@ void RansEncoderCore::Flush() {
     return;
   }
 
-  const std::size_t output_capacity = static_cast<std::size_t>(total_symbol_size) * 8 + 1024;
+  const std::size_t output_capacity =
+      static_cast<std::size_t>(total_symbol_size) * 8 + 1024;
   output_scratch_.resize(output_capacity);
   uint8_t* ptr_end = output_scratch_.data() + output_scratch_.size();
   uint8_t* ptr = ptr_end;
@@ -267,7 +284,9 @@ int RansDecoderCore::AddCdf(std::shared_ptr<CdfGroup> group) {
   return static_cast<int>(cdf_groups_.size()) - 1;
 }
 
-void RansDecoderCore::ReserveStream(std::size_t capacity) { stream_.reserve(capacity); }
+void RansDecoderCore::ReserveStream(std::size_t capacity) {
+  stream_.reserve(capacity);
+}
 
 void RansDecoderCore::SetStream(std::vector<uint8_t> stream) {
   stream_ = std::move(stream);
@@ -280,8 +299,8 @@ void RansDecoderCore::SetStreamView(const std::vector<uint8_t>& stream) {
   RansDecInit(state_, ptr_);
 }
 
-int8_t RansDecoderCore::DecodeOneSymbol(const std::vector<int32_t>& cdf, int32_t cdf_size,
-                                        int32_t offset) {
+int8_t RansDecoderCore::DecodeOneSymbol(const std::vector<int32_t>& cdf,
+                                        int32_t cdf_size, int32_t offset) {
   const int32_t max_value = cdf_size - 2;
   const int32_t cum_freq = static_cast<int32_t>(RansDecGet(state_));
 
@@ -317,48 +336,59 @@ int8_t RansDecoderCore::DecodeOneSymbol(const std::vector<int32_t>& cdf, int32_t
   return static_cast<int8_t>(value + offset);
 }
 
-std::vector<int8_t> RansDecoderCore::DecodeY(const std::vector<uint8_t>& indexes,
-                                             int cdf_group_index) {
+std::vector<int8_t> RansDecoderCore::DecodeY(
+    const std::vector<uint8_t>& indexes, int cdf_group_index) {
   std::vector<int8_t> decoded(indexes.size());
   DecodeYInto(indexes, 0, indexes.size(), cdf_group_index, &decoded, 0);
   return decoded;
 }
 
-void RansDecoderCore::DecodeYInto(const std::vector<uint8_t>& indexes, std::size_t begin,
-                                  std::size_t count, int cdf_group_index,
-                                  std::vector<int8_t>* output, std::size_t output_begin) {
+void RansDecoderCore::DecodeYInto(const std::vector<uint8_t>& indexes,
+                                  std::size_t begin, std::size_t count,
+                                  int cdf_group_index,
+                                  std::vector<int8_t>* output,
+                                  std::size_t output_begin) {
   Check(output != nullptr, "DecodeYInto output must not be null");
-  Check(begin <= indexes.size() && count <= indexes.size() - begin, "DecodeYInto input range");
-  Check(output_begin <= output->size() && count <= output->size() - output_begin,
-        "DecodeYInto output range");
+  Check(begin <= indexes.size() && count <= indexes.size() - begin,
+        "DecodeYInto input range");
+  Check(
+      output_begin <= output->size() && count <= output->size() - output_begin,
+      "DecodeYInto output range");
   const CdfGroup& group = *cdf_groups_.at(cdf_group_index);
   for (std::size_t i = 0; i < count; ++i) {
     const int32_t cdf_index = indexes.at(begin + i);
-    (*output)[output_begin + i] = DecodeOneSymbol(
-        group.cdfs[cdf_index], group.cdf_lengths[cdf_index], group.offsets[cdf_index]);
+    (*output)[output_begin + i] =
+        DecodeOneSymbol(group.cdfs[cdf_index], group.cdf_lengths[cdf_index],
+                        group.offsets[cdf_index]);
   }
 }
 
-std::vector<int8_t> RansDecoderCore::DecodeZ(int total_size, int cdf_group_index, int start_offset,
+std::vector<int8_t> RansDecoderCore::DecodeZ(int total_size,
+                                             int cdf_group_index,
+                                             int start_offset,
                                              int per_channel_size) {
   std::vector<int8_t> decoded(static_cast<std::size_t>(total_size));
-  DecodeZInto(total_size, cdf_group_index, start_offset, per_channel_size, &decoded, 0);
+  DecodeZInto(total_size, cdf_group_index, start_offset, per_channel_size,
+              &decoded, 0);
   return decoded;
 }
 
-void RansDecoderCore::DecodeZInto(int total_size, int cdf_group_index, int start_offset,
-                                  int per_channel_size, std::vector<int8_t>* output,
+void RansDecoderCore::DecodeZInto(int total_size, int cdf_group_index,
+                                  int start_offset, int per_channel_size,
+                                  std::vector<int8_t>* output,
                                   std::size_t output_begin) {
   Check(output != nullptr, "DecodeZInto output must not be null");
   Check(total_size >= 0, "DecodeZInto total_size must be non-negative");
   const std::size_t count = static_cast<std::size_t>(total_size);
-  Check(output_begin <= output->size() && count <= output->size() - output_begin,
-        "DecodeZInto output range");
+  Check(
+      output_begin <= output->size() && count <= output->size() - output_begin,
+      "DecodeZInto output range");
   const CdfGroup& group = *cdf_groups_.at(cdf_group_index);
   for (int i = 0; i < total_size; ++i) {
     const int32_t cdf_index = i / per_channel_size + start_offset;
-    (*output)[output_begin + static_cast<std::size_t>(i)] = DecodeOneSymbol(
-        group.cdfs[cdf_index], group.cdf_lengths[cdf_index], group.offsets[cdf_index]);
+    (*output)[output_begin + static_cast<std::size_t>(i)] =
+        DecodeOneSymbol(group.cdfs[cdf_index], group.cdf_lengths[cdf_index],
+                        group.offsets[cdf_index]);
   }
 }
 
