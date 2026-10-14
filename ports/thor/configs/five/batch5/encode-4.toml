@@ -14,6 +14,7 @@ motion_skip_loop_filter = true
 fps = 13
 target_fps = 13
 input_device_resident = true
+video_decode_backend = "nvdec"
 motion_decode_threads = 4
 device = 0
 input_rtsp = "rtsp://192.168.5.3:8554/input4"

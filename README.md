@@ -52,6 +52,8 @@ bash scripts/run_five.sh encode contexts
 详见 [五路验证记录](ports/thor/FIVE_STREAM_VALIDATION.md)、
 [NVDEC 验证](ports/thor/NVDEC_VALIDATION.md) 和
 [性能优化记录](ports/thor/OPTIMIZATION.md)。
+五路测试的环境准备、输入素材和计时口径见
+[基准复现说明](ports/thor/BENCHMARKING.md)。
 
 目录 `common/`、`mlvc/` 和 `application/` 为共享编解码与传输代码，`ports/thor/`
 为 TensorRT/CUDA、硬件视频、五路调度、测试和部署工具。

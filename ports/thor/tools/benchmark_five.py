@@ -11,6 +11,7 @@ from pathlib import Path
 ENCODER = "xidian@192.168.5.16"
 DECODER = "xidian@192.168.5.17"
 ROOT = "/home/xidian/workspace/MLVC_Thor"
+RTSP_BASE = "rtsp://192.168.5.3:18554"
 
 
 def remote(host, script, timeout=150):
@@ -39,7 +40,7 @@ items=[]
 if {start!r}:
  time.sleep(.5)
  for lane in range(5):
-  cmd=['ffmpeg','-nostdin','-hide_banner','-loglevel','warning','-re','-ss',str(lane*2),'-i','data/video/five-13fps-120s.mp4','-an','-c:v','copy','-rtsp_transport','tcp','-f','rtsp','rtsp://192.168.5.3:18554/five-in'+str(lane)]
+  cmd=['ffmpeg','-nostdin','-hide_banner','-loglevel','warning','-re','-ss',str(lane*2),'-i','data/video/five-13fps-120s.mp4','-an','-c:v','copy','-rtsp_transport','tcp','-f','rtsp',{RTSP_BASE!r}+'/five-in'+str(lane)]
   p=subprocess.Popen(cmd,stdout=open('logs/{label}-source-'+str(lane)+'.log','w'),stderr=subprocess.STDOUT,start_new_session=True)
   items.append({{'pid':p.pid,'cmd':cmd}})
 pidfile.write_text(json.dumps(items))
@@ -53,22 +54,34 @@ import os,re,subprocess,json
 from pathlib import Path
 os.chdir({ROOT!r})
 label={label!r}; scheme={scheme!r}; operation={operation!r}
-base=Path('configs/style-final-rtp.toml' if operation=='encode' else 'configs/style-final-dual-decode.toml').read_text()
+config_mode='contexts' if scheme=='processes' else scheme
+tool_root=Path('src/MLVC/ports/thor/tools')
+if not tool_root.exists():tool_root=Path('tools')
 configs=[]
 for lane in range(5):
+ template=Path('configs/five')/config_mode/(operation+'-'+str(lane)+'.toml')
+ if not template.exists():
+  template=Path('src/MLVC/ports/thor/configs/five')/config_mode/template.name
+ base=template.read_text()
  s=re.sub(r'(?m)^frame_num\\s*=.*$', 'frame_num = {frames}',base)
- s=s.replace('39451',str(39480+2*lane))
  s=re.sub(r'(?m)^manifest\\s*=.*$', 'manifest = "models/manifest_thor_batch5.json"' if scheme=='batch5' else 'manifest = "models/manifest_thor.json"', s)
  s=re.sub(r'(?m)^profile_output\\s*=.*\\n','',s)
  extra='profile_output = "logs/'+label+'-'+operation+'-lane'+str(lane)+'-trace.json"\\n'
  if operation=='encode':
-  s=re.sub(r'(?m)^input_video\\s*=.*$', 'input_rtsp = "rtsp://192.168.5.3:18554/five-in'+str(lane)+'"',s)
-  s=s.replace('fps = 30','fps = {target_fps}').replace('target_fps = 0','target_fps = {target_fps}')
+  s=re.sub(r'(?m)^input_rtsp\\s*=.*$', 'input_rtsp = "{RTSP_BASE}/five-in'+str(lane)+'"',s)
+  s=re.sub(r'(?m)^output_transport_host\\s*=.*$', 'output_transport_host = "{DECODER.split('@')[-1]}"',s)
+  s=re.sub(r'(?m)^(fps|target_fps)\\s*=.*$', lambda m:m.group(1)+' = {target_fps}',s)
+  s=re.sub(r'(?m)^profile_warmup_frames\\s*=.*\\n','',s)
+  extra+='profile_warmup_frames = 96\\n'
  else:
-  s=s.replace('output_transport_mode = "none"','output_transport_mode = "rtsp"')
-  s=re.sub(r'(?m)^output_transport_rtsp_url\\s*=.*$', 'output_transport_rtsp_url = "rtsp://192.168.5.3:18554/five-out'+str(lane)+'"', s)
-  extra+='latency_probe_host = "192.168.5.16"\\nlatency_probe_port = '+str(39500+lane)+'\\n'
-  extra+='input_rtp_queue_capacity = 256\\ninput_rtp_queue_bytes = 67108864\\ninput_rtp_overflow_policy = "fail"\\ninput_rtp_pending_frames = 256\\ninput_rtp_reorder_wait_ms = 500\\ninput_rtp_eos_wait_ms = 5000\\ninput_rtp_loss_policy = "fail"\\n'
+  s=re.sub(r'(?m)^output_transport_rtsp_url\\s*=.*$', 'output_transport_rtsp_url = "{RTSP_BASE}/five-out'+str(lane)+'"', s)
+  extra+='latency_probe_host = "{ENCODER.split('@')[-1]}"\\nlatency_probe_port = '+str(39500+lane)+'\\n'
+  receive_policy={{'input_rtp_queue_capacity':256,'input_rtp_queue_bytes':67108864,
+   'input_rtp_overflow_policy':'fail','input_rtp_pending_frames':256,
+   'input_rtp_reorder_wait_ms':500,'input_rtp_eos_wait_ms':5000,
+   'input_rtp_loss_policy':'fail'}}
+  for key,value in receive_policy.items():
+   s=re.sub(r'(?m)^'+re.escape(key)+r'\\s*=.*$',key+' = '+json.dumps(value),s)
   s=re.sub(r'(?m)^entropy_workers\\s*=.*$', 'entropy_workers = {entropy_workers}',s)
  s=s.replace('[pipeline]',extra+'[pipeline]')
  path='configs/'+label+'-'+operation+'-lane'+str(lane)+'.toml'
@@ -83,10 +96,10 @@ procs=[]
 def launch(cmd,log):
  p=subprocess.Popen(cmd,stdout=open(log,'w'),stderr=subprocess.STDOUT,env=env,start_new_session=True)
  procs.append({{'pid':p.pid,'cmd':cmd}}); return p
-launch(['python3','tools/five_telemetry.py','logs/'+label+'-'+operation+'-telemetry.jsonl'],'logs/'+label+'-'+operation+'-telemetry.log')
+launch(['python3',str(tool_root/'five_telemetry.py'),'logs/'+label+'-'+operation+'-telemetry.jsonl'],'logs/'+label+'-'+operation+'-telemetry.log')
 if operation=='encode':
  for lane in range(5):
-  launch(['python3','tools/collect_latency.py','--port',str(39500+lane),'--frames',{str(frames)!r},'--output','logs/'+label+'-lane'+str(lane)+'-acks.json'],'logs/'+label+'-lane'+str(lane)+'-collector.log')
+  launch(['python3',str(tool_root/'collect_latency.py'),'--port',str(39500+lane),'--frames',{str(frames)!r},'--output','logs/'+label+'-lane'+str(lane)+'-acks.json'],'logs/'+label+'-lane'+str(lane)+'-collector.log')
 codec=[]
 if scheme=='processes':
  for lane,path in enumerate(configs):

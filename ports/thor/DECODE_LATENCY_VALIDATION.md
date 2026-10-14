@@ -77,7 +77,8 @@ python ports/thor/tools/benchmark_five.py --scheme contexts --frames 780 `
   --label five-contexts-12-w1 --output five-contexts-12-w1.json
 ```
 
-基准工具仍依赖本地已保存的 style-final 配置、输入视频和遥测工具；它不会
-自动启动 MediaMTX。原始结果、逐帧回执、trace 及摘要保存在板卡 logs 和 Windows
+基准工具从公开的 `configs/five/` 模板生成各路配置，并使用源码内的遥测和
+回执工具，不依赖 style-final 临时配置。输入素材和独立 MediaMTX 仍需准备，
+完整步骤见 [基准复现](BENCHMARKING.md)。原始结果、逐帧回执、trace 及摘要保存在板卡 logs 和 Windows
 交付目录 validation。延迟从 NVDEC 读帧就绪到语义解码回执，不含源端曝光、
 上游 RTSP 缓存、后续 NVENC 发布完成及浏览器显示。
