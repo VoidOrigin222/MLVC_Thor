@@ -8,6 +8,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
 
 #include "mlvc/application/cli/encoder_app.h"
 #include "mlvc/application/stream/mlvc_stream.h"
@@ -17,7 +18,11 @@
 #include "mlvc/core/status.h"
 #include "mlvc/io/video_io.h"
 #include "mlvc/runtime/model_manifest.h"
-#include <toml++/toml.h>
+#include "toml++/toml.h"
+
+#ifdef MLVC_TENSORRT
+#include "mlvc/io/rtsp_input.h"
+#endif
 
 namespace {
 
@@ -38,8 +43,9 @@ void ValidateConfigKeys(const toml::table& config) {
   CheckKnownKeys(config,
                  {"mode",
                   "input_rtsp",
-                  "input",
                   "output",
+#ifndef MLVC_TENSORRT
+                  "input",
                   "input_frame_dir",
                   "input_video",
                   "input_camera_device",
@@ -54,12 +60,15 @@ void ValidateConfigKeys(const toml::table& config) {
                   "camera_rtsp_gop",
                   "camera_rtsp_queue_capacity",
                   "camera_preload_frames",
+#endif
                   "execution_profile",
                   "manifest",
                   "qp",
                   "gop",
                   "reset_interval",
                   "device",
+                  "ui_stats_host",
+                  "ui_stats_port",
                   "frame_num",
                   "fps",
                   "target_fps",
@@ -78,7 +87,9 @@ void ValidateConfigKeys(const toml::table& config) {
                   "motion_x264_threads",
 #endif
                   "motion_skip_loop_filter",
+#ifndef MLVC_TENSORRT
                   "motion_camera_nv12",
+#endif
                   "ltr_start_idx",
                   "ltr_period",
                   "ltr_qp_shift",
@@ -103,7 +114,14 @@ void ValidateConfigKeys(const toml::table& config) {
   if (const toml::node* model = config["model"].node(); model != nullptr) {
     mlvc::Check(model->is_table(), "config section must be a table: model");
     CheckKnownKeys(*model->as_table(),
-                   {"manifest", "input_frame_dir", "input_video"}, "model");
+                   {
+                       "manifest",
+#ifndef MLVC_TENSORRT
+                       "input_frame_dir",
+                       "input_video",
+#endif
+                   },
+                   "model");
   }
   if (const toml::node* pipeline = config["pipeline"].node();
       pipeline != nullptr) {
@@ -207,8 +225,14 @@ EncoderApplicationConfig LoadEncoderConfig(
   ValidateConfigKeys(config);
   const std::string mode = GetString(config, "mode", "encode");
   Check(mode == "encode", "encoder config must use mode = \"encode\"");
-  const std::string input = GetString(config, "input");
   const std::string output = GetString(config, "output");
+#ifdef MLVC_TENSORRT
+  const std::string rtsp_input = GetString(config, "input_rtsp");
+  Check(
+      mlvc::io::IsRtspInputUrl(rtsp_input),
+      "Thor encoder requires input_rtsp with a valid rtsp:// or rtsps:// URL");
+#else
+  const std::string input = GetString(config, "input");
   const std::string input_frame_dir =
       GetString(config, "input_frame_dir",
                 GetNestedString(config, "model", "input_frame_dir"));
@@ -228,6 +252,7 @@ EncoderApplicationConfig LoadEncoderConfig(
   const std::string input_video =
       rtsp_input.empty() ? configured_video : rtsp_input;
   const std::string camera_device = GetString(config, "input_camera_device");
+#endif
   const std::string execution_profile =
       GetString(config, "execution_profile",
                 std::string(mlvc::codec::kCodecExecutionProfile));
@@ -251,7 +276,9 @@ EncoderApplicationConfig LoadEncoderConfig(
   options.device = GetInt(config, "device", 0);
   Check(options.device >= 0, "device must be non-negative");
   options.frame_num = GetInt(config, "frame_num", -1);
+#ifndef MLVC_TENSORRT
   options.input_synthetic = GetBool(config, "input_synthetic", false);
+#endif
   Check(options.frame_num == -1 || options.frame_num > 0,
         "frame_num must be -1 or a positive value");
   options.fps = GetDouble(config, "fps", 30.0);
@@ -261,8 +288,10 @@ EncoderApplicationConfig LoadEncoderConfig(
       config, "video_decode_backend", mlvc::io::kDefaultVideoDecodeBackend);
 #ifdef MLVC_TENSORRT
   Check(options.video_decode_backend == "nvdec",
-        "Thor video/RTSP input requires NVDEC; software decode fallback was "
+        "Thor RTSP input requires NVDEC; software decode fallback was "
         "removed");
+  Check(options.input_device_resident,
+        "Thor RTSP input requires input_device_resident = true");
 #else
   Check(options.video_decode_backend == "opencv",
         "NVDEC requires the Thor backend");
@@ -280,6 +309,12 @@ EncoderApplicationConfig LoadEncoderConfig(
       std::isfinite(options.fps) && options.fps >= 0.1 && options.fps <= 1000.0,
       "fps must be finite and in [0.1, 1000]");
   options.profile_warmup_frames = GetInt(config, "profile_warmup_frames", 0);
+  options.ui_stats_host = GetString(config, "ui_stats_host");
+  options.ui_stats_port = GetInt(config, "ui_stats_port", 0);
+  Check(options.ui_stats_port >= 0 && options.ui_stats_port <= 65535,
+        "ui_stats_port must be in [0, 65535]");
+  Check(options.ui_stats_port == 0 || !options.ui_stats_host.empty(),
+        "ui_stats_host is required when ui_stats_port is set");
   Check(options.profile_warmup_frames >= 0,
         "profile_warmup_frames must be non-negative");
   Check(options.frame_num <= 0 ||
@@ -304,6 +339,7 @@ EncoderApplicationConfig LoadEncoderConfig(
 #endif
   options.motion_skip_loop_filter =
       GetBool(config, "motion_skip_loop_filter", false);
+#ifndef MLVC_TENSORRT
   options.motion_camera_nv12 = GetBool(config, "motion_camera_nv12", false);
   Check(!options.motion_camera_nv12 ||
             (options.translation_warp && options.motion_shifts_file.empty() &&
@@ -311,6 +347,7 @@ EncoderApplicationConfig LoadEncoderConfig(
         "camera motion NV12 requires online translation warp with prefetch");
   Check(!options.motion_camera_nv12 || !camera_device.empty(),
         "motion_camera_nv12 requires input_camera_device");
+#endif
   Check(!options.motion_skip_loop_filter ||
             (options.translation_warp && options.motion_shifts_file.empty()),
         "motion_skip_loop_filter requires online translation warp");
@@ -361,6 +398,9 @@ EncoderApplicationConfig LoadEncoderConfig(
   Check(options.gop > 0, "gop must be positive");
   Check(options.reset_interval > 0, "reset_interval must be positive");
 
+#ifdef MLVC_TENSORRT
+  options.input_video_path = rtsp_input;
+#else
   Check(input_video.empty() || (input_frame_dir.empty() && input.empty()),
         "input_video cannot be combined with input or input_frame_dir");
   const std::string frame_input =
@@ -433,6 +473,7 @@ EncoderApplicationConfig LoadEncoderConfig(
   } else {
     options.input_frame_dir = frame_input;
   }
+#endif
   options.output_bitstream_path = output;
   options.ltr_start_idx = GetInt(config, "ltr_start_idx", 8);
   options.ltr_period = GetInt(config, "ltr_period", 64);

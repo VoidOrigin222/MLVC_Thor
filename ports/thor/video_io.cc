@@ -9,12 +9,6 @@ extern "C" {
 #include <libavutil/rational.h>
 }
 
-#include <fcntl.h>
-#include <linux/videodev2.h>
-#include <sys/ioctl.h>
-#include <sys/mman.h>
-#include <unistd.h>
-
 #include <algorithm>
 #include <cctype>
 #include <chrono>
@@ -53,12 +47,9 @@ extern "C" {
 #include "nvdec_reader.h"
 #include <opencv2/core.hpp>
 #include <opencv2/imgcodecs.hpp>
-#include <opencv2/imgproc.hpp>
-#include <opencv2/videoio.hpp>
 
 namespace mlvc::io {
 namespace codec = mlvc::codec;
-void BgrToFp16Yuv444Cuda(const void*, int, int, int, int, void*, cudaStream_t);
 namespace {
 constexpr float kKr = 0.2126F;
 constexpr float kKg = 0.7152F;
@@ -338,12 +329,10 @@ bool IsCameraDevicePath(const std::filesystem::path& path) {
 
 class VideoFrameReader::Impl {
  public:
-  cv::VideoCapture capture_;
   std::unique_ptr<NvdecReader> nvdec_;
   std::mutex mutex_;
   std::condition_variable available_, space_;
   struct CapturedFrame {
-    cv::Mat pixels;
     std::shared_ptr<NvdecFrame> gpu;
     uint64_t ready_ns;
   };
@@ -356,56 +345,31 @@ class VideoFrameReader::Impl {
   double source_fps_ = 30, target_fps_ = 0;
   uint64_t read_frames_ = 0, kept_frames_ = 0;
   std::optional<FrameRateSampler> sampler_;
-  DeviceBuffer bgr_device_, frame_device_, camera_nv12_device_;
+  DeviceBuffer frame_device_;
   bool device_resident_ = false;
   uint64_t fp16_d2h_bytes_ = 0;
   std::unordered_map<codec::TensorData*, std::shared_ptr<DeviceBuffer>>
       input_slots_;
-  std::optional<CameraCaptureOptions> camera_options_;
-  aclrtContext camera_context_ = nullptr;
-  std::unique_ptr<DvppH264Encoder> camera_encoder_;
-  std::unique_ptr<RtspVideoPublisher> camera_publisher_;
-  std::vector<uint8_t> camera_nv12_;
-  uint64_t camera_frame_index_ = 0;
   cudaStream_t preprocess_stream_ = nullptr;
   thor::TimingEvents timing_events_;
   explicit Impl(const std::filesystem::path& input,
-                const std::optional<CameraCaptureOptions>& camera,
-                aclrtContext context = nullptr,
-                const std::string& decoder_backend = "nvdec") {
-    camera_context_ = context;
-    cv::setNumThreads(4);
+                const std::string& decoder_backend) {
     live_ = input.string().rfind("rtsp://", 0) == 0 ||
             input.string().rfind("rtsps://", 0) == 0;
-    if (camera) {
-      camera_options_ = camera;
-      Check(camera->preload_frames == 0,
-            "Thor camera preload benchmark is unavailable; use "
-            "camera_preload_frames=0");
-      Check(capture_.open(input.string(), cv::CAP_V4L2),
-            "Cannot open V4L2 camera");
-      capture_.set(cv::CAP_PROP_FRAME_WIDTH, camera->width);
-      capture_.set(cv::CAP_PROP_FRAME_HEIGHT, camera->height);
-      capture_.set(cv::CAP_PROP_FPS, camera->fps);
-      capture_.set(cv::CAP_PROP_FOURCC,
-                   cv::VideoWriter::fourcc('M', 'J', 'P', 'G'));
-    } else {
-      Check(decoder_backend == "nvdec", "Thor video/RTSP input requires NVDEC");
-      nvdec_ = std::make_unique<NvdecReader>(input);
-    }
+    Check(decoder_backend == "nvdec", "Thor RTSP input requires NVDEC");
+    nvdec_ = std::make_unique<NvdecReader>(input);
   }
   void Start() {
     worker_ = std::thread([this] {
       try {
         for (;;) {
-          cv::Mat frame;
           std::shared_ptr<NvdecFrame> gpu;
           {
             std::lock_guard<std::mutex> lock(mutex_);
             if (stopped_) break;
           }
           const auto grab_begin = thor::TimingClock::now();
-          const bool grabbed = nvdec_ ? nvdec_->Read(&gpu) : capture_.grab();
+          const bool grabbed = nvdec_->Read(&gpu);
           const auto grab_end = thor::TimingClock::now();
           if (!grabbed) {
             Check(!live_, "RTSP input disconnected or read timed out");
@@ -413,17 +377,8 @@ class VideoFrameReader::Impl {
           }
           const uint64_t source_index = read_frames_++;
           if (sampler_ && !sampler_->Keep(source_index)) continue;
-          thor::RecordTiming(
-              nvdec_ ? "input.nvdec_decode_wall" : "input.grab_decode_wall",
-              thor::Milliseconds(grab_begin, grab_end));
-          if (!nvdec_) {
-            const auto retrieve_begin = thor::TimingClock::now();
-            Check(capture_.retrieve(frame) && !frame.empty(),
-                  "Cannot retrieve selected video frame");
-            thor::RecordTiming(
-                "input.retrieve_bgr_wall",
-                thor::Milliseconds(retrieve_begin, thor::TimingClock::now()));
-          }
+          thor::RecordTiming("input.nvdec_decode_wall",
+                             thor::Milliseconds(grab_begin, grab_end));
           ++kept_frames_;
           const auto ready_ns = static_cast<uint64_t>(
               std::chrono::duration_cast<std::chrono::nanoseconds>(
@@ -436,8 +391,7 @@ class VideoFrameReader::Impl {
           thor::RecordTiming(
               "input.capture_queue_wait",
               thor::Milliseconds(queue_begin, thor::TimingClock::now()));
-          queue_.push_back(
-              CapturedFrame{std::move(frame), std::move(gpu), ready_ns});
+          queue_.push_back(CapturedFrame{std::move(gpu), ready_ns});
           available_.notify_one();
         }
       } catch (...) {
@@ -481,10 +435,8 @@ class VideoFrameReader::Impl {
     available_.notify_all();
     space_.notify_all();
     if (worker_.joinable()) worker_.join();
-    capture_.release();
     queue_.clear();
     nvdec_.reset();
-    if (camera_publisher_) camera_publisher_->Close();
     if (read_frames_ && !sampling_reported_) {
       sampling_reported_ = true;
       std::cout << "input_sampling source_fps=" << source_fps_
@@ -508,29 +460,16 @@ VideoFrameReader::VideoFrameReader(const std::filesystem::path& input)
     : VideoFrameReader(input, "nvdec") {}
 VideoFrameReader::VideoFrameReader(const std::filesystem::path& input,
                                    const std::string& backend)
-    : impl_(std::make_unique<Impl>(input, std::nullopt, nullptr, backend)) {
-  if (impl_->nvdec_)
-    info_ = impl_->nvdec_->info();
-  else
-    info_ = {static_cast<int>(impl_->capture_.get(cv::CAP_PROP_FRAME_WIDTH)),
-             static_cast<int>(impl_->capture_.get(cv::CAP_PROP_FRAME_HEIGHT)),
-             static_cast<int>(impl_->capture_.get(cv::CAP_PROP_FRAME_COUNT)),
-             impl_->capture_.get(cv::CAP_PROP_FPS)};
+    : impl_(std::make_unique<Impl>(input, backend)) {
+  info_ = impl_->nvdec_->info();
   if (!std::isfinite(info_.fps) || info_.fps <= 0) info_.fps = 30;
   Check(info_.width > 0 && info_.height > 0,
         "Input dimensions are unavailable");
   impl_->source_fps_ = info_.fps;
 }
-VideoFrameReader::VideoFrameReader(const std::filesystem::path& input,
-                                   const CameraCaptureOptions& camera,
-                                   aclrtContext context)
-    : impl_(std::make_unique<Impl>(input, camera, context)) {
-  double fps = impl_->capture_.get(cv::CAP_PROP_FPS);
-  if (!std::isfinite(fps) || fps <= 0) fps = camera.fps;
-  info_ = {static_cast<int>(impl_->capture_.get(cv::CAP_PROP_FRAME_WIDTH)),
-           static_cast<int>(impl_->capture_.get(cv::CAP_PROP_FRAME_HEIGHT)), 0,
-           fps};
-  impl_->source_fps_ = fps;
+VideoFrameReader::VideoFrameReader(const std::filesystem::path&,
+                                   const CameraCaptureOptions&, aclrtContext) {
+  Check(false, "Thor camera input was removed; publish the camera as RTSP");
 }
 void VideoFrameReader::SetTargetFps(double target_fps) {
   Check(!impl_->worker_.joinable() && !impl_->stopped_,
@@ -555,9 +494,9 @@ bool VideoFrameReader::ReadFrameAsTensor(const TensorSpec& spec,
                                          std::vector<uint8_t>* motion_nv12) {
   Impl::CapturedFrame captured;
   if (!impl_->Read(&captured)) return false;
-  cv::Mat& frame = captured.pixels;
-  const int width = captured.gpu ? captured.gpu->width : frame.cols;
-  const int height = captured.gpu ? captured.gpu->height : frame.rows;
+  Check(captured.gpu != nullptr, "NVDEC CUDA frame is required");
+  const int width = captured.gpu->width;
+  const int height = captured.gpu->height;
   Check(spec.dtype == DataType::kFloat16 && spec.shape.size() == 4 &&
             spec.shape[1] == 3,
         "Thor input requires NCHW FP16");
@@ -588,109 +527,29 @@ bool VideoFrameReader::ReadFrameAsTensor(const TensorSpec& spec,
     CheckAcl(cudaStreamCreateWithFlags(&impl_->preprocess_stream_,
                                        cudaStreamNonBlocking),
              "create preprocessing stream");
-  if (captured.gpu) {
-    impl_->timing_events_.Record(0, impl_->preprocess_stream_);
-    CheckAcl(
-        cudaStreamWaitEvent(impl_->preprocess_stream_, captured.gpu->ready, 0),
-        "wait for NVDEC surface");
-    impl_->timing_events_.Record(1, impl_->preprocess_stream_);
-    Cuda420ToFp16Yuv444(*captured.gpu, spec.shape[3], spec.shape[2],
-                        destination, impl_->preprocess_stream_);
-    impl_->timing_events_.Record(2, impl_->preprocess_stream_);
-    if (!impl_->device_resident_) {
-      CheckAcl(
-          cudaMemcpyAsync(tensor->bytes.data(), destination, frame_bytes,
-                          cudaMemcpyDeviceToHost, impl_->preprocess_stream_),
-          "download requested NVDEC FP16 tensor");
-      impl_->fp16_d2h_bytes_ += frame_bytes;
-    }
-    CheckAcl(cudaStreamSynchronize(impl_->preprocess_stream_),
-             "complete NVDEC preprocessing");
-    TraceNvdecInput(*captured.gpu, destination, frame_bytes,
-                    impl_->preprocess_stream_);
-    impl_->timing_events_.Sample("input.nvdec_surface_wait_stream", 0, 1);
-    impl_->timing_events_.Sample("input.nvdec_to_fp16_stream", 1, 2);
-    if (motion_nv12)
-      ConvertFp16Yuv444ToNv12(*tensor, {width, height, width, height},
-                              motion_nv12);
-    return true;
-  }
-  if (impl_->bgr_device_.bytes() !=
-      static_cast<size_t>(frame.cols) * frame.rows * 3)
-    impl_->bgr_device_.Allocate(static_cast<size_t>(frame.cols) * frame.rows *
-                                3);
-  const auto upload_begin = thor::TimingClock::now();
   impl_->timing_events_.Record(0, impl_->preprocess_stream_);
-  CheckAcl(cudaMemcpy2DAsync(
-               impl_->bgr_device_.data(), static_cast<size_t>(frame.cols) * 3,
-               frame.data, frame.step, static_cast<size_t>(frame.cols) * 3,
-               frame.rows, cudaMemcpyHostToDevice, impl_->preprocess_stream_),
-           "upload BGR input");
-  const auto upload_end = thor::TimingClock::now();
+  CheckAcl(
+      cudaStreamWaitEvent(impl_->preprocess_stream_, captured.gpu->ready, 0),
+      "wait for NVDEC surface");
   impl_->timing_events_.Record(1, impl_->preprocess_stream_);
-  BgrToFp16Yuv444Cuda(impl_->bgr_device_.data(), frame.cols, frame.rows,
-                      spec.shape[3], spec.shape[2], destination,
+  Cuda420ToFp16Yuv444(*captured.gpu, spec.shape[3], spec.shape[2], destination,
                       impl_->preprocess_stream_);
   impl_->timing_events_.Record(2, impl_->preprocess_stream_);
   if (!impl_->device_resident_) {
     CheckAcl(cudaMemcpyAsync(tensor->bytes.data(), destination, frame_bytes,
                              cudaMemcpyDeviceToHost, impl_->preprocess_stream_),
-             "download preprocessed input");
+             "download requested NVDEC FP16 tensor");
     impl_->fp16_d2h_bytes_ += frame_bytes;
   }
-  const auto sync_begin = thor::TimingClock::now();
   CheckAcl(cudaStreamSynchronize(impl_->preprocess_stream_),
-           "complete preprocessing");
-  thor::RecordTiming("input.bgr_upload_api_wall",
-                     thor::Milliseconds(upload_begin, upload_end));
-  thor::RecordTiming("input.preprocess_fence_wall",
-                     thor::Milliseconds(sync_begin, thor::TimingClock::now()));
-  impl_->timing_events_.Sample("input.bgr_upload_stream", 0, 1);
-  impl_->timing_events_.Sample("input.bgr_to_fp16_stream", 1, 2);
-  if (motion_nv12) {
-    const Nv12Layout layout{frame.cols, frame.rows, frame.cols, frame.rows};
-    ConvertFp16Yuv444ToNv12(*tensor, layout, motion_nv12);
-  }
-  if (impl_->camera_options_ && !impl_->camera_options_->rtsp_url.empty()) {
-    const auto& camera = *impl_->camera_options_;
-    if (!impl_->camera_encoder_) {
-      aclrtContext context = impl_->camera_context_;
-      DvppH264EncoderConfig config;
-      config.layout = {frame.cols, frame.rows, frame.cols, frame.rows};
-      config.fps = static_cast<uint32_t>(std::llround(info_.fps));
-      config.gop = camera.rtsp_gop;
-      config.bitrate = camera.rtsp_bitrate_bps;
-      config.zero_copy_input = impl_->device_resident_;
-      impl_->camera_encoder_ =
-          std::make_unique<DvppH264Encoder>(context, config);
-      impl_->camera_publisher_ = std::make_unique<RtspVideoPublisher>(
-          camera.rtsp_url, info_.fps, frame.cols, frame.rows, "ultrafast", 0,
-          camera.rtsp_queue_capacity, camera.rtsp_transport, true);
-    }
-    const Nv12Layout layout{frame.cols, frame.rows, frame.cols, frame.rows};
-    if (impl_->device_resident_) {
-      const auto bytes = Nv12BufferSize(layout);
-      if (impl_->camera_nv12_device_.bytes() != bytes)
-        impl_->camera_nv12_device_.Allocate(bytes);
-      Fp16Yuv444ToNv12Acl(tensor->View().data(), tensor->shape, layout,
-                          impl_->camera_nv12_device_.data(),
-                          impl_->preprocess_stream_, nullptr);
-      CheckAcl(cudaStreamSynchronize(impl_->preprocess_stream_),
-               "complete camera preview NV12");
-      impl_->camera_publisher_->WriteH264Frame(
-          impl_->camera_encoder_->EncodeDevice(
-              impl_->camera_nv12_device_.data(), bytes, nullptr,
-              impl_->camera_frame_index_++ % camera.rtsp_gop == 0));
-    } else {
-      if (!motion_nv12)
-        ConvertFp16Yuv444ToNv12(*tensor, layout, &impl_->camera_nv12_);
-      const auto& pixels = motion_nv12 ? *motion_nv12 : impl_->camera_nv12_;
-      impl_->camera_publisher_->WriteH264Frame(
-          impl_->camera_encoder_->EncodeHostNv12(
-              pixels.data(), pixels.size(),
-              impl_->camera_frame_index_++ % camera.rtsp_gop == 0));
-    }
-  }
+           "complete NVDEC preprocessing");
+  TraceNvdecInput(*captured.gpu, destination, frame_bytes,
+                  impl_->preprocess_stream_);
+  impl_->timing_events_.Sample("input.nvdec_surface_wait_stream", 0, 1);
+  impl_->timing_events_.Sample("input.nvdec_to_fp16_stream", 1, 2);
+  if (motion_nv12)
+    ConvertFp16Yuv444ToNv12(*tensor, {width, height, width, height},
+                            motion_nv12);
   return true;
 }
 DecodedVideoWriter::DecodedVideoWriter(const std::filesystem::path& output_path,

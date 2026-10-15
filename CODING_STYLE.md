@@ -26,5 +26,5 @@ python3 -m cpplint --recursive --extensions=cc,h,cu,cuh \
 
 格式、命名调整不改变算法参数。Thor 视频输入只允许 NVDEC，视频编码只使用
 NVENC，已去掉 libx264 编码及 OpenCV 视频解码回退。用于运动向量提取的
-H.264 CPU 解码保留；CPU 熵编解码也保留。相机继续使用原 V4L2 接口。
+H.264 CPU 解码保留；CPU 熵编解码也保留。Thor 生产输入仅接受 RTSP，已移除相机及离线输入入口。
 旧 Ascend 实现保留在独立的 ACL 构建目标中。

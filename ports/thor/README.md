@@ -9,78 +9,61 @@ MLVC 使用 TensorRT/CUDA 推理，运动估计使用 NVENC 单参考 H.264 代�
 
 先启动解码端，再启动编码端。MediaMTX 由使用者单独运行。
 
-解码板：
-
 ```bash
+# 解码板
 cd /home/xidian/workspace/MLVC_Thor
 bash scripts/check_runtime.sh
 bash scripts/run_decode.sh
-```
 
-编码板，三种输入任选一种：
-
-```bash
-cd /home/xidian/workspace/MLVC_Thor
-bash scripts/check_runtime.sh
-bash scripts/run_encode.sh offline
-# 或：bash scripts/run_encode.sh rtsp
-# 或：bash scripts/run_encode.sh camera
-```
-
-按 Ctrl+C 停止当前进程。脚本允许指定其他 TOML，例如：
-
-```bash
-bash scripts/run_encode.sh offline configs/my_encoder.toml
-bash scripts/run_decode.sh configs/my_decoder.toml
-```
-
-## 修改配置
-
-| 配置 | 输入字段 | 默认值 |
-|---|---|---|
-| `configs/encoder_offline.toml` | `input_video` | `data/video/614lab.mp4` |
-| `configs/encoder_rtsp.toml` | `input_rtsp` | `rtsp://192.168.5.3:8554/camera-original` |
-| `configs/encoder_camera.toml` | `input_camera_device` | `/dev/video0`，MJPG，1920×1080，30 FPS |
-| `configs/encoder_fp16.toml` | `input_frame_dir` | `data/fp16/614lab` |
-
-编码配置增加 `target_fps`，默认 30，可以改成 25，设为 0 关闭抽帧。视频文件和 RTSP 自动读取输入帧率，摄像头使用采集后协商的帧率；源未提供有效帧率时回退为 30 FPS。输出标称帧率为 `min(输入帧率, target_fps)`：60→30 每两帧保留一帧，50→30 等非整数比例按源时间均匀取帧，输入低于目标时全部保留且不补帧。抽帧发生在 BGR 转换、GPU 预处理、运动估计和语义编码之前；帧编号重新连续排列，参考状态只基于保留帧更新。`frame_num` 仍表示要编码的输出帧数。
-
-离线 MP4 配置默认 `video_decode_backend="nvdec"`：H.264/HEVC 通过 NVIDIA NVDEC 解码，CUDA NV12/P010/P016 帧直接在 GPU 上转换为模型 FP16 输入，再由 TensorRT 进行语义编码。`motion_backend="nvenc"` 使用 NVENC 编码 H.264 运动代理。语义压缩模型本身仍由 TensorRT/CUDA 执行，NVENC 不替代模型。输入 GPU 图像不经过 CPU BGR 中间帧，也不需要整帧下载再上传。
-
-Thor 已移除 OpenCV 视频解码回退，只接受 NVDEC 支持的 H.264/HEVC 视频。其他视频编码须先转码。必须有 NVIDIA 的 `libnvcuvid.so.1`，且程序链接的 FFmpeg 共享库包含 `h264_cuvid` 和 `hevc_cuvid`。RTSP 也使用 NVDEC；摄像头仍使用 V4L2。GPU 预处理保持原 BT.709 全范围 YUV444 模型输入约定，包括原 OpenCV 默认 YUV→BGR8 数值映射；使用双线性色度插值，与软件缩放器的插值、舍入不同，输入和码流不保证逐比特相同。本次不增加 HDR 色调映射。
-
-这是视频时间轴上的采样，不是对离线处理速度做休眠限速；离线处理的性能 FPS 可以高于 `target_fps`，码流标称帧率和播放时长按抽帧后的帧率计算。FP16 验证目录和合成输入维持原有帧序列，不应用此视频采样参数。
-
-只选择一个输入。`input_video` 兼容 RTSP URL，推荐用明确的 `input_rtsp` 字段。RTSP 读取采用 TCP；打开和单次读取超时为 3 秒；直播流信息探测最多 8 秒。RTSP 通过预读五个解码帧的 PTS 间隔确定输入帧率，预读帧仍参与后续处理，避免将 H.264 的场时钟误当作帧率。断流会报错退出，避免把不完整直播流当作正常文件结束；重启编码器和解码器可建立新会话。
-
-IP 更改后，需要修改编码配置的 `output_transport_host`（解码板 IP），以及 RTSP 输入/输出中的服务 IP。
-双板 RTP 端口默认 `39340`，两端必须一致；相邻 RTCP 端口也应允许通信。
-解码输出地址配置在 `decoder_rtp.toml` 的 `output_transport_rtsp_url`，默认 `rtsp://192.168.5.3:8554/ulbvc`。摄像头原图发布地址配置在 `encoder_camera.toml` 的 `camera_rtsp_url`。
-
-`frame_num=-1` 表示离线文件读到结尾或持续读取直播。离线文件以最大处理速度运行，抽帧后的标称帧率写入码流；需要实时播放的离线源，可在外部以实时速度发布为 RTSP，再使用 RTSP 输入。RTP 文件输入结束后发送现有 EOS 标记，解码端处理完剩余帧后退出。
-
-当前模型固定为 `[1,3,1088,1920]` FP16、BT.709 全范围 YUV444。1920×1080 输入在底部复制边缘补齐 8 行；没有降低分辨率。使用较小图像时复制边缘补齐；图像不能超过模型尺寸，运动代理尺寸须至少 128×128，NV12 可见尺寸须为偶数。实际保留的标称帧率写入码流，代理编码帧率取最近的整数。
-
-摄像头接口保留了 MJPG 采集、原图 RTSP 发布和 NV12 运动输入。未连接摄像头，按要求没有进行摄像头实机测试。原 Ascend 驱动和 `.ko` 不能用于 Thor；Thor 摄像头使用系统 V4L2 驱动。旧的相机预加载基准参数在 Thor 上要求为 0，非零会明确报错。
-
-## FP16 文件联调
-
-```bash
 # 编码板
-bash scripts/run_encode.sh fp16
-# 将 data/bitstreams/fp16.mlvc 复制到解码板的同一路径，然后在解码板执行：
-bash scripts/run_decode.sh configs/decoder_file.toml
+cd /home/xidian/workspace/MLVC_Thor
+bash scripts/run_encode.sh
+# 自定义配置：bash scripts/run_encode.sh configs/my_encoder.toml
 ```
 
-`decoder_file.toml` 输出 PNG。性能测试使用 `format="none"`；需要保存重建张量可用 `format="fp16"` 并设置输出目录。参考特征转换使用第三个 `MLVCReferenceFromFrame` 引擎，须与主编解码模型一起保留。
+编码仅接受 RTSP 输入。五路使用 `bash scripts/run_five.sh encode contexts`，
+对应解码使用 `bash scripts/run_five.sh decode contexts`，默认每路目标 12 FPS。
+单路 `configs/encoder_rtsp.toml` 默认目标 30 FPS。按 Ctrl+C 停止。
 
-## 编码性能配置
+## 输入和硬件视频
 
-Thor 默认 `input_device_resident=true`，视频/RTSP/摄像头 FP16 输入和编码参考状态保留在 GPU。默认 NVENC 运动代理 `motion_decode_threads=4`，同时使用四个 H.264 slice 和四个软件 slice 解码线程；单 slice 设为 1。多 slice 可能轻微改变运动决策。需要旧版 CPU 路径和运动行为时，同时设置 `input_device_resident=false`、`motion_decode_threads=1`。Thor 不再接受 `motion_backend="libx264"` 或 `motion_x264_*` 参数。
+```toml
+input_rtsp = "rtsp://192.168.5.3:8554/camera-original"
+video_decode_backend = "nvdec"
+input_device_resident = true
+motion_backend = "nvenc"
+target_fps = 30
+```
 
-运动子步骤计时、双板 FPS/延迟、回归质量和测量边界见 [OPTIMIZATION.md](OPTIMIZATION.md)。编码端和解码端同步维护；回执探针只用于基准测试。运行脚本和地址配置方法保持一致。
+只保留 `input_rtsp`。支持 `rtsp://`、`rtsps://` 和 NVDEC 支持的 H.264/HEVC 码流；
+离线视频、摄像头、FP16、合成输入及 `input`/`input_video` 别名都不再接受。
+旧参数会在加载配置时明确报错。文件或摄像头应在外部先发布为 RTSP。
+底层 NVDEC 文件读取仅保留给硬件回归测试和诊断工具，不作为生产编码入口。
+原 Ascend 构建保持原有接口。
 
-MP4 硬件输入默认启用 NVDEC；已修复模型并发下的帧拷贝顺序问题。最新逐帧一致性及性能验证见 [NVDEC_VALIDATION.md](NVDEC_VALIDATION.md)。
+处理链路为 RTSP 解封装 → NVDEC → CUDA FP16 预处理 → TensorRT 语义编码
+→ RTP → TensorRT 语义解码 → CUDA NV12 转换 → NVENC → RTSP 发布。
+NVENC 同时负责编码侧的 H.264 运动代理，不能替代语义模型。CPU 保留熵编解码、
+网络封装和运动向量提取；视频输入没有 OpenCV/V4L2 读取或软件解码回退。
+RTSP 输入要求 `input_device_resident=true`，不支持退回整帧 CPU BGR 中转路径。
+解码发布配置 `output_transport_rtsp_encoder="nvenc"`。
+
+`target_fps` 可调整，例如 30、25、12；设为 0 关闭抽帧。低于目标帧率时不补帧。
+通过预读五帧的 PTS 间隔探测真实输入帧率，预读帧继续参与处理。
+抽帧发生在 GPU 预处理、运动估计和语义编码前，保留帧重新连续编号。
+RTSP 使用 TCP，打开和单次读取超时 3 秒，流探测最多 8 秒。断流报错退出，
+不将断流当作正常结束。`frame_num=-1` 表示持续运行；正值表示完整处理指定帧数。
+
+更换 IP 时修改编码端 `input_rtsp` 和 `output_transport_host`（解码板 IP），
+以及解码端 `output_transport_rtsp_url`。默认 RTP/RTCP 端口为 39340/39341，
+五路模板使用 39480–39489；两端配置必须对应，避免与 UI 统计端口冲突。
+
+模型为 `[1,3,1088,1920]` FP16、BT.709 全范围 YUV444，1080 行输入底部补齐
+8 行，保持原分辨率。运动代理尺寸至少 128×128，NV12 可见尺寸必须为偶数。
+GPU 预处理维持原颜色映射和双线性色度插值；不增加 HDR 色调映射。
+运动子步骤计时及历史性能测量见 [OPTIMIZATION.md](OPTIMIZATION.md)，
+NVDEC 一致性验证见 [NVDEC_VALIDATION.md](NVDEC_VALIDATION.md)。其中离线/FP16
+记录属于历史验证，不代表当前生产输入接口。
 
 ## 模型和运行依赖
 

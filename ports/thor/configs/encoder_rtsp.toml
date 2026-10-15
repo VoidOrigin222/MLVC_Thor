@@ -13,6 +13,7 @@ motion_prefetch_frames = 2
 motion_skip_loop_filter = true
 fps = 30
 target_fps = 30
+video_decode_backend = "nvdec"
 input_device_resident = true
 motion_decode_threads = 4
 device = 0

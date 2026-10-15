@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>语义压缩 · 视频监控</title>
+    <link rel="stylesheet" href="/styles.css" />
+    <script src="/app.js" defer></script>
+  </head>
+  <body>
+    <aside class="sidebar">
+      <a class="brand" href="/" aria-label="视频监控首页"
+        ><span class="brand-mark"
+          ><svg viewBox="0 0 24 24">
+            <rect x="3" y="5" width="13" height="14" rx="2" />
+            <path d="m16 10 5-3v10l-5-3" /></svg></span
+        ><span>语义压缩<small>视频监控</small></span></a
+      >
+      <div class="nav-label">工作区</div>
+      <button class="nav-overview active" id="overview">
+        <svg viewBox="0 0 24 24">
+          <rect x="3" y="3" width="7" height="7" rx="1" />
+          <rect x="14" y="3" width="7" height="7" rx="1" />
+          <rect x="3" y="14" width="7" height="7" rx="1" />
+          <rect x="14" y="14" width="7" height="7" rx="1" /></svg
+        >视频总览<span>05</span>
+      </button>
+      <div class="nav-label channels-label">视频通道</div>
+      <nav id="channel-nav" aria-label="视频通道"></nav>
+      <div class="sidebar-bottom">
+        <span class="mini-brand">01—05</span>
+        <p>五路视频 · 成对预览</p>
+        <button class="sidebar-settings" data-settings>
+          参数设置 <span>↗</span>
+        </button>
+      </div>
+    </aside>
+    <div class="workspace">
+      <header class="topbar">
+        <span>工作区 <span class="breadcrumb">/</span> <b>视频总览</b></span
+        ><time id="clock"></time>
+      </header>
+      <main>
+        <div class="page-heading">
+          <div>
+            <div class="eyebrow">实时视频</div>
+            <h1>视频总览 <span class="channel-count">5 个通道</span></h1>
+          </div>
+          <div class="toolbar">
+            <button class="button" id="pause-button">
+              <span id="pause-icon">Ⅱ</span
+              ><span id="pause-label">暂停预览</span></button
+            ><button class="button" id="reconnect-button">
+              <svg viewBox="0 0 24 24">
+                <path
+                  d="M20 7v5h-5M4 17v-5h5M6 7a7 7 0 0 1 12-1l2 3M4 15l2 3a7 7 0 0 0 12-1"
+                /></svg
+              >重新连接</button
+            ><button class="button primary" data-settings>
+              <svg viewBox="0 0 24 24">
+                <path d="M5 6h14M5 12h14M5 18h14" />
+                <circle cx="9" cy="6" r="2" />
+                <circle cx="15" cy="12" r="2" />
+                <circle cx="10" cy="18" r="2" /></svg
+              >参数设置
+            </button>
+          </div>
+        </div>
+        <div class="view-bar">
+          <div class="filters" aria-label="筛选通道">
+            <button class="filter active" data-filter="all">
+              全部通道 <span>5</span></button
+            ><button class="filter" data-filter="live">
+              播放中 <span id="live-count">0</span>
+            </button>
+          </div>
+          <span class="view-note"
+            ><i class="legend-dot original-dot"></i>原图<i
+              class="legend-dot semantic-dot"
+            ></i
+            >语义压缩</span
+          >
+        </div>
+        <section
+          class="channel-grid"
+          id="channel-grid"
+          aria-label="五路视频对比"
+        ></section>
+        <div class="empty-filter" id="empty-filter" hidden>
+          暂无正在播放的通道
+        </div>
+        <footer class="page-footer">
+          <span id="view-summary">五个通道，每路原图与语义压缩成对显示</span
+          ><span>带宽单位 kB/s</span>
+        </footer>
+      </main>
+    </div>
+    <div id="toast" class="toast" role="status" hidden></div>
+    <dialog id="settings-dialog" aria-labelledby="settings-title">
+      <form id="settings-form">
+        <header class="drawer-heading">
+          <div>
+            <span class="eyebrow">参数配置</span>
+            <h2 id="settings-title">视频源与播放</h2>
+          </div>
+          <button
+            type="button"
+            class="icon-button"
+            id="close-settings"
+            aria-label="关闭"
+          >
+            ×
+          </button>
+        </header>
+        <fieldset>
+          <legend>播放服务</legend>
+          <label
+            >WebRTC 地址<input
+              name="webrtc"
+              id="webrtc"
+              type="url"
+              required /></label
+          ><label
+            >MediaMTX API 地址<input
+              name="media_api"
+              id="media_api"
+              type="url"
+              required /></label
+          ><label
+            >原图显示补偿 <span class="field-unit">ms</span
+            ><input
+              name="original_delay_ms"
+              id="original_delay_ms"
+              type="number"
+              min="0"
+              max="2000"
+              required
+          /></label>
+        </fieldset>
+        <fieldset>
+          <legend>视频通道</legend>
+          <div class="settings-tabs" id="settings-tabs"></div>
+          <div id="channel-fields"></div>
+        </fieldset>
+        <p class="settings-note">
+          参数保存到独立文件，重启后继续使用。地址请填写完整的 RTSP 流路径。
+        </p>
+        <div class="form-error" id="settings-error" role="alert" hidden></div>
+        <footer class="drawer-actions">
+          <button type="button" class="button" id="cancel-settings">取消</button
+          ><button type="submit" class="button primary" id="save-settings">
+            保存并连接
+          </button>
+        </footer>
+      </form>
+    </dialog>
+  </body>
+</html>

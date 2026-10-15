@@ -1,11 +1,15 @@
 # MLVC Thor
 
-MLVC 编解码在 NVIDIA Jetson AGX Thor 上的双板部署。模型使用 TensorRT FP16，
-视频和 RTSP 输入使用 NVDEC，运动代理及重建视频输出使用 NVENC；熵编解码和
-H.264 运动向量提取保留 CPU 实现。Thor 目标不依赖 Ascend/CANN，已移除软件
-视频解码回退和 libx264 编码路径。摄像头接口保留，本轮未做摄像头实测。
+五路原图与语义压缩的配对监控界面、独立参数文件和 Windows 启动器见
+[五路视频 UI](tools/ui/README.md)。
 
-支持离线视频、RTSP、摄像头及 FP16 验证输入；视频输入按目标帧率抽帧。
+MLVC 编解码在 NVIDIA Jetson AGX Thor 上的双板部署。模型使用 TensorRT FP16，
+RTSP 输入使用 NVDEC，运动代理及重建视频输出使用 NVENC；熵编解码和
+H.264 运动向量提取保留 CPU 实现。Thor 目标不依赖 Ascend/CANN，已移除软件
+视频解码回退和 libx264 编码路径。
+
+生产编码接口仅接受 `input_rtsp`，使用 NVDEC 解码及 GPU 预处理，按目标帧率抽帧。
+离线视频、摄像头、FP16 及合成输入配置不再接受；需要播放文件或相机时，先在外部发布为 RTSP。
 五路运行可选独立进程、单进程独立 TensorRT 上下文或实际 batch=5。
 各路参考状态、熵编解码及 RTP 会话独立。RTP 接收提供完整验帧和实时恢复策略。
 

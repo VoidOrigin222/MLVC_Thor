@@ -2,13 +2,27 @@
 
 #include <cmath>
 #include <filesystem>
+#include <string>
 
 #include "mlvc/codec/execution_profile.h"
 #include "mlvc/core/status.h"
+#ifdef MLVC_TENSORRT
+#include "mlvc/io/rtsp_input.h"
+#endif
 
 namespace mlvc::codec {
 
 void ValidateEncodeInput(const EncodeStreamOptions& options) {
+#ifdef MLVC_TENSORRT
+  Check(mlvc::io::IsRtspInputUrl(options.input_video_path.string()) &&
+            options.input_frame_dir.empty() &&
+            options.input_camera_device.empty() && !options.input_synthetic &&
+            !options.camera_options.has_value() && !options.motion_camera_nv12,
+        "Thor encoder accepts only RTSP input");
+  Check(
+      options.video_decode_backend == "nvdec" && options.input_device_resident,
+      "Thor RTSP input requires NVDEC with GPU-resident frames");
+#endif
   Check(std::isfinite(options.target_fps) && options.target_fps >= 0 &&
             options.target_fps <= 1000,
         "target_fps must be finite and in [0,1000]");
@@ -74,6 +88,7 @@ void ValidateEncodeInput(const EncodeStreamOptions& options) {
         "unsupported codec execution profile: " + options.execution_profile);
   Check(!options.manifest_path.empty(),
         "encode stream requires a manifest path");
+#ifndef MLVC_TENSORRT
   Check(options.input_synthetic || !options.input_camera_device.empty() ||
             !options.input_video_path.empty() ||
             !options.input_frame_dir.empty(),
@@ -106,6 +121,7 @@ void ValidateEncodeInput(const EncodeStreamOptions& options) {
   Check(std::filesystem::exists(options.input_frame_dir / "source_info.txt"),
         "MLVC frame directory requires source_info.txt: " +
             options.input_frame_dir.string());
+#endif
 }
 
 mlvc::io::MlvcBitstreamHeader BuildEncodeHeader(

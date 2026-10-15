@@ -1,6 +1,11 @@
 #include "mlvc/application/stream/encode/encode_output.h"
 
+#include <netdb.h>
+#include <sys/socket.h>
+#include <unistd.h>
+
 #include <filesystem>
+#include <string>
 
 #include "mlvc/core/status.h"
 #include "mlvc/framework/profile_range.h"
@@ -45,6 +50,27 @@ EncodeOutput::EncodeOutput(const EncodeStreamOptions& options,
   } else {
     writer_.emplace(options_.output_bitstream_path, header);
   }
+  if (options_.ui_stats_port > 0) {
+    addrinfo hints{};
+    hints.ai_family = AF_INET;
+    hints.ai_socktype = SOCK_DGRAM;
+    addrinfo* address = nullptr;
+    const std::string port = std::to_string(options_.ui_stats_port);
+    const int resolved = getaddrinfo(options_.ui_stats_host.c_str(),
+                                     port.c_str(), &hints, &address);
+    Check(resolved == 0 && address != nullptr,
+          "Cannot resolve UI statistics address");
+    stats_socket_ = ::socket(AF_INET, SOCK_DGRAM | SOCK_NONBLOCK, 0);
+    const bool connected =
+        stats_socket_ >= 0 &&
+        ::connect(stats_socket_, address->ai_addr, address->ai_addrlen) == 0;
+    freeaddrinfo(address);
+    if (!connected && stats_socket_ >= 0) {
+      ::close(stats_socket_);
+      stats_socket_ = -1;
+    }
+    Check(connected, "Cannot create UI statistics socket");
+  }
 }
 
 EncodeOutput::~EncodeOutput() {
@@ -52,6 +78,20 @@ EncodeOutput::~EncodeOutput() {
     Close();
   } catch (...) {
   }
+  if (stats_socket_ >= 0) ::close(stats_socket_);
+}
+
+void EncodeOutput::PublishUiStats(bool force) {
+  if (stats_socket_ < 0) return;
+  const auto now = std::chrono::steady_clock::now();
+  if (!force && now - stats_last_sent_ < std::chrono::milliseconds(500)) return;
+  stats_last_sent_ = now;
+  const std::string message =
+      "{\"kind\":\"semantic_codec_stats\",\"version\":1,\"frames\":" +
+      std::to_string(stats_frames_) +
+      ",\"payload_bytes\":" + std::to_string(payload_bytes_) + "}";
+  // Telemetry loss must never stall or fail the video pipeline.
+  (void)::send(stats_socket_, message.data(), message.size(), MSG_DONTWAIT);
 }
 
 void EncodeOutput::Flush(PendingEncodedFrame pending) {
@@ -79,6 +119,8 @@ void EncodeOutput::Flush(PendingEncodedFrame pending) {
             std::chrono::steady_clock::now() - pending.ready_at)
             .count());
   payload_bytes_ += payload.size();
+  ++stats_frames_;
+  PublishUiStats();
   rate_controller_.Update(
       static_cast<double>(pending.frame_index) / fps_, pending.frame_type,
       pending.q_index, payload.size(),
@@ -103,6 +145,7 @@ void EncodeOutput::Close() {
   close_one(writer_);
   close_one(udp_sender_);
   close_one(rtp_sender_);
+  PublishUiStats(true);
   closed_ = true;
   if (first_error != nullptr) std::rethrow_exception(first_error);
 }

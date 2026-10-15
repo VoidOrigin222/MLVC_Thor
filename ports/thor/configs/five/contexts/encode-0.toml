@@ -26,6 +26,10 @@ output_transport_payload_type = 96
 output_transport_pacing_rate_bps = 2000000
 output_transport_max_burst_bytes = 1240
 
+# Optional UI statistics: use the UI computer LAN address.
+# ui_stats_host = "192.168.5.3"
+# ui_stats_port = 39600
+
 [pipeline]
 stream_workers = 1
 queue_capacity = 3

@@ -1,6 +1,7 @@
 #ifndef MLVC_APPLICATION_STREAM_ENCODE_ENCODE_OUTPUT_H_
 #define MLVC_APPLICATION_STREAM_ENCODE_ENCODE_OUTPUT_H_
 
+#include <chrono>
 #include <cstdint>
 #include <exception>
 #include <filesystem>
@@ -42,6 +43,8 @@ class EncodeOutput {
   uint64_t file_bytes() const;
 
  private:
+  void PublishUiStats(bool force = false);
+
   const EncodeStreamOptions& options_;
   mlvc::Profiler* profiler_ = nullptr;
   double fps_ = 30.0;
@@ -50,6 +53,9 @@ class EncodeOutput {
   std::optional<mlvc::io::RtpMlvcSender> rtp_sender_;
   MlvcRateController rate_controller_;
   uint64_t payload_bytes_ = 0;
+  uint64_t stats_frames_ = 0;
+  int stats_socket_ = -1;
+  std::chrono::steady_clock::time_point stats_last_sent_{};
   LatencyStats ready_to_output_;
   bool closed_ = false;
 };

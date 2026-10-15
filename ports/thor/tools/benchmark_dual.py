@@ -7,7 +7,7 @@ import time
 
 p=argparse.ArgumentParser()
 p.add_argument('--variant',choices=['baseline','optimized','nvdec'],required=True)
-p.add_argument('--source',choices=['offline','rtsp'],default='offline')
+p.add_argument('--source',choices=['rtsp'],default='rtsp')
 p.add_argument('--repeats',type=int,default=3)
 args=p.parse_args()
 root='/home/xidian/workspace/MLVC_Thor'
@@ -34,7 +34,6 @@ from pathlib import Path
 os.chdir({root!r})
 s=Path('configs/decoder_rtp.toml').read_text()
 s=s.replace('39340','39450').replace('8554/ulbvc','18554/ulbvc-thor')
-if {args.source!r}=='offline':s=s.replace('output_transport_mode = "rtsp"','output_transport_mode = "none"')
 s=s.replace('[pipeline]','latency_probe_host = "192.168.5.16"\\nlatency_probe_port = 39460\\nprofile_output = "logs/{label}-decode-trace.json"\\n[pipeline]')
 Path('configs/{label}-decode.toml').write_text(s)
 subprocess.Popen(['timeout','70','bin/bench/bench_decode','--config','configs/{label}-decode.toml'],stdout=open('logs/{label}-decode.log','w'),stderr=subprocess.STDOUT,start_new_session=True)
@@ -43,9 +42,9 @@ subprocess.Popen(['timeout','70','bin/bench/bench_decode','--config','configs/{l
 import os,re,subprocess,json,time,statistics
 from pathlib import Path
 os.chdir({root!r})
-s=Path('configs/encoder_offline.toml').read_text().replace('39340','39450')
+s=Path('configs/encoder_rtsp.toml').read_text().replace('39340','39450')
 s=re.sub(r'(?m)^frame_num\\s*=.*$','frame_num = {frames}',s)
-if {args.source!r}=='rtsp':s=s.replace('input_video = "data/video/614lab.mp4"','input_rtsp = "rtsp://192.168.5.3:18554/input-thor"')
+s=re.sub(r'(?m)^input_rtsp\\s*=.*$', 'input_rtsp = "rtsp://192.168.5.3:18554/input-thor"',s)
 if {args.variant!r} in ('optimized','nvdec'):
  if re.search(r'(?m)^motion_decode_threads\\s*=',s):s=re.sub(r'(?m)^motion_decode_threads\\s*=.*$','motion_decode_threads = 4',s)
  else:s=s.replace('[pipeline]','motion_decode_threads = 4\\n[pipeline]')

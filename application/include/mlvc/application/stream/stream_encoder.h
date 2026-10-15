@@ -73,6 +73,9 @@ struct EncodeStreamOptions {
   int forced_ltr_recovery_frame = -1;
   int forced_ltr_reference_frame = -1;
   int device = 0;
+  // Optional, non-blocking UI telemetry. Zero disables all stats networking.
+  std::string ui_stats_host;
+  int ui_stats_port = 0;
   std::string output_transport_host;
   std::string output_transport_mode = "udp";
   int output_transport_port = 0;
