@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <memory>
 
+#include "mlvc/codec/detail/stage/stage_runtime_state.h"
 #include "mlvc/codec/tensor_data.h"
 #include "mlvc/core/buffer.h"
 #include "mlvc/core/status.h"
@@ -47,12 +48,13 @@ void ShiftCuda(const TensorView& source, int kx, int ky, TensorData* output) {
   }
   output->shape = TensorShape(dims);
   output->dtype = source.dtype();
-  ShiftBytes<<<(bytes + 255) / 256, 256>>>(
+  const auto stream = static_cast<cudaStream_t>(g_acl_user_compute_stream);
+  ShiftBytes<<<(bytes + 255) / 256, 256, 0, stream>>>(
       static_cast<const uint8_t*>(source.data()),
       static_cast<uint8_t*>(output->View().data()), bytes, width, height,
       ElementSize(source.dtype()), kx, ky);
   CheckAcl(cudaGetLastError(), "launch CUDA reference shift");
-  CheckAcl(cudaStreamSynchronize(nullptr), "complete CUDA reference shift");
+  CheckAcl(cudaStreamSynchronize(stream), "complete CUDA reference shift");
 }
 }  // namespace mlvc::codec
 namespace mlvc::io {

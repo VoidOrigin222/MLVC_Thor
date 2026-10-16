@@ -65,11 +65,59 @@ struct TensorRtStage::Impl {
   std::unique_ptr<nvinfer1::IExecutionContext> context;
   std::map<std::string, void*> buffers;
   uint64_t x_h2d_bytes = 0;
+  bool stable_io = true;
+  bool warmed = false;
+  bool capture_failed = false;
+  cudaGraph_t graph = nullptr;
+  cudaGraphExec_t graph_exec = nullptr;
+  uint64_t graph_launches = 0;
+  std::string name;
   thor::TimingEvents timing_events;
   ~Impl() {
+    if (graph_exec) cudaGraphExecDestroy(graph_exec);
+    if (graph) cudaGraphDestroy(graph);
+    if (stable_io)
+      std::cout << "cuda_graph model=" << name << " launches=" << graph_launches
+                << " capture_failed=" << capture_failed << '\n';
     if (buffers.count("x"))
       std::cout << "input_x_h2d_bytes=" << x_h2d_bytes << "\n";
     for (auto& entry : buffers) cudaFree(entry.second);
+  }
+  void Enqueue(cudaStream_t stream) {
+    if (stable_io && warmed && !capture_failed && !graph_exec) {
+      // TensorRT's first enqueue initializes lazy resources. Capture only the
+      // inference, after pending input copies finish, with immutable bindings.
+      CheckAcl(cudaStreamSynchronize(stream), "prepare CUDA graph capture");
+      auto error =
+          cudaStreamBeginCapture(stream, cudaStreamCaptureModeThreadLocal);
+      if (error == cudaSuccess) {
+        const bool queued = context->enqueueV3(stream);
+        error = cudaStreamEndCapture(stream, &graph);
+        if (queued && error == cudaSuccess && graph)
+          error = cudaGraphInstantiate(&graph_exec, graph, 0);
+        if (!queued || error != cudaSuccess || !graph_exec)
+          capture_failed = true;
+      } else {
+        capture_failed = true;
+      }
+      if (capture_failed) {
+        if (graph_exec) cudaGraphExecDestroy(graph_exec);
+        graph_exec = nullptr;
+        if (graph) cudaGraphDestroy(graph);
+        graph = nullptr;
+        (void)cudaGetLastError();
+        std::cerr << "CUDA graph unavailable for " << name << ": "
+                  << cudaGetErrorString(error) << "; using enqueueV3\n";
+      }
+    }
+    if (graph_exec) {
+      CheckAcl(cudaGraphLaunch(graph_exec, stream),
+               "launch TensorRT CUDA graph");
+      ++graph_launches;
+    } else {
+      Check(context->enqueueV3(stream), "TensorRT enqueue failed: " + name);
+      warmed = true;
+    }
   }
 };
 TensorRtStage::TensorRtStage(TensorRtRuntime* runtime, ModelRecord record,
@@ -78,8 +126,12 @@ TensorRtStage::TensorRtStage(TensorRtRuntime* runtime, ModelRecord record,
       runtime_(runtime),
       record_(std::move(record)) {
   runtime_->MakeCurrent();
+  impl_->name = record_.name;
+  const char* graph = std::getenv("MLVC_THOR_CUDA_GRAPH");
+  impl_->stable_io = !graph || std::string(graph) != "0";
   const char* batch = std::getenv("MLVC_THOR_BATCH5");
   if (batch && std::string(batch) == "1") {
+    impl_->stable_io = false;
     impl_->batch = thor::BatchStage::Get(record_, path, runtime_->device_id());
     return;
   }
@@ -110,11 +162,17 @@ TensorRtStage::TensorRtStage(TensorRtRuntime* runtime, ModelRecord record,
                           tensor_shape.NumElements() * ElementSize(spec.dtype)),
                "allocate inference buffer");
       impl_->buffers.emplace(spec.name, buffer);
+      if (impl_->stable_io)
+        Check(impl_->context->setTensorAddress(spec.name.c_str(), buffer),
+              "Cannot bind CUDA graph tensor: " + spec.name);
     }
 }
 TensorRtStage::~TensorRtStage() {
   runtime_->MakeCurrent();
   cudaStreamSynchronize(runtime_->stream());
+}
+uint64_t TensorRtStage::cuda_graph_launches() const {
+  return impl_->graph_launches;
 }
 void TensorRtStage::RunNamed(const NamedTensorView* inputs, size_t input_count,
                              const NamedTensorView* outputs,
@@ -134,7 +192,6 @@ void TensorRtStage::RunNamed(const NamedTensorView* inputs, size_t input_count,
   thor::TimingScope run_timer(timing_prefix + "runtime_wall", warmup);
   impl_->timing_events.Record(0, stream);
   const auto input_begin = thor::TimingClock::now();
-  std::vector<uintptr_t> key;
   for (const auto& spec : record_.inputs) {
     const auto& view = Find(inputs, input_count, spec.name);
     Check(view.shape().dims() == spec.shape && view.dtype() == spec.dtype,
@@ -144,15 +201,20 @@ void TensorRtStage::RunNamed(const NamedTensorView* inputs, size_t input_count,
                                   ElementSize(spec.dtype),
           "Invalid TensorRT input storage: " + spec.name);
     void* address = view.data();
-    if (view.location() != MemoryLocation::kAcl) {
-      if (spec.name == "x") impl_->x_h2d_bytes += view.bytes();
+    if (impl_->stable_io || view.location() != MemoryLocation::kAcl) {
+      if (spec.name == "x" && view.location() != MemoryLocation::kAcl)
+        impl_->x_h2d_bytes += view.bytes();
       address = impl_->buffers.at(spec.name);
       CheckAcl(cudaMemcpyAsync(address, view.data(), view.bytes(),
-                               cudaMemcpyHostToDevice, stream),
+                               view.location() == MemoryLocation::kAcl
+                                   ? cudaMemcpyDeviceToDevice
+                                   : cudaMemcpyHostToDevice,
+                               stream),
                "copy TensorRT input");
     }
-    Check(impl_->context->setTensorAddress(spec.name.c_str(), address),
-          "Cannot bind input: " + spec.name);
+    if (!impl_->stable_io)
+      Check(impl_->context->setTensorAddress(spec.name.c_str(), address),
+            "Cannot bind input: " + spec.name);
   }
   for (const auto& spec : record_.outputs) {
     const auto& view = Find(outputs, output_count, spec.name);
@@ -162,28 +224,32 @@ void TensorRtStage::RunNamed(const NamedTensorView* inputs, size_t input_count,
               view.bytes() == TensorShape(spec.shape).NumElements() *
                                   ElementSize(spec.dtype),
           "Invalid TensorRT output storage: " + spec.name);
-    Check(impl_->context->setTensorAddress(
-              spec.name.c_str(), view.location() == MemoryLocation::kAcl
-                                     ? view.data()
-                                     : impl_->buffers.at(spec.name)),
-          "Cannot bind output: " + spec.name);
+    if (!impl_->stable_io)
+      Check(impl_->context->setTensorAddress(
+                spec.name.c_str(), view.location() == MemoryLocation::kAcl
+                                       ? view.data()
+                                       : impl_->buffers.at(spec.name)),
+            "Cannot bind output: " + spec.name);
   }
   thor::RecordTiming(timing_prefix + "input_bind_upload_api_wall",
                      thor::Milliseconds(input_begin, thor::TimingClock::now()),
                      warmup);
   impl_->timing_events.Record(1, stream);
   const auto enqueue_begin = thor::TimingClock::now();
-  Check(impl_->context->enqueueV3(stream),
-        "TensorRT enqueue failed: " + record_.name);
+  impl_->Enqueue(stream);
   thor::RecordTiming(
       timing_prefix + "enqueue_api_wall",
       thor::Milliseconds(enqueue_begin, thor::TimingClock::now()), warmup);
   impl_->timing_events.Record(2, stream);
   for (const auto& spec : record_.outputs) {
     const auto& view = Find(outputs, output_count, spec.name);
-    if (view.location() != MemoryLocation::kAcl)
+    if (impl_->stable_io || view.location() != MemoryLocation::kAcl)
       CheckAcl(cudaMemcpyAsync(view.data(), impl_->buffers.at(spec.name),
-                               view.bytes(), cudaMemcpyDeviceToHost, stream),
+                               view.bytes(),
+                               view.location() == MemoryLocation::kAcl
+                                   ? cudaMemcpyDeviceToDevice
+                                   : cudaMemcpyDeviceToHost,
+                               stream),
                "copy TensorRT output");
   }
   impl_->timing_events.Record(3, stream);

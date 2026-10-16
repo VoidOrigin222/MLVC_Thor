@@ -4,6 +4,7 @@
 #include <memory>
 #include <vector>
 
+#include "mlvc/codec/detail/stage/stage_runtime_state.h"
 #include "mlvc/codec/tensor_data.h"
 #include "mlvc/codec/translation_warp.h"
 #include "mlvc/core/buffer.h"
@@ -167,20 +168,25 @@ int main() {
           }
       }
     }
+  codec::TensorData shifted;
+  void* reused_warp_buffer = nullptr;
+  codec::g_acl_user_compute_stream = runtime.stream();
   for (auto shift : std::vector<std::pair<int, int>>{
            {0, 0}, {1, 2}, {-2, -1}, {pw - 1, ph - 1}, {-pw + 1, -ph + 1}}) {
     auto gpu = codec::MakeTensor({1, 3, ph, pw}, DataType::kFloat16);
     auto owner = std::make_shared<DeviceBuffer>(frame.ByteSize());
-    CheckAcl(cudaMemcpy(owner->data(), frame.View().data(), frame.ByteSize(),
-                        cudaMemcpyHostToDevice),
-             "upload warp test");
+    CheckAcl(
+        cudaMemcpyAsync(owner->data(), frame.View().data(), frame.ByteSize(),
+                        cudaMemcpyHostToDevice, runtime.stream()),
+        "upload warp test");
     gpu.AttachExternalBuffer(owner->data(), owner->bytes(),
                              MemoryLocation::kAcl, owner);
     auto expected =
         codec::ShiftTensorPreserveBoundary(frame, shift.first, shift.second);
-    codec::TensorData shifted;
     codec::ShiftTensorPreserveBoundaryInto(gpu, shift.first, shift.second,
                                            &shifted);
+    if (reused_warp_buffer) assert(shifted.View().data() == reused_warp_buffer);
+    reused_warp_buffer = shifted.View().data();
     std::vector<uint8_t> bytes(expected.ByteSize());
     CheckAcl(cudaMemcpy(bytes.data(), shifted.View().data(), bytes.size(),
                         cudaMemcpyDeviceToHost),
@@ -194,6 +200,7 @@ int main() {
              "download inplace warp test");
     assert(bytes == expected.bytes);
   }
+  codec::g_acl_user_compute_stream = nullptr;
   bool rejected = false;
   try {
     io::BgrToFp16Yuv444Cuda(device_bgr.data(), w, h, w - 1, ph,

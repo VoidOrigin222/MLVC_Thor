@@ -46,9 +46,11 @@ bash scripts/run_five.sh encode contexts
 [运行说明](ports/thor/README.md)。MediaMTX 由使用者单独启动，IP、输入 URL、
 输出 URL 和 RTP 端口均通过 TOML 配置修改。
 
-五上下文默认目标为每路 12 FPS，解码熵窗口为 1 帧。两轮各 780 帧的完整验证中，
-后期读帧到解码回执平均延迟约 336–345 ms，未出现持续积压；测量边界与重复
-对照见 [解码延迟验证](ports/thor/DECODE_LATENCY_VALIDATION.md)。
+五上下文默认目标为每路 12 FPS，解码熵窗口为 1 帧。2026-10-16 修复后，
+五路连续各 3120 帧完整传输，去掉前 96 帧的平均读帧至解码回执时延约 275 ms，
+P95 约 373 ms，最后一分钟平均约 273 ms；测量不包含采集前段和显示端。
+定位过程、启动暂态、尖峰及复现条件见 [时延修复记录](ports/thor/LATENCY_FIX_VALIDATION.md)。
+此前两轮低时延结果保留在 [解码窗口验证](ports/thor/DECODE_LATENCY_VALIDATION.md)。
 
 2026-10-14 的 13 FPS 双板验证：五上下文和 batch=5 均完整完成每路 780 帧，无丢包丢帧。
 五上下文编码/解码稳态平均为 12.65/11.85 FPS/路，batch=5 为 12.47/10.58 FPS/路，

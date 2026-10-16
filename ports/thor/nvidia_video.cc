@@ -48,6 +48,7 @@ class DvppH264Encoder::Impl {
   AVFrame* frame_ = nullptr;
   AVBufferRef* hw_device_ = nullptr;
   AVBufferRef* hw_pool_ = nullptr;
+  cudaStream_t copy_stream_ = nullptr;
   int64_t index_ = 0;
   double copy_ms_ = 0, encode_ms_ = 0;
   Impl(aclrtContext context, DvppH264EncoderConfig c) : config_(c) {
@@ -65,6 +66,12 @@ class DvppH264Encoder::Impl {
                                      std::to_string(device).c_str(), nullptr,
                                      AV_CUDA_USE_CURRENT_CONTEXT),
               "share current CUDA context with NVENC");
+      CheckAcl(cudaStreamCreateWithFlags(&copy_stream_, cudaStreamNonBlocking),
+               "create independent NVENC copy stream");
+      auto* device_context =
+          reinterpret_cast<AVHWDeviceContext*>(hw_device_->data);
+      static_cast<AVCUDADeviceContext*>(device_context->hwctx)->stream =
+          reinterpret_cast<CUstream>(copy_stream_);
       hw_pool_ = av_hwframe_ctx_alloc(hw_device_);
       Check(hw_pool_ != nullptr, "Cannot allocate CUDA frame pool");
       auto* pool = reinterpret_cast<AVHWFramesContext*>(hw_pool_->data);
@@ -118,6 +125,7 @@ class DvppH264Encoder::Impl {
     if (encoder_) avcodec_free_context(&encoder_);
     av_buffer_unref(&hw_pool_);
     av_buffer_unref(&hw_device_);
+    if (copy_stream_) cudaStreamDestroy(copy_stream_);
   }
   std::vector<uint8_t> Encode(const void* pixels, size_t bytes, bool keyframe,
                               bool device = false) {
@@ -128,16 +136,20 @@ class DvppH264Encoder::Impl {
     if (hw_pool_) {
       const auto kind =
           device ? cudaMemcpyDeviceToDevice : cudaMemcpyHostToDevice;
-      CheckAcl(cudaMemcpy2D(frame_->data[0], frame_->linesize[0], p,
+      CheckAcl(
+          cudaMemcpy2DAsync(frame_->data[0], frame_->linesize[0], p,
                             config_.layout.width_stride, config_.layout.width,
-                            config_.layout.height, kind),
-               "fill NVENC CUDA luma");
+                            config_.layout.height, kind, copy_stream_),
+          "fill NVENC CUDA luma");
       p += static_cast<size_t>(config_.layout.width_stride) *
            config_.layout.height_stride;
-      CheckAcl(cudaMemcpy2D(frame_->data[1], frame_->linesize[1], p,
+      CheckAcl(
+          cudaMemcpy2DAsync(frame_->data[1], frame_->linesize[1], p,
                             config_.layout.width_stride, config_.layout.width,
-                            config_.layout.height / 2, kind),
-               "fill NVENC CUDA chroma");
+                            config_.layout.height / 2, kind, copy_stream_),
+          "fill NVENC CUDA chroma");
+      CheckAcl(cudaStreamSynchronize(copy_stream_),
+               "complete NVENC input copy");
     } else {
       Check(!device, "Host NVENC path cannot consume a CUDA pointer");
       for (int row = 0; row < config_.layout.height; ++row)

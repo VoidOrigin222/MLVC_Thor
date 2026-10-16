@@ -26,6 +26,8 @@
 #include <utility>
 #include <vector>
 
+#include "acl/acl.h"
+#include "arpa/inet.h"
 #include "mlvc/application/input/frame_input_queue.h"
 #include "mlvc/application/pipeline/codec_frame_pipeline.h"
 #include "mlvc/application/pipeline/ordered_future_window.h"
@@ -61,8 +63,6 @@
 #include "mlvc/io/video_io.h"
 #include "mlvc/runtime/fp16_yuv444_to_nv12_acl.h"
 #include "mlvc/runtime/stage_runtime.h"
-#include <acl/acl.h>
-#include <arpa/inet.h>
 
 namespace mlvc::codec {
 namespace {
@@ -641,6 +641,9 @@ int RunDecodeStream(const DecodeStreamOptions& options,
           static_cast<uint32_t>(std::max(1.0, std::round(writer_fps)));
       encoder_config.gop = encoder_config.fps * 2;
       encoder_config.bitrate = 8'000'000;
+#ifdef MLVC_TENSORRT
+      encoder_config.zero_copy_input = true;
+#endif
       rtsp_h264_encoder_config = encoder_config;
     }
     const bool rtsp_acl_nv12 =
@@ -780,6 +783,9 @@ int RunDecodeStream(const DecodeStreamOptions& options,
     bitstream_producer.Start();
 
     LatencyProbe latency_probe(options);
+    // Keep the per-lane warp allocation across frames. cudaMalloc/cudaFree in
+    // this hot path can synchronize otherwise independent GPU streams.
+    TensorData warped_reference;
     auto run_decoded_frame = [&](const DecodedEntropyFrame& decoded) {
 #ifdef MLVC_TENSORRT
       ScopedRuntimeState worker_state;
@@ -855,7 +861,6 @@ int RunDecodeStream(const DecodeStreamOptions& options,
               : sidecar.ShiftedQp(q_index, frame_adaptation_index);
       TensorData q_index_shifted_tensor =
           MakeInt32ScalarTensor(q_index_shifted);
-      TensorData warped_reference;
       const StageInput ref_feature_input =
           header.translation_warp
               ? BuildWarpedReferenceFeatureInput(

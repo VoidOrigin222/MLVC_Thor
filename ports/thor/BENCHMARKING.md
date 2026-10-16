@@ -73,6 +73,23 @@ python ports/thor/tools/benchmark_five.py --scheme contexts --frames 780 `
 脚本生成独立的带 label 配置和日志，并在退出时清理自己记录的进程。
 它不清理外部 MediaMTX 或其他业务服务。
 
+长时间检查积压时，循环发布同一素材并显式延长超时，例如每路 3120 帧，约 260 秒：
+
+```powershell
+python ports/thor/tools/benchmark_five.py --scheme contexts --frames 3120 `
+  --target-fps 12 --decoder-entropy-workers 1 --binary-dir bin `
+  --timeout-seconds 330 --loop-input --label five-contexts-long `
+  --output artifacts/five-contexts-long.json
+```
+
+`--loop-input` 仅影响外部 FFmpeg 测试发布源，生产编码器仍只接收 RTSP。
+脚本先通过码流复制生成足够长的临时 MP4，再实时发布该文件，避免将输入 seek
+与实时 stream_loop 叠加后在循环边界产生重复 PTS 和突发负载。
+超时必须大于请求视频时长。测试程序可先放到 `bin/latency-test` 验证，再替换
+正式程序；`--binary-dir bin/latency-test` 会将实际路径写入结果文件。
+`complete=true` 只说明帧完整传输，还需检查 `latency_last120_mean_ms`、
+`latency_growth_ms` 和接收队列峰值，不能将无丢帧当作无积压。
+
 ## 结果口径
 
 JSON 记录各路完整帧数、编码 FPS、解码回执 FPS、延迟走势、RTP 和发布丢帧
