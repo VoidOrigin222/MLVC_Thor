@@ -1,8 +1,6 @@
 "use strict";
 
 const $ = (id) => document.getElementById(id);
-const camera =
-  '<svg viewBox="0 0 32 32"><rect x="4" y="8" width="17" height="16" rx="3"/><path d="m21 13 7-4v14l-7-4"/><circle cx="12.5" cy="16" r="4"/></svg>';
 const expand =
   '<svg viewBox="0 0 24 24"><path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5"/></svg>';
 const kinds = ["original", "semantic"];
@@ -294,7 +292,7 @@ class Player {
       await peer.setRemoteDescription({ type: "answer", sdp: answer });
     } catch (error) {
       if (generation !== this.generation) return;
-      this.close("等待视频信号");
+      this.close("无信号");
       this.schedule();
     } finally {
       clearTimeout(timeout);
@@ -328,12 +326,13 @@ class Player {
           this.lastFrameAt = performance.now();
         this.sample = { time: report.timestamp, frames: report.framesDecoded };
         if (performance.now() - this.lastFrameAt > 6000) {
-          this.state("等待视频信号");
+          this.state("无信号");
           this.schedule();
         }
+        $(this.key + "-caption").hidden = !this.video.videoWidth;
         $(this.key + "-caption").textContent = this.video.videoWidth
           ? `${this.video.videoWidth} × ${this.video.videoHeight} · ${number(fps, 0)} FPS`
-          : "— × — · — FPS";
+          : "";
       }
     } catch (_) {}
   }
@@ -364,7 +363,7 @@ function updateLive() {
       (filter === "live" && !ready);
   }
   $("live-count").textContent = count;
-  $("bandwidth-summary").hidden = selected !== null || filter === "live";
+
   $("empty-filter").hidden = !(filter === "live" && count === 0);
 }
 
@@ -379,29 +378,24 @@ function render() {
   $("channel-nav").innerHTML = "";
   $("channel-grid").innerHTML = "";
   for (const [index, channel] of config.channels.entries()) {
-    const indexText = String(index + 1).padStart(2, "0");
     $("channel-nav").insertAdjacentHTML(
       "beforeend",
-      `<button class="channel-link" id="${channel.id}-nav" data-channel="${channel.id}"><span class="nav-index">${indexText}</span><span>${escapeHtml(channel.name)}</span><i></i></button>`,
+      `<button class="channel-link" id="${channel.id}-nav" data-channel="${channel.id}"><span>${escapeHtml(channel.name)}</span><i></i></button>`,
     );
     const feeds = kinds
       .map((kind) => {
         const key = keyFor(channel, kind);
-        return `<div class="feed" id="${key}"><span class="feed-label ${kind}">${kind === "original" ? "原图" : "语义压缩"}</span><video id="${key}-video" autoplay muted playsinline aria-label="${escapeHtml(channel.name)}${kind === "original" ? "原图" : "语义压缩"}"></video><div class="video-empty">${camera}<span id="${key}-empty">等待视频信号</span></div><span class="feed-caption" id="${key}-caption">— × — · — FPS</span><button class="expand-button" data-expand="${key}" title="全屏" aria-label="全屏">${expand}</button></div>`;
+        return `<div class="feed" id="${key}"><span class="feed-label ${kind}">${kind === "original" ? "原图" : "语义压缩"}</span><video id="${key}-video" autoplay muted playsinline aria-label="${escapeHtml(channel.name)}${kind === "original" ? "原图" : "语义压缩"}"></video><div class="video-empty"><span id="${key}-empty">无信号</span></div><span class="feed-caption" id="${key}-caption" hidden></span><button class="expand-button" data-expand="${key}" title="全屏" aria-label="全屏">${expand}</button></div>`;
       })
       .join("");
     $("channel-grid").insertAdjacentHTML(
       "beforeend",
-      `<article class="channel-card" id="${channel.id}-card"><header class="card-heading"><span class="channel-number">${indexText}</span><h2>${escapeHtml(channel.name)}</h2><span class="pair-status"><i></i><span id="${channel.id}-state">未连接</span></span><button class="card-options" data-edit="${index}" aria-label="配置${escapeHtml(channel.name)}" title="通道参数">···</button></header><div class="pair">${feeds}</div><footer class="card-metrics" title="语义码流统计由编码端提供；原图为 24 bpp 基准"><div class="metric"><span class="metric-label">bpp</span><span class="metric-value" id="${channel.id}-bpp">—</span></div><div class="metric bandwidth"><span class="metric-label">带宽</span><span class="metric-value"><span id="${channel.id}-kbs">—</span><small>kB/s</small></span></div><div class="metric"><span class="metric-label">压缩比</span><span class="metric-value"><span id="${channel.id}-ratio">—</span><small>: 1</small></span></div><div class="bandwidth-plot"><svg viewBox="0 0 100 28" aria-label="带宽变化"><path id="${channel.id}-plot" d=""/></svg></div></footer></article>`,
+      `<article class="channel-card" id="${channel.id}-card"><header class="card-heading"><h2>${escapeHtml(channel.name)}</h2><span class="pair-status"><i></i><span id="${channel.id}-state">未连接</span></span><button class="card-options" data-edit="${index}" aria-label="配置${escapeHtml(channel.name)}" title="通道参数">···</button></header><div class="pair">${feeds}</div><footer class="card-metrics"><div class="metric"><span class="metric-label">bpp</span><span class="metric-value" id="${channel.id}-bpp">—</span></div><div class="metric bandwidth"><span class="metric-label">带宽</span><span class="metric-value"><span id="${channel.id}-kbs">—</span><small>kB/s</small></span></div><div class="metric"><span class="metric-label">压缩比</span><span class="metric-value"><span id="${channel.id}-ratio">—</span><small>: 1</small></span></div><div class="bandwidth-plot"><svg viewBox="0 0 100 28" aria-label="带宽变化"><path id="${channel.id}-plot" d=""/></svg></div></footer></article>`,
     );
     for (const kind of kinds)
       players.set(keyFor(channel, kind), new Player(channel, kind));
     histories.set(channel.id, []);
   }
-  $("channel-grid").insertAdjacentHTML(
-    "beforeend",
-    `<aside class="channel-card summary-card" id="bandwidth-summary"><div class="summary-heading"><h2>带宽总览</h2><span>语义码流 · kB/s</span></div><div class="summary-body">${config.channels.map((channel) => `<div class="summary-row"><span>${escapeHtml(channel.name)}</span><div class="summary-track"><div id="${channel.id}-bar" style="width:0"></div></div><span id="${channel.id}-summary">—</span></div>`).join("")}</div><div class="summary-total"><span>五路合计</span><span><strong id="bandwidth-total">—</strong><small>kB/s</small></span></div></aside>`,
-  );
   updateLive();
   if (!paused) for (const player of players.values()) player.connect();
 }
@@ -420,19 +414,11 @@ async function refresh() {
     );
     let total = 0,
       available = 0;
-    const maximum = Math.max(
-      1,
-      ...status.channels.map((channel) => channel.metrics?.kbs || 0),
-    );
     for (const channel of config.channels) {
       const metrics = byId.get(channel.id);
       $(channel.id + "-bpp").textContent = number(metrics?.bpp, 4);
       $(channel.id + "-kbs").textContent = number(metrics?.kbs, 1);
       $(channel.id + "-ratio").textContent = number(metrics?.ratio, 0);
-      $(channel.id + "-summary").textContent = number(metrics?.kbs, 1);
-      $(channel.id + "-bar").style.width = metrics
-        ? `${(metrics.kbs / maximum) * 100}%`
-        : "0";
       const history = histories.get(channel.id);
       if (metrics) {
         total += metrics.kbs;
@@ -546,6 +532,9 @@ document.addEventListener("click", (event) => {
   }
 });
 $("overview").addEventListener("click", () => {
+  filter = "all";
+  for (const button of document.querySelectorAll("[data-filter]"))
+    button.classList.toggle("active", button.dataset.filter === "all");
   selected = null;
   $("overview").classList.add("active");
   for (const nav of document.querySelectorAll("[data-channel]"))
