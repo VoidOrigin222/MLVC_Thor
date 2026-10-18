@@ -8,6 +8,9 @@
 本机及双板的目录、归档位置和清理记录见 [目录说明](ports/thor/WORKSPACE_LAYOUT.md)。
 混合五路的积压定位、时延修复和长测见
 [混合场景验证](ports/thor/MIXED_LATENCY_VALIDATION.md)。
+五路编码使用 [encoder.toml](ports/thor/configs/encoder.toml)，解码使用
+[decoder.toml](ports/thor/configs/decoder.toml)，启动方式见
+[总配置说明](ports/thor/MULTI_CONFIG.md)。
 
 MLVC 编解码在 NVIDIA Jetson AGX Thor 上的双板部署。模型使用 TensorRT FP16，
 RTSP 输入使用 NVDEC，运动代理及重建视频输出使用 NVENC；熵编解码和

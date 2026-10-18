@@ -62,3 +62,11 @@ NVENC。以上是后续修复前的记录；积压位置、修复和最终长测
 没有测得相机曝光到浏览器显示的绝对总时延。
 
 输入启动命令与计时器读数说明见 [五路 RTSP](README.md#五路-rtsp)。
+
+## 后续配置入口统一
+
+五路日常启动改用 `bin/encoder`、`bin/decoder`，默认总配置分别为
+`configs/encoder.toml`、`configs/decoder.toml`，对应脚本为
+`scripts/run_encoder.sh`、`scripts/run_decoder.sh`。原三个程序和旧分路模板保留
+给单路及历史基准兼容。参数结构与命令见 [总配置说明](MULTI_CONFIG.md)，
+验证见 [入口验证](ENCODER_DECODER_VALIDATION.md)。

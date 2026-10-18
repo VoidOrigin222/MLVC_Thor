@@ -43,7 +43,7 @@ def main():
                 try:
                     argv = path.read_bytes().split(b"\0")
                     if argv and Path(argv[0].decode()).name in (
-                            "mlvc_multi_thor", "multi_encode", "multi_decode") and any(
+                            "encoder", "decoder", "mlvc_multi_thor", "multi_encode", "multi_decode") and any(
                                 label.encode() in value for value in argv):
                         status = (path.parent / "status").read_text()
                         rss += int(next(line.split()[1] for line in status.splitlines()

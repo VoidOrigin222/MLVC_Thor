@@ -11,6 +11,7 @@
 #include <string>
 #include <string_view>
 
+#include "mlvc/application/cli/config_table.h"
 #include "mlvc/application/cli/decoder_app.h"
 #include "mlvc/application/stream/mlvc_stream.h"
 #include "mlvc/codec/execution_profile.h"
@@ -181,7 +182,10 @@ namespace mlvc {
 
 DecoderApplicationConfig LoadDecoderConfig(
     const std::filesystem::path& config_path) {
-  const toml::table config = ReadTomlConfig(config_path);
+  return ParseDecoderConfig(ReadTomlConfig(config_path));
+}
+
+DecoderApplicationConfig ParseDecoderConfig(const toml::table& config) {
   ValidateConfigKeys(config);
   const std::string mode = GetString(config, "mode", "decode");
   Check(mode == "decode", "decoder config must use mode = \"decode\"");

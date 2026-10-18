@@ -2,11 +2,16 @@
 source "$(dirname "${BASH_SOURCE[0]}")/common.sh"
 
 operation="${1:-}"
-mode="${2:-contexts}"
+mode="${2:-configs/${operation}r.toml}"
 if [[ "$operation" != encode && "$operation" != decode ]]; then
-  echo "Usage: bash scripts/run_five.sh encode|decode processes|contexts|batch5" >&2
+  echo "Usage: bash scripts/run_five.sh encode|decode [config.toml]" >&2
   exit 1
 fi
+if [[ "$mode" == *.toml ]]; then
+  [[ $# -le 2 && -f "$mode" ]] || { echo "Missing configuration or unexpected arguments: $mode" >&2; exit 1; }
+  exec "bin/${operation}r" --config "$mode"
+fi
+# Retain explicit legacy modes for existing benchmarks and deployment scripts.
 if [[ "$mode" != processes && "$mode" != contexts && "$mode" != batch5 ]]; then
   echo "Mode must be processes, contexts or batch5" >&2
   exit 1

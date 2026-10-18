@@ -11,10 +11,12 @@
 #include <thread>
 #include <vector>
 
+#include "mlvc/application/cli/config_table.h"
 #include "mlvc/application/cli/decoder_app.h"
 #include "mlvc/application/cli/encoder_app.h"
 #include "mlvc/application/stream/mlvc_stream.h"
 #include "mlvc/core/status.h"
+#include "mlvc/thor/multi_config.h"
 
 namespace {
 thread_local std::ostream* lane_output = nullptr;
@@ -65,14 +67,29 @@ class StartGate {
 }  // namespace
 
 int main(int argc, char** argv) {
+#ifdef MLVC_THOR_MULTISTREAM_ROLE
+  // Dedicated encoder/decoder executables take only --config CONFIG.toml.
+  std::vector<std::string> arguments{argv[0], MLVC_THOR_MULTISTREAM_ROLE};
+  for (int i = 1; i < argc; ++i) arguments.emplace_back(argv[i]);
+  std::vector<char*> normalized;
+  for (auto& argument : arguments) normalized.push_back(argument.data());
+  normalized.push_back(nullptr);
+  argc = static_cast<int>(arguments.size());
+  argv = normalized.data();
+#endif
   try {
-    mlvc::Check(argc == 9,
-                "Usage: mlvc_multi_thor encode|decode contexts|batch5 "
+    const bool total_config = argc == 4 && std::string(argv[2]) == "--config";
+    mlvc::Check(total_config || argc == 9,
+                "Usage: encoder|decoder --config CONFIG.toml\n"
+                "Legacy: mlvc_multi_thor encode|decode contexts|batch5 "
                 "LOG_PREFIX CONFIG0 CONFIG1 CONFIG2 CONFIG3 CONFIG4");
     const std::string operation(argv[1]);
-    const std::string mode(argv[2]);
     mlvc::Check(operation == "encode" || operation == "decode",
                 "Operation must be encode or decode");
+    mlvc::thor::MultiStreamConfig combined;
+    if (total_config)
+      combined = mlvc::thor::LoadMultiStreamConfig(argv[3], operation);
+    const std::string mode = total_config ? combined.execution : argv[2];
     mlvc::Check(mode == "contexts" || mode == "batch5",
                 "Mode must be contexts or batch5");
     setenv("MLVC_THOR_SHARE_ENGINES", "1", 1);
@@ -80,7 +97,23 @@ int main(int argc, char** argv) {
       setenv("MLVC_THOR_BATCH5", "1", 1);
     else
       unsetenv("MLVC_THOR_BATCH5");
-    const std::string prefix(argv[3]);
+    const std::string prefix = total_config ? combined.log_prefix : argv[3];
+    std::vector<mlvc::EncoderApplicationConfig> encoders;
+    std::vector<mlvc::DecoderApplicationConfig> decoders;
+    // Validate all lanes before starting GPU work or waiting at the start gate.
+    for (int lane = 0; lane < 5; ++lane) {
+      if (operation == "encode") {
+        encoders.push_back(
+            total_config ? mlvc::ParseEncoderConfig(combined.streams[lane])
+                         : mlvc::LoadEncoderConfig(argv[4 + lane]));
+      } else {
+        decoders.push_back(
+            total_config ? mlvc::ParseDecoderConfig(combined.streams[lane])
+                         : mlvc::LoadDecoderConfig(argv[4 + lane]));
+      }
+    }
+    const auto parent = std::filesystem::path(prefix).parent_path();
+    if (!parent.empty()) std::filesystem::create_directories(parent);
     std::vector<int> result(5, 1);
     StartGate gate(5);
     std::mutex startup_mutex;
@@ -97,7 +130,7 @@ int main(int argc, char** argv) {
         try {
           mlvc::Check(log.good(), "Cannot create per-stream log");
           if (operation == "encode") {
-            const auto config = mlvc::LoadEncoderConfig(argv[4 + lane]);
+            const auto& config = encoders[lane];
             const auto binding =
                 config.stream.input_device_resident
                     ? mlvc::codec::StageOutputBindingMode::
@@ -119,7 +152,7 @@ int main(int argc, char** argv) {
             result[lane] =
                 mlvc::codec::RunEncodeStream(config.stream, &services);
           } else {
-            const auto config = mlvc::LoadDecoderConfig(argv[4 + lane]);
+            const auto& config = decoders[lane];
             const auto binding =
                 config.stream.output_format == "none"
                     ? mlvc::codec::StageOutputBindingMode::

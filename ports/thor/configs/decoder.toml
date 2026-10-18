@@ -1,0 +1,59 @@
+# Five-stream decoder. Paths are relative to the runtime workspace.
+execution = "contexts"
+log_prefix = "logs/decoder"
+
+[decoder]
+manifest = "models/manifest_thor.json"
+frame_num = -1
+format = "none"
+device = 0
+input_transport_mode = "rtp"
+input_transport_payload_type = 96
+output_transport_mode = "rtsp"
+output_transport_rtsp_encoder = "nvenc"
+output_transport_rtsp_transport = "tcp"
+output_transport_queue_capacity = 3
+input_rtp_queue_capacity = 64
+input_rtp_queue_bytes = 67108864
+input_rtp_overflow_policy = "recover"
+input_rtp_pending_frames = 256
+input_rtp_reorder_wait_ms = 500
+input_rtp_eos_wait_ms = 5000
+input_rtp_loss_policy = "recover"
+
+[decoder.pipeline]
+stream_workers = 1
+queue_capacity = 3
+frame_buffer_slots = 3
+entropy_workers = 1
+graph_packet_capacity = 2
+
+# Channel 1
+[[streams]]
+[streams.decoder]
+input_transport_port = 39480
+output_transport_rtsp_url = "rtsp://192.168.5.3:8554/ulbvc0"
+
+# Channel 2
+[[streams]]
+[streams.decoder]
+input_transport_port = 39482
+output_transport_rtsp_url = "rtsp://192.168.5.3:8554/ulbvc1"
+
+# Channel 3
+[[streams]]
+[streams.decoder]
+input_transport_port = 39484
+output_transport_rtsp_url = "rtsp://192.168.5.3:8554/ulbvc2"
+
+# Channel 4
+[[streams]]
+[streams.decoder]
+input_transport_port = 39486
+output_transport_rtsp_url = "rtsp://192.168.5.3:8554/ulbvc3"
+
+# Channel 5
+[[streams]]
+[streams.decoder]
+input_transport_port = 39488
+output_transport_rtsp_url = "rtsp://192.168.5.3:8554/ulbvc4"

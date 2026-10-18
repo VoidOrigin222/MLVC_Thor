@@ -12,17 +12,16 @@ MLVC 使用 TensorRT/CUDA 推理，运动估计使用 NVENC 单参考 H.264 代�
 ```bash
 # 解码板
 cd /home/xidian/workspace/MLVC_Thor
-bash scripts/check_runtime.sh
-bash scripts/run_decode.sh
+bash scripts/run_decoder.sh configs/decoder.toml
 
 # 编码板
 cd /home/xidian/workspace/MLVC_Thor
-bash scripts/run_encode.sh
-# 自定义配置：bash scripts/run_encode.sh configs/my_encoder.toml
+bash scripts/run_encoder.sh configs/encoder.toml
+# 自定义配置：bash scripts/run_encoder.sh configs/my_encoder.toml
 ```
 
-编码仅接受 RTSP 输入。五路使用 `bash scripts/run_five.sh encode contexts`，
-对应解码使用 `bash scripts/run_five.sh decode contexts`，默认每路目标 12 FPS。
+编码仅接受 RTSP 输入。五路使用 `bash scripts/run_encoder.sh configs/encoder.toml`，
+对应解码使用 `bash scripts/run_decoder.sh configs/decoder.toml`，默认每路目标 12 FPS。
 单路 `configs/encoder_rtsp.toml` 默认目标 30 FPS。按 Ctrl+C 停止。
 
 ## 输入和硬件视频
@@ -122,7 +121,8 @@ python3 src/MLVC/ports/thor/tools/create_manifest.py "$PWD"
 
 ## 五路 RTSP
 
-每路拥有独立配置、参考帧、运动估计、熵编解码和 RTP 会话。使用五个互不重叠的
+编码端使用 `configs/encoder.toml`，解码端使用 `configs/decoder.toml`，每个文件集中配置五路。
+每路拥有独立参考帧、运动估计、熵编解码和 RTP 会话。使用五个互不重叠的
 RTP/RTCP 端口对。`mlvc_multi_thor` 提供两种模式：
 
 - `contexts`：一个进程、每路独立 TensorRT 执行上下文和 CUDA stream，共享引擎权重。
@@ -138,7 +138,7 @@ batch5 模式每个模型有一个执行上下文，合计三个。首批最多�
 先启动解码板：
 
 ```bash
-bash scripts/run_five.sh decode contexts
+bash scripts/run_decoder.sh configs/decoder.toml
 # 或：bash scripts/run_five.sh decode batch5
 # 或：bash scripts/run_five.sh decode processes
 ```
@@ -146,7 +146,7 @@ bash scripts/run_five.sh decode contexts
 再启动编码板：
 
 ```bash
-bash scripts/run_five.sh encode contexts
+bash scripts/run_encoder.sh configs/encoder.toml
 # 或：bash scripts/run_five.sh encode batch5
 # 或：bash scripts/run_five.sh encode processes
 ```

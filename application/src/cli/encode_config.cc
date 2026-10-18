@@ -10,6 +10,7 @@
 #include <string_view>
 #include <utility>
 
+#include "mlvc/application/cli/config_table.h"
 #include "mlvc/application/cli/encoder_app.h"
 #include "mlvc/application/stream/mlvc_stream.h"
 #include "mlvc/application/stream/stream_encoder.h"
@@ -221,7 +222,10 @@ namespace mlvc {
 
 EncoderApplicationConfig LoadEncoderConfig(
     const std::filesystem::path& config_path) {
-  const toml::table config = ReadTomlConfig(config_path);
+  return ParseEncoderConfig(ReadTomlConfig(config_path));
+}
+
+EncoderApplicationConfig ParseEncoderConfig(const toml::table& config) {
   ValidateConfigKeys(config);
   const std::string mode = GetString(config, "mode", "encode");
   Check(mode == "encode", "encoder config must use mode = \"encode\"");

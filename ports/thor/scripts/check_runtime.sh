@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 source "$(dirname "${BASH_SOURCE[0]}")/common.sh"
-for app in bin/mlvc_encode_thor bin/mlvc_decode_thor bin/mlvc_multi_thor; do
+for app in bin/encoder bin/decoder bin/mlvc_encode_thor bin/mlvc_decode_thor bin/mlvc_multi_thor; do
   [[ -x "$app" ]] || { echo "Missing executable: $app" >&2; exit 1; }
   result=$(ldd "$app")
   if [[ "$result" == *'not found'* ]]; then echo "$result" >&2; exit 1; fi

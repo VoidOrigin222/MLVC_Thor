@@ -50,7 +50,9 @@ URL，包含流名称。浏览器和 MediaMTX 不在同一电脑时，MediaMTX �
 包头；bpp 按编码帧数与图像尺寸计算，压缩比使用 RGB24 的 24 bpp 为基准。
 视频角标的 FPS 则是浏览器实际接收/解码帧率。
 
-编码配置中加入，五个通道分别使用 39600–39604：
+五路总配置 `configs/encoder.toml` 的 `[encoder]` 中取消 `ui_stats_host` 的注释，
+再分别取消五个 `[streams.encoder]` 下 `ui_stats_port` 的注释（39600–39604）。
+单路配置仍可直接加入：
 
 ```toml
 # 填运行 UI 的电脑局域网 IP，板卡上不能填写 127.0.0.1。

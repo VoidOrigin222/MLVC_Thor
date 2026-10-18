@@ -156,7 +156,7 @@ for path in Path('/proc').glob('[0-9]*/cmdline'):
   argv=path.read_bytes().split(b'\\0')
  except (FileNotFoundError,PermissionError,ProcessLookupError):
   continue
- if argv and Path(os.fsdecode(argv[0])).name in ('mlvc_multi_thor','mlvc_encode_thor','mlvc_decode_thor'):
+ if argv and Path(os.fsdecode(argv[0])).name in ('encoder','decoder','mlvc_multi_thor','mlvc_encode_thor','mlvc_decode_thor'):
   raise RuntimeError('Stop the existing codec workload before benchmarking')
 subprocess.run(['gcc','-shared','-fPIC','-O2',
  'src/MLVC/ports/thor/tools/trace_rtp.c','-ldl','-o',{observer!r}],check=True)
