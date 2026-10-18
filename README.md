@@ -3,6 +3,12 @@
 五路原图与语义压缩的配对监控界面、独立参数文件和 Windows 启动器见
 [五路视频 UI](tools/ui/README.md)。
 
+两静态、两动态和一路实时计时器的测试源用 `bash scripts/run_test_sources.sh`
+在编码板启动，参数见 [Thor 运行说明](ports/thor/README.md#五路-rtsp)。
+本机及双板的目录、归档位置和清理记录见 [目录说明](ports/thor/WORKSPACE_LAYOUT.md)。
+混合五路的积压定位、时延修复和长测见
+[混合场景验证](ports/thor/MIXED_LATENCY_VALIDATION.md)。
+
 MLVC 编解码在 NVIDIA Jetson AGX Thor 上的双板部署。模型使用 TensorRT FP16，
 RTSP 输入使用 NVDEC，运动代理及重建视频输出使用 NVENC；熵编解码和
 H.264 运动向量提取保留 CPU 实现。Thor 目标不依赖 Ascend/CANN，已移除软件

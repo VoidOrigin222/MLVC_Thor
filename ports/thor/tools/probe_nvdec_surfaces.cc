@@ -8,6 +8,7 @@ extern "C" {
 #include <iomanip>
 #include <iostream>
 #include <memory>
+#include <string>
 #include <vector>
 
 #include "mlvc/core/buffer.h"
@@ -17,7 +18,11 @@ extern "C" {
 
 int main(int argc, char** argv) {
   try {
-    mlvc::Check(argc == 3, "usage: probe_nvdec_surfaces VIDEO OUTPUT_CSV");
+    mlvc::Check(argc == 3 || argc == 4,
+                "usage: probe_nvdec_surfaces VIDEO_OR_RTSP OUTPUT_CSV "
+                "[MAX_FRAMES]");
+    const int max_frames = argc == 4 ? std::stoi(argv[3]) : 0;
+    mlvc::Check(max_frames >= 0, "MAX_FRAMES must be nonnegative");
     using Digest =
         unsigned char* (*)(const unsigned char*, size_t, unsigned char*);
     void* crypto = dlopen("libcrypto.so.3", RTLD_NOW);
@@ -43,7 +48,7 @@ int main(int argc, char** argv) {
         out << std::hex << std::setw(2) << std::setfill('0')
             << static_cast<int>(byte);
     };
-    while (reader.Read(&frame)) {
+    while ((max_frames == 0 || index < max_frames) && reader.Read(&frame)) {
       const size_t pitch = frame->width * (frame->wide ? 2 : 1),
                    ybytes = pitch * frame->height;
       raw.resize(ybytes * 3 / 2);

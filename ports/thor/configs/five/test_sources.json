@@ -1,0 +1,9 @@
+{
+  "rtsp_base": "rtsp://192.168.5.3:8554",
+  "static_video": "data/video/static-12fps.mp4",
+  "dynamic_video": "data/video/dynamic-12fps.mp4",
+  "fps": 12,
+  "width": 1920,
+  "height": 1080,
+  "font": "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf"
+}

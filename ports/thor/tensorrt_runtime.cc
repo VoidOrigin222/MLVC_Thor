@@ -6,6 +6,7 @@
 #include <iostream>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <utility>
 #include <vector>
@@ -35,6 +36,15 @@ const TensorView& Find(const NamedTensorView* views, size_t count,
   for (size_t i = 0; i < count; ++i)
     if (views[i].name && name == views[i].name) return views[i].view;
   throw Error("Missing TensorRT tensor: " + name);
+}
+
+std::mutex& InferenceMutex(int device) {
+  static std::mutex registry_mutex;
+  static std::map<int, std::unique_ptr<std::mutex>> mutexes;
+  std::lock_guard<std::mutex> lock(registry_mutex);
+  auto& mutex = mutexes[device];
+  if (!mutex) mutex = std::make_unique<std::mutex>();
+  return *mutex;
 }
 }  // namespace
 void CheckAcl(aclError code, const std::string& operation) {
@@ -67,6 +77,8 @@ struct TensorRtStage::Impl {
   uint64_t x_h2d_bytes = 0;
   bool stable_io = true;
   bool warmed = false;
+  bool prepared = false;
+  bool serial_inference = false;
   bool capture_failed = false;
   cudaGraph_t graph = nullptr;
   cudaGraphExec_t graph_exec = nullptr;
@@ -136,6 +148,12 @@ TensorRtStage::TensorRtStage(TensorRtRuntime* runtime, ModelRecord record,
     return;
   }
   const char* shared = std::getenv("MLVC_THOR_SHARE_ENGINES");
+  // Five independent contexts retain their own state and streams. Limit their
+  // active model work per GPU: overlapping whole-frame graphs can increase
+  // service time beyond the 12 FPS frame interval under mixed live inputs.
+  const char* serial = std::getenv("MLVC_THOR_SERIAL_INFERENCE");
+  impl_->serial_inference = serial ? std::string(serial) == "1"
+                                   : shared && std::string(shared) == "1";
   impl_->resource = thor::LoadTensorEngine(
       path, runtime_->device_id(), shared && std::string(shared) == "1");
   impl_->context.reset(impl_->resource->engine->createExecutionContext());
@@ -174,6 +192,38 @@ TensorRtStage::~TensorRtStage() {
 uint64_t TensorRtStage::cuda_graph_launches() const {
   return impl_->graph_launches;
 }
+void TensorRtStage::Prepare() {
+  if (impl_->batch || impl_->prepared) return;
+  runtime_->MakeCurrent();
+  const auto begin = thor::TimingClock::now();
+  const auto stream = runtime_->stream();
+  for (const auto* specs : {&record_.inputs, &record_.outputs}) {
+    for (const auto& spec : *specs) {
+      void* buffer = impl_->buffers.at(spec.name);
+      Check(impl_->context->setTensorAddress(spec.name.c_str(), buffer),
+            "Cannot bind preparation tensor: " + spec.name);
+      CheckAcl(cudaMemsetAsync(buffer, 0,
+                               TensorShape(spec.shape).NumElements() *
+                                   ElementSize(spec.dtype),
+                               stream),
+               "clear preparation tensor");
+    }
+  }
+  const auto qp = impl_->buffers.find("q_index_shifted");
+  const int32_t value = 11;
+  if (qp != impl_->buffers.end())
+    CheckAcl(cudaMemcpyAsync(qp->second, &value, sizeof(value),
+                             cudaMemcpyHostToDevice, stream),
+             "upload preparation QP");
+  for (int run = 0; run < 3; ++run) {
+    impl_->Enqueue(stream);
+    CheckAcl(cudaStreamSynchronize(stream), "finish model preparation");
+  }
+  impl_->prepared = true;
+  std::cout << "trt_prepare model=" << record_.name
+            << " ms=" << thor::Milliseconds(begin, thor::TimingClock::now())
+            << "\n";
+}
 void TensorRtStage::RunNamed(const NamedTensorView* inputs, size_t input_count,
                              const NamedTensorView* outputs,
                              size_t output_count) {
@@ -189,6 +239,15 @@ void TensorRtStage::RunNamed(const NamedTensorView* inputs, size_t input_count,
   const auto stream = runtime_->stream();
   const bool warmup = record_.name == "MLVCEncoder";
   const std::string timing_prefix = "model." + record_.name + ".";
+  std::unique_lock<std::mutex> inference_lock;
+  if (impl_->serial_inference) {
+    const auto wait_begin = thor::TimingClock::now();
+    inference_lock =
+        std::unique_lock<std::mutex>(InferenceMutex(runtime_->device_id()));
+    thor::RecordTiming(timing_prefix + "scheduler_wait_wall",
+                       thor::Milliseconds(wait_begin, thor::TimingClock::now()),
+                       warmup);
+  }
   thor::TimingScope run_timer(timing_prefix + "runtime_wall", warmup);
   impl_->timing_events.Record(0, stream);
   const auto input_begin = thor::TimingClock::now();
@@ -293,5 +352,10 @@ TensorRtStage& TensorRtModelSet::GetStage(const std::string& name) {
 }
 TensorRtStage& TensorRtModelSet::GetStage(std::string_view name) {
   return GetStage(std::string(name));
+}
+void TensorRtModelSet::Prepare() {
+  static std::mutex preparation_mutex;
+  std::lock_guard<std::mutex> lock(preparation_mutex);
+  for (auto& stage : stages_) stage.second->Prepare();
 }
 }  // namespace mlvc

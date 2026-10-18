@@ -53,10 +53,16 @@ GPU 输入输出缓冲，复制调用方的数据后重放图，避免参考缓�
 改变已捕获的地址。三个模型均有普通提交与图重放的逐字节输出对照工具。
 图捕获不支持时记录原因并使用普通 `enqueueV3`；诊断对照可在启动前设置
 `MLVC_THOR_CUDA_GRAPH=0`。实际捕获/重放计数记录为 `cuda_graph model=...`。
+
+五上下文模式默认按 GPU 设备串行执行模型调用，采集、熵编解码、NVENC 和
+网络仍并行，避免整帧图同时运行时积压。CPU 输入直接上传至模型固定缓冲。
+实时无 B 帧输入启用 CUVID 低延迟；有 B 帧时保留重排。调度、拷贝与显示缓冲的
+测量口径及复现命令见 [混合五路时延验证](MIXED_LATENCY_VALIDATION.md)。
 batch5 继续使用原批调度器，不使用此单上下文图路径。
 
 参考特征平移缓存按路复用并使用各自的计算流；NVENC 使用独立非阻塞复制流，
-接收 GPU NV12 图像。吞吐和积压验证见 [时延修复记录](LATENCY_FIX_VALIDATION.md)。
+接收 GPU NV12 图像。吞吐和积压验证见 [时延修复记录](LATENCY_FIX_VALIDATION.md)，
+后续启动积压和抖动改进见 [五路抖动验证](JITTER_FIX_VALIDATION.md)。
 
 `target_fps` 可调整，例如 30、25、12；设为 0 关闭抽帧。低于目标帧率时不补帧。
 通过预读五帧的 PTS 间隔探测真实输入帧率，预读帧继续参与处理。
@@ -151,6 +157,35 @@ bash scripts/run_five.sh encode contexts
 12 FPS 的重复验证和延迟说明见 [DECODE_LATENCY_VALIDATION.md](DECODE_LATENCY_VALIDATION.md)。
 使用公开配置模板复现五路基准的方法见 [BENCHMARKING.md](BENCHMARKING.md)。
 MediaMTX 由使用者启动。
+
+五路测试输入固定为两路静态、两路动态和一路实时计时器。先启动电脑上的 MediaMTX，
+再在编码板单独的终端运行：
+
+```bash
+cd /home/xidian/workspace/MLVC_Thor
+bash scripts/run_test_sources.sh
+# 更换服务器：bash scripts/run_test_sources.sh --rtsp-base rtsp://新IP:8554
+```
+
+独立参数文件为 `configs/five/test_sources.json`，地址默认
+`rtsp://192.168.5.3:8554`，分辨率 1920×1080、12 FPS。各路如下：
+
+| 路径 | 场景 | 处理 |
+|---|---|---|
+| input0、input1 | 静态矿井 | 固定静态素材首帧，循环发布 |
+| input2、input3 | 动态矿井 | 动态素材循环发布 |
+| input4 | 实时计时器 | 显示经过时间和帧号，持续递增 |
+
+静态缓存首次启动用 NVDEC 解码、NVENC 编码生成到 `data/video/generated/`。
+随后四路素材只复制 H.264 码流，计时器一路使用 NVENC 实时编码；没有软件编码回退。
+动态素材必须预先准备为配置中的分辨率和帧率，脚本会检查，不会静默改变速率。
+两路静态使用同一张图，两路动态使用同一素材，不代表四个独立采集设备。
+保持终端打开，在另一个终端启动编码程序；Ctrl+C 或终端断开会停止本次五路源。
+若任一路退出，脚本会停止本次其余源，并保留 `logs/test-sources/<启动编号>/`。
+
+计时器通过原图与重建图的读数差观察显示时差；12 FPS 的时间步长约 83 ms。
+测量时先在 UI 参数中将原图显示延时设为 0；原有 200 ms 补偿会缩小可见差值。
+读数差包含两条播放链路的相对缓冲差，不能直接当成相机曝光到屏幕的绝对总时延。
 
 batch5 引擎放在 `engines/batch5/`，使用独立的 `models/manifest_thor_batch5.json`。
 该 manifest 的 I/O shape 描述每路 N=1 逻辑接口，实际 N=5 引擎 shape 保存在

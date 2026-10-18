@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <cstdint>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
@@ -198,6 +199,11 @@ MlvcCodecRuntime::MlvcCodecRuntime(
       models_(&runtime_, LoadVerifiedManifest(manifest_path)),
       sidecar_(mlvc::RuntimeSidecar::LoadQpShiftMetadata(
           RuntimeArtifactPath(models_.manifest(), "metadata.json"))),
-      workspace_(&models_, binding_mode) {}
+      workspace_(&models_, binding_mode) {
+#ifdef MLVC_TENSORRT
+  const char* prewarm = std::getenv("MLVC_THOR_PREWARM");
+  if (!prewarm || std::string(prewarm) != "0") models_.Prepare();
+#endif
+}
 
 }  // namespace mlvc::app

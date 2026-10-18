@@ -84,6 +84,7 @@ struct StageOutputWorkspace {
 
   std::vector<Entry> entries_;
   StageOutputBindingMode binding_mode_ = StageOutputBindingMode::kCpu;
+  bool direct_host_inputs_ = false;
   mlvc::AclBuffer encode_index_combined_;
   mlvc::AclBuffer encode_index_keep_;
 };

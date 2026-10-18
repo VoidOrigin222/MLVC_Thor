@@ -67,6 +67,16 @@
 namespace mlvc::codec {
 namespace {
 
+#ifdef MLVC_TENSORRT
+struct EntropyFramePacket final : public mlvc::DataObject {
+  std::future<DecodedEntropyFrame> frame;
+  ~EntropyFramePacket() override {
+    // On cancellation, queued jobs must finish before entropy_decoders die.
+    if (frame.valid()) frame.wait();
+  }
+};
+#endif
+
 void CheckAclCall(aclError status, const char* operation) {
   if (status != ACL_ERROR_NONE) {
     throw mlvc::Error(std::string(operation) +
@@ -141,6 +151,19 @@ class AsyncRtspNv12Pipeline {
       }
     }
     if (h264_encoder_config_.has_value()) {
+#ifdef MLVC_TENSORRT
+      // Allocate NVENC surfaces before GPU frame processing starts; doing this
+      // lazily in FlushOne can synchronize other lanes' first inferences.
+      const auto begin = std::chrono::steady_clock::now();
+      h264_encoder_ = std::make_unique<io::DvppH264Encoder>(
+          context_, *h264_encoder_config_);
+      if (profiler_ != nullptr) {
+        profiler_->AddEvent("decode.setup.nvenc", profiler_->StartMs(begin),
+                            std::chrono::duration<double, std::milli>(
+                                std::chrono::steady_clock::now() - begin)
+                                .count());
+      }
+#endif
       encoder_worker_ =
           std::thread(&AsyncRtspNv12Pipeline::EncoderWorker, this);
     }
@@ -544,6 +567,18 @@ int RunDecodeStream(const DecodeStreamOptions& options,
     g_codec_graph_executor = &graph_executor;
     g_codec_graph_executor->RecordTemplate(&profiler);
 
+    std::vector<std::unique_ptr<MlvcOfficialEntropyDecoder>> entropy_decoders;
+    entropy_decoders.reserve(options.pipeline.entropy_workers);
+    {
+      mlvc::ScopedCpuTimer timer(&profiler, "decode.setup.entropy");
+      // PMF tables depend on the model bundle, not the stream header. Finish
+      // loading them before accepting frames into the transport queue.
+      for (std::size_t i = 0; i < options.pipeline.entropy_workers; ++i) {
+        entropy_decoders.emplace_back(
+            std::make_unique<MlvcOfficialEntropyDecoder>(models.manifest()));
+      }
+    }
+
     const bool udp_input = options.input_transport_port > 0;
     const bool rtp_input = udp_input && options.input_transport_mode == "rtp";
     std::optional<io::MlvcBitstreamReader> bitstream_reader;
@@ -664,12 +699,6 @@ int RunDecodeStream(const DecodeStreamOptions& options,
         MakeFp16Tensor(decoder_record.inputs.at(3).shape, 0.0f);
     bool has_ltr_feature = false;
     std::map<int, TensorData> ltr_features;
-    std::vector<std::unique_ptr<MlvcOfficialEntropyDecoder>> entropy_decoders;
-    entropy_decoders.reserve(options.pipeline.entropy_workers);
-    for (std::size_t i = 0; i < options.pipeline.entropy_workers; ++i) {
-      entropy_decoders.emplace_back(
-          std::make_unique<MlvcOfficialEntropyDecoder>(models.manifest()));
-    }
     mlvc::app::OrderedFutureWindow<DecodedEntropyFrame> entropy_window(
         options.pipeline.entropy_workers);
     const auto decode_start = std::chrono::steady_clock::now();
@@ -769,12 +798,34 @@ int RunDecodeStream(const DecodeStreamOptions& options,
     // being ignored.
     const std::size_t bitstream_queue_capacity = std::min(
         options.pipeline.queue_capacity, options.pipeline.frame_buffer_slots);
-    mlvc::StreamingPipeline bitstream_pipeline(options.pipeline.stream_workers,
-                                               bitstream_queue_capacity);
+    bool decode_entropy_in_packet_stage = false;
+#ifdef MLVC_TENSORRT
+    decode_entropy_in_packet_stage = options.pipeline.entropy_workers == 1;
+#endif
+    mlvc::StreamingPipeline bitstream_pipeline(
+        decode_entropy_in_packet_stage ? 1 : options.pipeline.stream_workers,
+        bitstream_queue_capacity);
     bitstream_pipeline.SetProcessor(
-        [](const std::shared_ptr<mlvc::DataObject>& input) {
+        [&](const std::shared_ptr<mlvc::DataObject>& input)
+            -> std::shared_ptr<mlvc::DataObject> {
           mlvc::Check(input != nullptr,
                       "bitstream pipeline received an empty input");
+#ifdef MLVC_TENSORRT
+          if (decode_entropy_in_packet_stage) {
+            auto packet =
+                std::dynamic_pointer_cast<mlvc::app::BitstreamPacket>(input);
+            Check(packet != nullptr,
+                  "entropy stage requires a bitstream packet");
+            auto decoded = std::make_shared<EntropyFramePacket>();
+            // Decode the next packet while the consumer runs the current GPU
+            // frame. The bounded, ordered pipeline emits this result without
+            // waiting for another packet or EOS. One processor owns slot 0.
+            decoded->frame = submit_entropy(
+                0, packet->frame_index, packet->frame_type, packet->q_index,
+                packet->metadata, std::move(packet->payload));
+            return decoded;
+          }
+#endif
           return input;
         });
     bitstream_pipeline.Start();
@@ -786,6 +837,19 @@ int RunDecodeStream(const DecodeStreamOptions& options,
     // Keep the per-lane warp allocation across frames. cudaMalloc/cudaFree in
     // this hot path can synchronize otherwise independent GPU streams.
     TensorData warped_reference;
+    const auto trace_frame = [&](const char* name, int frame_index) {
+      if (options.profile_output_path.empty()) return;
+      const auto now = std::chrono::steady_clock::now();
+      profiler.AddEventWithArgs(
+          name, "latency", "main", profiler.StartMs(now), 0,
+          {mlvc::Profiler::Arg("frame_index", frame_index),
+           mlvc::Profiler::Arg(
+               "monotonic_ns",
+               static_cast<uint64_t>(
+                   std::chrono::duration_cast<std::chrono::nanoseconds>(
+                       now.time_since_epoch())
+                       .count()))});
+    };
     auto run_decoded_frame = [&](const DecodedEntropyFrame& decoded) {
 #ifdef MLVC_TENSORRT
       ScopedRuntimeState worker_state;
@@ -799,6 +863,7 @@ int RunDecodeStream(const DecodeStreamOptions& options,
 #endif
       runtime.MakeCurrent();
       const int frame_index = decoded.frame_index;
+      trace_frame("decode.frame.start", frame_index);
       const MlvcFrameType frame_type = decoded.frame_type;
       const int q_index = decoded.q_index;
       const bool explicit_metadata = decoded.metadata.explicit_metadata;
@@ -942,11 +1007,22 @@ int RunDecodeStream(const DecodeStreamOptions& options,
       }
       active_short_reference_frame = frame_index;
       if (header.translation_warp) TraceWarpReferenceState(frame_index, &state);
+      trace_frame("decode.frame.complete", frame_index);
       latency_probe.Ack(frame_index);
       ++decoded_frames;
     };
 
     auto consume_packet = [&](const std::shared_ptr<mlvc::DataObject>& data) {
+#ifdef MLVC_TENSORRT
+      if (decode_entropy_in_packet_stage) {
+        auto decoded = std::dynamic_pointer_cast<EntropyFramePacket>(data);
+        Check(decoded != nullptr, "GPU stage requires an entropy result");
+        // Keep failures on the consumer path, where cancellation stops the
+        // producer, even when the source pauses before its next packet.
+        run_decoded_frame(decoded->frame.get());
+        return;
+      }
+#endif
       auto packet = std::dynamic_pointer_cast<mlvc::app::BitstreamPacket>(data);
       Check(packet != nullptr,
             "bitstream pipeline returned an unexpected data object");

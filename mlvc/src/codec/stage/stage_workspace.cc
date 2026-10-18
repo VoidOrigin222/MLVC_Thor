@@ -1,6 +1,7 @@
 #include "mlvc/codec/detail/stage/stage_workspace.h"
 
 #include <chrono>
+#include <cstdlib>
 #include <cstring>
 
 #include "mlvc/codec/detail/profile/codec_profile.h"
@@ -71,6 +72,10 @@ void CopyAclTensorToPinned(const mlvc::TensorHandle& handle,
 StageOutputWorkspace::StageOutputWorkspace(mlvc::StageModelSet* models,
                                            StageOutputBindingMode binding_mode)
     : binding_mode_(binding_mode) {
+#ifdef MLVC_TENSORRT
+  const char* direct_input = std::getenv("MLVC_THOR_DIRECT_HOST_INPUT");
+  direct_host_inputs_ = !direct_input || std::string(direct_input) != "0";
+#endif
   entries_.reserve(models->manifest().models().size());
   for (const mlvc::ModelRecord& record : models->manifest().models()) {
     mlvc::Check(record.outputs.size() <= kMaxStageOutputs,
@@ -83,7 +88,8 @@ StageOutputWorkspace::StageOutputWorkspace(mlvc::StageModelSet* models,
                 "stage input count exceeds fixed storage");
     for (std::size_t i = 0; i < record.inputs.size(); ++i) {
       entry.input_names[i] = &record.inputs[i].name;
-      if (binding_mode_ == StageOutputBindingMode::kAclDeviceWithCpuMirror) {
+      if (binding_mode_ == StageOutputBindingMode::kAclDeviceWithCpuMirror &&
+          !direct_host_inputs_) {
         entry.input_handles[i].Reset(mlvc::TensorShape(record.inputs[i].shape),
                                      record.inputs[i].dtype);
         entry.input_handles[i].UseOwnedCpuBuffer(false);
@@ -252,6 +258,10 @@ std::optional<InputView> StageOutputWorkspace::UploadInputToDevice(
     const TensorData& tensor, mlvc::Profiler* profiler) {
   MLVC_PROFILE_RANGE(std::string("UploadInputToDevice.") + record.name + "." +
                      input_name);
+  // TensorRT copies host tensors straight into its stable graph bindings on
+  // this lane's compute stream. A staging upload here adds a synchronous H2D
+  // copy followed by another D2D copy inside RunNamed.
+  if (direct_host_inputs_) return std::nullopt;
   if (binding_mode_ != StageOutputBindingMode::kAclDeviceWithCpuMirror) {
     return std::nullopt;
   }

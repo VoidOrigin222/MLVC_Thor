@@ -72,6 +72,11 @@ def prepare(
     entropy_workers,
     binary_dir,
     timeout_seconds=100,
+    input_prefix="five-in",
+    output_prefix="five-out",
+    packet_observer="",
+    complete_frame_validation=True,
+    runtime_environment=None,
 ):
     operation = "encode" if host == ENCODER else "decode"
     return remote(
@@ -95,18 +100,18 @@ for lane in range(5):
  s=re.sub(r'(?m)^profile_output\\s*=.*\\n','',s)
  extra='profile_output = "logs/'+label+'-'+operation+'-lane'+str(lane)+'-trace.json"\\n'
  if operation=='encode':
-  s=re.sub(r'(?m)^input_rtsp\\s*=.*$', 'input_rtsp = "{RTSP_BASE}/five-in'+str(lane)+'"',s)
+  s=re.sub(r'(?m)^input_rtsp\\s*=.*$', 'input_rtsp = "{RTSP_BASE}/{input_prefix}'+str(lane)+'"',s)
   s=re.sub(r'(?m)^output_transport_host\\s*=.*$', 'output_transport_host = "{DECODER.split('@')[-1]}"',s)
   s=re.sub(r'(?m)^(fps|target_fps)\\s*=.*$', lambda m:m.group(1)+' = {target_fps}',s)
   s=re.sub(r'(?m)^profile_warmup_frames\\s*=.*\\n','',s)
   extra+='profile_warmup_frames = 96\\n'
  else:
-  s=re.sub(r'(?m)^output_transport_rtsp_url\\s*=.*$', 'output_transport_rtsp_url = "{RTSP_BASE}/five-out'+str(lane)+'"', s)
+  s=re.sub(r'(?m)^output_transport_rtsp_url\\s*=.*$', 'output_transport_rtsp_url = "{RTSP_BASE}/{output_prefix}'+str(lane)+'"', s)
   extra+='latency_probe_host = "{ENCODER.split('@')[-1]}"\\nlatency_probe_port = '+str(39500+lane)+'\\n'
   receive_policy={{'input_rtp_queue_capacity':256,'input_rtp_queue_bytes':67108864,
    'input_rtp_overflow_policy':'fail','input_rtp_pending_frames':256,
    'input_rtp_reorder_wait_ms':500,'input_rtp_eos_wait_ms':5000,
-   'input_rtp_loss_policy':'fail'}}
+   'input_rtp_loss_policy':'fail'}} if {complete_frame_validation!r} else {{}}
   for key,value in receive_policy.items():
    s=re.sub(r'(?m)^'+re.escape(key)+r'\\s*=.*$',key+' = '+json.dumps(value),s)
   s=re.sub(r'(?m)^entropy_workers\\s*=.*$', 'entropy_workers = {entropy_workers}',s)
@@ -114,6 +119,10 @@ for lane in range(5):
  path='configs/'+label+'-'+operation+'-lane'+str(lane)+'.toml'
  Path(path).write_text(s); configs.append(path)
 env=os.environ.copy()
+env.update({(runtime_environment or {})!r})
+if {bool(packet_observer)!r}:
+ env['LD_PRELOAD']={packet_observer!r}
+ env['MLVC_BENCH_PACKET_LOG']=os.getcwd()+'/logs/'+label+'-packets.bin'
 env.pop('MLVC_THOR_INPUT_DIGEST',None)
 env.pop('MLVC_THOR_BATCH5',None)
 env.pop('MLVC_THOR_SHARE_ENGINES',None)
@@ -159,7 +168,7 @@ if p.exists():
     )
 
 
-def collect(host, label, operation, frames):
+def collect(host, label, operation, frames, input_prefix="five-in"):
     return json.loads(
         remote(
             host,
@@ -200,7 +209,7 @@ for lane in range(5):
    if r['tail_samples_complete'] and len(last)>1:
     r['decode_ack_tail_fps']=(len(last)-1)*1e9/(int(acks[str(last[-1])])-int(acks[str(last[0])]))
   timeline=[]
-  for p in Path('logs').glob(label+'-input-five-in'+str(lane)+'-*.csv'):
+  for p in Path('logs').glob(label+'-input-{input_prefix}'+str(lane)+'-*.csv'):
    timeline.extend(dict((k,int(v)) for k,v in row.items()) for row in csv.DictReader(p.open()))
   timeline.sort(key=lambda x:x['read_ns'])
   timeline=[row for row in timeline if row['frame']>=96 and row['pts_ns']>=0]
@@ -294,9 +303,7 @@ print(json.dumps({{'ok':ok,'errors':errors}}))
                 ]
                 states = [json.loads(f.result()) for f in futures]
             print(json.dumps(states), flush=True)
-            if all(s["ok"] == 5 for s in states) or any(
-                s["errors"] for s in states
-            ):
+            if all(s["ok"] == 5 for s in states) or any(s["errors"] for s in states):
                 break
         # ACK files are emitted immediately once the last ACK is received.
         time.sleep(1)

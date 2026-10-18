@@ -83,6 +83,7 @@ int main(int argc, char** argv) {
     const std::string prefix(argv[3]);
     std::vector<int> result(5, 1);
     StartGate gate(5);
+    std::mutex startup_mutex;
     std::vector<std::thread> threads;
     LaneLogBuffer buffer(std::cout.rdbuf());
     LaneLogBuffer error_buffer(std::cerr.rdbuf());
@@ -102,14 +103,17 @@ int main(int argc, char** argv) {
                     ? mlvc::codec::StageOutputBindingMode::
                           kAclDeviceWithCpuMirror
                     : mlvc::codec::StageOutputBindingMode::kCpu;
-            mlvc::app::MlvcCodecRuntime runtime(config.stream.manifest_path,
-                                                config.stream.device, binding);
+            auto runtime = [&] {
+              std::lock_guard<std::mutex> lock(startup_mutex);
+              return std::make_unique<mlvc::app::MlvcCodecRuntime>(
+                  config.stream.manifest_path, config.stream.device, binding);
+            }();
             mlvc::Profiler profiler;
             mlvc::CodecGraphExecutor graph(
                 config.stream.pipeline.graph_packet_capacity);
             mlvc::EntropyWorker entropy(config.stream.pipeline.entropy_workers);
-            mlvc::codec::EncodePipelineServices services{&profiler, &graph,
-                                                         &entropy, &runtime};
+            mlvc::codec::EncodePipelineServices services{
+                &profiler, &graph, &entropy, runtime.get()};
             entered = true;
             gate.Wait();
             result[lane] =
@@ -121,14 +125,17 @@ int main(int argc, char** argv) {
                     ? mlvc::codec::StageOutputBindingMode::
                           kAclDeviceWithCpuMirror
                     : mlvc::codec::StageOutputBindingMode::kCpu;
-            mlvc::app::MlvcCodecRuntime runtime(config.stream.manifest_path,
-                                                config.stream.device, binding);
+            auto runtime = [&] {
+              std::lock_guard<std::mutex> lock(startup_mutex);
+              return std::make_unique<mlvc::app::MlvcCodecRuntime>(
+                  config.stream.manifest_path, config.stream.device, binding);
+            }();
             mlvc::Profiler profiler;
             mlvc::CodecGraphExecutor graph(
                 config.stream.pipeline.graph_packet_capacity);
             mlvc::EntropyWorker entropy(config.stream.pipeline.entropy_workers);
-            mlvc::codec::DecodePipelineServices services{&profiler, &graph,
-                                                         &entropy, &runtime};
+            mlvc::codec::DecodePipelineServices services{
+                &profiler, &graph, &entropy, runtime.get()};
             entered = true;
             gate.Wait();
             result[lane] =

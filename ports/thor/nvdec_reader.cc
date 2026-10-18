@@ -100,10 +100,12 @@ class NvdecReader::Impl {
     const bool live = path.string().rfind("rtsp://", 0) == 0 ||
                       path.string().rfind("rtsps://", 0) == 0;
     if (live) {
-      // Bound probing by media duration, rather than interrupting a partially
-      // received TCP interleaved packet after the metadata is already known.
-      av_dict_set(&options, "analyzeduration", "2000000", 0);
-      av_dict_set(&options, "probesize", "4000000", 0);
+      // Detect the actual rate from decoded PTS below, rather than collecting
+      // seconds of packets in the generic FPS probe. Retain the initial IDR:
+      // discarding probe packets can require waiting another long GOP.
+      format_->fps_probe_size = 0;
+      av_dict_set(&options, "analyzeduration", "250000", 0);
+      av_dict_set(&options, "probesize", "262144", 0);
     }
     deadline_ = NowNs() + 3'000'000'000LL;
     int result =
@@ -142,6 +144,16 @@ class NvdecReader::Impl {
     codec_->pkt_timebase = input->time_base;
     codec_->get_format = CudaFormat;
     codec_->thread_count = 1;
+    // CUVID otherwise adds a four-frame display delay even for IP-only
+    // streams. Retain reordering for inputs that declare B frames.
+    if (live && codec_->has_b_frames == 0) {
+      codec_->flags |= AV_CODEC_FLAG_LOW_DELAY;
+    }
+    if (live) {
+      std::cout << "input_nvdec_low_delay="
+                << ((codec_->flags & AV_CODEC_FLAG_LOW_DELAY) != 0)
+                << " has_b_frames=" << codec_->has_b_frames << '\n';
+    }
     const auto* descriptor = av_pix_fmt_desc_get(
         static_cast<AVPixelFormat>(input->codecpar->format));
     if (descriptor) depth_ = descriptor->comp[0].depth;

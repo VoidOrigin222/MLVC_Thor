@@ -11,6 +11,8 @@
 #include <utility>
 #include <vector>
 
+#include "mlvc/application/stream/mlvc_internal.h"
+#include "mlvc/codec/detail/stage/stage_runner.h"
 #include "mlvc/codec/tensor_data.h"
 #include "mlvc/core/buffer.h"
 #include "mlvc/core/status.h"
@@ -28,6 +30,29 @@ std::map<std::string, mlvc::TensorView> Views(Tensors* tensors) {
   std::map<std::string, mlvc::TensorView> result;
   for (auto& [name, tensor] : *tensors) result.emplace(name, tensor.View());
   return result;
+}
+
+mlvc::codec::RunOutput RunWorkspaceStage(mlvc::StageModelSet* models,
+                                         const std::string& name,
+                                         const Tensors& tensors) {
+  using mlvc::codec::RunStage;
+  using mlvc::codec::TensorInput;
+  if (name == "MLVCEncoder")
+    return RunStage(
+        models, name,
+        {TensorInput("x", tensors.at("x")),
+         TensorInput("ref_feature", tensors.at("ref_feature")),
+         TensorInput("q_index_shifted", tensors.at("q_index_shifted"))});
+  if (name == "MLVCDecoder")
+    return RunStage(
+        models, name,
+        {TensorInput("z_raw", tensors.at("z_raw")),
+         TensorInput("y_raw_0", tensors.at("y_raw_0")),
+         TensorInput("y_raw_1", tensors.at("y_raw_1")),
+         TensorInput("ref_feature", tensors.at("ref_feature")),
+         TensorInput("q_index_shifted", tensors.at("q_index_shifted"))});
+  return RunStage(models, name,
+                  {TensorInput("ref_frame", tensors.at("ref_frame"))});
 }
 }  // namespace
 
@@ -77,6 +102,7 @@ int main(int argc, char** argv) {
         mlvc::TensorRtRuntime runtime(0);
         mlvc::TensorRtStage stage(&runtime, record,
                                   manifest.directory() / record.model);
+        // The control starts cold, so preparation cannot hide changed outputs.
         for (int sample = 0; sample < 4; ++sample)
           stage.Run(Views(&inputs[sample]), Views(&expected[sample]));
         mlvc::Check(stage.cuda_graph_launches() == 0,
@@ -89,6 +115,13 @@ int main(int argc, char** argv) {
         mlvc::TensorRtRuntime runtime(0);
         mlvc::TensorRtStage stage(&runtime, record,
                                   manifest.directory() / record.model);
+        stage.Prepare();
+        const auto prepared_launches = stage.cuda_graph_launches();
+        stage.Prepare();
+        mlvc::Check(stage.cuda_graph_launches() == prepared_launches,
+                    "Model preparation must be idempotent");
+        mlvc::Check(prepared_launches == 2,
+                    "Preparation must exercise graph capture and replay");
         for (int sample = 0; sample < 4; ++sample) {
           auto in = Views(&inputs[sample]);
           auto out = Views(&actual[sample]);
@@ -129,11 +162,35 @@ int main(int argc, char** argv) {
             mlvc::Check(tensor.bytes == expected[sample].at(key).bytes,
                         "CUDA graph output mismatch: " + name + "." + key);
         }
-        mlvc::Check(stage.cuda_graph_launches() == 3,
-                    "Expected three real CUDA graph launches: " + name);
+        mlvc::Check(stage.cuda_graph_launches() == prepared_launches + 4,
+                    "Expected four prepared CUDA graph launches: " + name);
       }
       std::cout << "graph_equivalence model=" << name
                 << " samples=4 bitwise_equal=true\n";
+      // Exercise the production workspace too: its old upload used a device
+      // staging tensor, while direct input binds host data to the runtime.
+      for (const char* direct : {"0", "1"}) {
+        setenv("MLVC_THOR_DIRECT_HOST_INPUT", direct, 1);
+        setenv("MLVC_THOR_SHARE_ENGINES", "1", 1);
+        mlvc::TensorRtRuntime runtime(0);
+        mlvc::StageModelSet models(&runtime, manifest);
+        models.Prepare();
+        mlvc::codec::StageOutputWorkspace workspace(
+            &models,
+            mlvc::codec::StageOutputBindingMode::kAclDeviceWithCpuMirror);
+        mlvc::codec::ScopedRuntimeState state;
+        mlvc::codec::ConfigureRuntimeState(&workspace, runtime, false);
+        for (int sample = 0; sample < 4; ++sample) {
+          auto output = RunWorkspaceStage(&models, name, inputs[sample]);
+          for (const auto& spec : record.outputs)
+            mlvc::Check(output.At(spec.name).bytes ==
+                            expected[sample].at(spec.name).bytes,
+                        "Workspace output mismatch: " + name + "." + spec.name);
+        }
+        std::cout << "workspace_equivalence model=" << name
+                  << " direct_host=" << direct
+                  << " samples=4 bitwise_equal=true\n";
+      }
     }
     std::cout << "cuda_graph_equivalence=ok\n";
     return 0;

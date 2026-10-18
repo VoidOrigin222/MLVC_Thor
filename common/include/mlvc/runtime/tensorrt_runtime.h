@@ -40,6 +40,9 @@ class TensorRtStage {
   ~TensorRtStage();
   const ModelRecord& record() const { return record_; }
   uint64_t cuda_graph_launches() const;
+  // Initialize lazy inference resources before accepting frames. Idempotent;
+  // call only on the owning thread, outside active inference.
+  void Prepare();
   void Run(const std::map<std::string, TensorView>& inputs,
            const std::map<std::string, TensorView>& outputs);
   void Run(std::initializer_list<NamedTensorView> inputs,
@@ -60,6 +63,7 @@ class TensorRtModelSet {
   bool HasStage(const std::string& name) const;
   TensorRtStage& GetStage(const std::string& name);
   TensorRtStage& GetStage(std::string_view name);
+  void Prepare();
 
  private:
   ModelManifest manifest_;

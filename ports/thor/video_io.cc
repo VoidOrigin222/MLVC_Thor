@@ -365,8 +365,15 @@ class VideoFrameReader::Impl {
         for (;;) {
           std::shared_ptr<NvdecFrame> gpu;
           {
-            std::lock_guard<std::mutex> lock(mutex_);
+            std::unique_lock<std::mutex> lock(mutex_);
+            const auto wait_begin = thor::TimingClock::now();
+            space_.wait(lock, [this] {
+              return stopped_ || queue_.size() < (live_ ? 1u : 4u);
+            });
             if (stopped_) break;
+            thor::RecordTiming(
+                "input.capture_queue_wait",
+                thor::Milliseconds(wait_begin, thor::TimingClock::now()));
           }
           const auto grab_begin = thor::TimingClock::now();
           const bool grabbed = nvdec_->Read(&gpu);
@@ -385,12 +392,7 @@ class VideoFrameReader::Impl {
                   std::chrono::steady_clock::now().time_since_epoch())
                   .count());
           std::unique_lock<std::mutex> lock(mutex_);
-          const auto queue_begin = thor::TimingClock::now();
-          space_.wait(lock, [this] { return stopped_ || queue_.size() < 4; });
           if (stopped_) break;
-          thor::RecordTiming(
-              "input.capture_queue_wait",
-              thor::Milliseconds(queue_begin, thor::TimingClock::now()));
           queue_.push_back(CapturedFrame{std::move(gpu), ready_ns});
           available_.notify_one();
         }
