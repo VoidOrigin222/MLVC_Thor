@@ -1,17 +1,22 @@
 # 五路视频监控
 
-五个通道，每路原图和语义压缩固定并排。超宽屏三列、普通桌面两列、窄屏单列，
-每个通道内的两个画面始终并排。通过 MediaMTX WHEP/WebRTC 播放十个视频，
+界面沿用 Ascend 版本的深灰配色、蓝色按钮、圆角视频卡片、指标排版与深色参数抽屉。
+保留五路总览，每路原图、H.264 与语义压缩并排，标题、分辨率和实收 FPS 位于画面上方。
+
+五个通道，每路三个画面固定并排。桌面总览上排三组、下排两组，窄屏单列，
+单通道选择时三个画面放大展示。通过 MediaMTX WHEP/WebRTC 播放十五个视频，
 支持重新连接、暂停/继续、单画面全屏和独立通道设置。页面不提供运行日志、
-服务状态面板、H.264 比较器或 PSNR 控制。
+服务状态面板或 PSNR 控制。H.264 对照使用可配置的固定 QP，默认 40。
 
 ## 启动
 
-Windows 双击 `SemanticFiveMonitor.exe`，同目录保留 `ui_config.json`。
+当前三画面对照版本先使用源码预览，等界面确认后再打包 EXE。
+已交付的旧 EXE 不包含本次三画面对照功能。后续 EXE 同目录保留 `ui_config.json`。
 启动器打开浏览器，关闭启动器停止本地页面及它的播放会话，板端程序独立运行。
 同一参数文件的实例会重新读取文件再打开页面；不同文件使用独立端口，不复用旧配置。
 
-Python 方式需要 Python 3.10+，后端只用标准库，前端无需 npm：
+源码方式需要 Python 3.10+、带 QSV 或 NVENC 的 FFmpeg 及对应显卡驱动，
+后端只用标准库，前端无需 npm：
 
 ```powershell
 python tools/ui/launch_ui.py
@@ -34,6 +39,12 @@ WHEP 支持的 H.264 流必须已接入该 MediaMTX；界面不会把任意摄�
 - `media_api`：MediaMTX API，默认 `http://127.0.0.1:9997`。
 - `original_delay_ms`：原图额外显示补偿，默认 200 ms，可设 0–2000。
 - 五路 `original`：原图完整 RTSP URL，默认 `/input0` 至 `/input4`。
+- `h264_qp`：五路 H.264 固定 QP，默认 40，范围 0–51；数值越小画质越高。
+- `h264_encoder`：默认 `auto`，Windows 优先 Intel QSV，然后 NVIDIA NVENC。
+- `h264_ffmpeg`：默认 `auto`，优先程序资源目录内的 FFmpeg，否则使用 PATH。
+- `h264_auto_start`：默认开启，原图可用后自动生成五路 H.264 对照。
+- `h264_delay_ms`：H.264 额外显示补偿，默认 200 ms。
+- 五路 `h264`：H.264 输出完整 RTSP URL，默认 `/camera-h2640` 至 `/camera-h2644`。
 - 五路 `semantic`：解码重建完整 RTSP URL，默认 `/ulbvc0` 至 `/ulbvc4`。
 - `width`、`height`、`fps`：编码源尺寸与帧率记录，默认 1920×1080、12 FPS。此处不修改板端输入帧率；帧率应在板端编码配置中设置。
 - `stats_port`：各通道编码统计 UDP 端口，默认 39600–39604，不可重复。
@@ -45,10 +56,19 @@ URL，包含流名称。浏览器和 MediaMTX 不在同一电脑时，MediaMTX �
 
 ## 接入真实编码统计
 
-每个通道下方的 bpp、带宽和压缩比来自编码器累计的**语义净载荷字节和帧数**，
+语义压缩画面下方的 bpp、带宽和压缩比来自编码器累计的**语义净载荷字节和帧数**，
 不使用重建后 H.264 视频的播放带宽替代。带宽为十进制 kB/s，不含 RTP/UDP/IP
 包头；bpp 按编码帧数与图像尺寸计算，压缩比使用 RGB24 的 24 bpp 为基准。
-视频角标的 FPS 则是浏览器实际接收/解码帧率。
+视频标题中的 FPS 是浏览器实际接收/解码帧率。
+原图指标使用 RGB24 理论值，固定 24 bpp。H.264 指标使用浏览器 WebRTC
+接收的视频 RTP 净载荷字节和解码帧数，不包含网络包头；其采样位置与语义编码统计不同。
+H.264 与语义压缩曲线共用 kB/s 单位，保留最近 30 秒。
+
+H.264 从各路原图 RTSP 硬件解码并重新硬件编码；Windows QSV 使用 D3D11VA
+解码，NVENC 使用 CUDA 解码，无软件编解码回退。修改 QP 后只重启本 UI 创建的
+对照推流进程。工具栏可启动/停止这些对照流；已存在的外部 H.264 推流不会被替换。
+关闭启动器会停止自建进程，MediaMTX 和板端服务由使用者独立管理。
+输入解码线程固定为 1，避免低帧率输入在默认帧线程队列中积压；硬件解码仍开启。
 
 五路总配置 `configs/encoder.toml` 已默认开启统计，接收地址为 `192.168.5.3`，
 五路 UDP 端口为 39600–39604，与 UI 默认参数对应。更换 UI 电脑 IP 时修改
@@ -73,14 +93,15 @@ UI 必须与新增统计接口的可执行程序配套使用，旧二进制不�
 ## 验证和打包
 
 ```powershell
-python -m unittest discover -s tools/ui -p test_server.py -v
+python -m unittest discover -s tools/ui -p 'test_*.py' -v
 node --check tools/ui/app.js
 node tools/ui/test_frame_delay.cjs
+node tools/ui/test_player_recovery.cjs
 python tools/ui/launch_ui.py --self-test artifacts/ui-self-test.json
 python -m pip install -r tools/ui/requirements-build.txt
 python tools/ui/build_windows_exe.py
 ```
 
 源码包含 HTTP/WHEP 会话归属、参数持久化/保存失败、重复端口、计数重置及
-陈旧统计测试。Windows EXE 只打包 UI 所需的 Python、Tk 和网页资源；不需要
-在 UI 中打包 FFmpeg。模型、MediaMTX 和板端程序依照各自部署说明独立提供。
+陈旧统计测试。构建脚本已包含 FFmpeg 和所需 DLL 的收集逻辑，本次按要求不执行 EXE 构建。
+模型、MediaMTX 和板端程序依照各自部署说明独立提供。

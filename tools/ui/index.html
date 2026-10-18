@@ -3,15 +3,18 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>视频监控</title>
+    <meta name="theme-color" content="#111419" />
+    <title>语义压缩视频监控系统</title>
     <link rel="stylesheet" href="/styles.css" />
     <script src="/app.js" defer></script>
   </head>
   <body>
     <header class="app-header">
-      <h1>视频监控</h1>
+      <h1>语义压缩视频监控系统</h1>
       <time id="clock"></time>
       <div class="toolbar">
+        <button class="button" id="h264-stop">停止 H.264</button>
+        <button class="button" id="h264-start">启动 H.264</button>
         <button class="button" id="pause-button">
           <span id="pause-icon">Ⅱ</span
           ><span id="pause-label">暂停预览</span></button
@@ -42,6 +45,7 @@
           </button>
         </div>
       </div>
+      <div class="notice error" id="h264-error" role="status" hidden></div>
       <section
         class="channel-grid"
         id="channel-grid"
@@ -49,7 +53,7 @@
       ></section>
       <div class="empty-filter" id="empty-filter" hidden>暂无播放通道</div>
       <footer id="bandwidth-summary" class="total-bandwidth">
-        <span>五路带宽</span><strong id="bandwidth-total">—</strong
+        <span>语义压缩合计</span><strong id="bandwidth-total">—</strong
         ><span>kB/s</span>
       </footer>
     </main>
@@ -93,6 +97,14 @@
               max="2000"
               required
           /></label>
+        </fieldset>
+        <fieldset>
+          <legend>H.264 对照</legend>
+          <label>QP<input id="h264_qp" type="number" min="0" max="51" required /></label>
+          <label>H.264 显示补偿 <span class="field-unit">ms</span><input id="h264_delay_ms" type="number" min="0" max="2000" required /></label>
+          <label>FFmpeg 路径<input id="h264_ffmpeg" required spellcheck="false" /></label>
+          <label>硬件编码器<select id="h264_encoder"><option value="auto">自动</option><option value="h264_qsv">Intel QSV</option><option value="h264_nvenc">NVIDIA NVENC</option></select></label>
+          <label class="checkbox-label"><input id="h264_auto_start" type="checkbox" />自动启动 H.264</label>
         </fieldset>
         <fieldset>
           <legend>视频通道</legend>

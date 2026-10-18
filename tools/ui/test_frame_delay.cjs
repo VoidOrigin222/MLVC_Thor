@@ -9,10 +9,10 @@ const code = app.slice(
   app.indexOf("function gatherIce"),
 );
 
-async function run(delay, fps, count) {
+async function run(delay, fps, count, skew = 0) {
   const frames = [],
     drawings = [];
-  let paint;
+  let paint, clock = 0;
   const video = {
     readyState: 2,
     frame: 0,
@@ -55,6 +55,7 @@ async function run(delay, fps, count) {
   const context = vm.createContext({
     document: { createElement: () => canvas },
     VideoFrame: FakeFrame,
+    performance: { now: () => clock },
     requestAnimationFrame(callback) {
       paint = callback;
       return 1;
@@ -68,13 +69,15 @@ async function run(delay, fps, count) {
   for (let i = 0; i < count; i++) {
     video.frame = i;
     const now = (i * 1000) / fps;
-    video.capture(now, { expectedDisplayTime: now });
+    clock = now;
+    video.capture(now - skew, { expectedDisplayTime: now + skew });
     await new Promise(setImmediate);
-    paint(now);
+    paint(now - skew);
   }
   assert.ok(drawings.length > 0, `Black picture: ${delay} ms at ${fps} FPS`);
   assert.equal(canvas.width, 1920);
   assert.equal(canvas.height, 1080);
+  assert.ok(Number(canvas.dataset.delayMs) >= 0, "Negative display delay");
   if (fps <= 60) {
     const last = drawings.at(-1);
     assert.ok(((last.at - last.frame) * 1000) / fps >= delay - 0.001);
@@ -90,6 +93,7 @@ async function run(delay, fps, count) {
   await run(200, 13, 60);
   await run(2000, 30, 130);
   await run(2000, 240, 600);
+  await run(200, 12, 100, 10000);
   console.log(
     "Frame delay: timing, long compensation and bounded lifetime passed",
   );

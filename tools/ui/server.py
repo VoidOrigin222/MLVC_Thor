@@ -23,6 +23,8 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urljoin, urlsplit
 from urllib.request import Request, urlopen
 
+from h264 import Publishers
+
 ROOT = Path(__file__).resolve().parent
 ASSETS = {
     "/": ("index.html", "text/html"),
@@ -32,14 +34,41 @@ ASSETS = {
 
 
 def validate_config(value):
-    if not isinstance(value, dict) or set(value) != {
+    required = {
         "webrtc",
         "media_api",
         "original_delay_ms",
         "channels",
-    }:
+    }
+    h264_defaults = {
+        "h264_qp": 40,
+        "h264_delay_ms": 200,
+        "h264_ffmpeg": "auto",
+        "h264_encoder": "auto",
+        "h264_auto_start": True,
+    }
+    if (
+        not isinstance(value, dict)
+        or not required <= set(value)
+        or set(value) - required - set(h264_defaults)
+    ):
         raise ValueError("参数文件字段不完整，或包含未知字段")
     result = copy.deepcopy(value)
+    for key, default in h264_defaults.items():
+        result.setdefault(key, default)
+    if type(result["h264_qp"]) is not int or not 0 <= result["h264_qp"] <= 51:
+        raise ValueError("H.264 QP 必须为 0–51 的整数")
+    if (
+        type(result["h264_delay_ms"]) is not int
+        or not 0 <= result["h264_delay_ms"] <= 2000
+    ):
+        raise ValueError("H.264 显示补偿必须为 0–2000 ms 的整数")
+    if type(result["h264_auto_start"]) is not bool:
+        raise ValueError("H.264 自动启动必须为布尔值")
+    if result["h264_encoder"] not in ("auto", "h264_qsv", "h264_nvenc"):
+        raise ValueError("H.264 编码器必须为 auto、h264_qsv 或 h264_nvenc")
+    if not isinstance(result["h264_ffmpeg"], str) or not result["h264_ffmpeg"].strip():
+        raise ValueError("FFmpeg 路径不能为空")
 
     def address(text, schemes, path=False):
         if not isinstance(text, str) or any(c.isspace() for c in text):
@@ -48,11 +77,7 @@ def validate_config(value):
         if parsed.scheme not in schemes or not parsed.hostname:
             raise ValueError("请填写完整的视频源或服务地址")
         _ = parsed.port
-        if (
-            parsed.fragment
-            or parsed.query
-            or (path and not parsed.path.strip("/"))
-        ):
+        if parsed.fragment or parsed.query or (path and not parsed.path.strip("/")):
             raise ValueError("视频地址必须包含完整路径，不能包含查询参数或锚点")
         if any(part in (".", "..") for part in parsed.path.split("/")):
             raise ValueError("地址路径无效")
@@ -67,8 +92,8 @@ def validate_config(value):
     if not isinstance(channels, list) or len(channels) != 5:
         raise ValueError("需要配置五个通道")
     ids, ports = set(), set()
-    for channel in channels:
-        if not isinstance(channel, dict) or set(channel) != {
+    for index, channel in enumerate(channels):
+        fields = {
             "id",
             "name",
             "original",
@@ -77,7 +102,12 @@ def validate_config(value):
             "height",
             "fps",
             "stats_port",
-        }:
+        }
+        if (
+            not isinstance(channel, dict)
+            or not fields <= set(channel)
+            or set(channel) - fields - {"h264"}
+        ):
             raise ValueError("通道参数不完整，或包含未知字段")
         if not isinstance(channel["id"], str) or not re.fullmatch(
             r"[a-z0-9_-]{1,32}", channel["id"]
@@ -94,6 +124,12 @@ def validate_config(value):
         channel["name"] = channel["name"].strip()
         for key in ("original", "semantic"):
             channel[key] = address(channel[key], ("rtsp", "rtsps"), True)
+        if "h264" not in channel:
+            origin = urlsplit(channel["original"])
+            channel["h264"] = f"{origin.scheme}://{origin.netloc}/camera-h264{index}"
+        channel["h264"] = address(channel["h264"], ("rtsp", "rtsps"), True)
+        if channel["h264"] in (channel["original"], channel["semantic"]):
+            raise ValueError("H.264 对照地址必须与原图和语义压缩地址不同")
         for key in ("width", "height"):
             if type(channel[key]) is not int or not 16 <= channel[key] <= 8192:
                 raise ValueError("图像尺寸须为 16–8192 的整数")
@@ -115,14 +151,13 @@ class ConfigStore:
         self.path = Path(path).resolve()
         self.lock = threading.RLock()
         if self.path.exists():
-            self.value = validate_config(
-                json.loads(self.path.read_text(encoding="utf-8-sig"))
-            )
+            previous = json.loads(self.path.read_text(encoding="utf-8-sig"))
+            self.value = validate_config(previous)
+            if self.value != previous:
+                self.save(self.value)
         else:
             self.value = validate_config(
-                json.loads(
-                    (ROOT / "ui_config.json").read_text(encoding="utf-8")
-                )
+                json.loads((ROOT / "ui_config.json").read_text(encoding="utf-8"))
             )
             self.save(self.value)
 
@@ -213,8 +248,17 @@ class Monitor:
         self.sessions = {}
         self.sockets = {}
         self.bind_error = ""
+        self.h264 = Publishers()
+        self.ready_paths = set()
+        self.h264_thread = threading.Thread(target=self.maintain_h264, daemon=True)
+        self.h264_thread.start()
         self.thread = threading.Thread(target=self.receive_stats, daemon=True)
         self.thread.start()
+
+    def maintain_h264(self):
+        while not self.closed.is_set():
+            self.h264.update(self.store.snapshot(), self.ready_paths)
+            self.closed.wait(1)
 
     def receive_stats(self):
         while not self.closed.is_set():
@@ -267,6 +311,7 @@ class Monitor:
                 }
         except (OSError, ValueError, KeyError):
             pass
+        self.ready_paths = paths or set()
         return {
             "channels": [
                 {
@@ -278,20 +323,19 @@ class Monitor:
                             if paths is None
                             else urlsplit(c[kind]).path.strip("/") in paths
                         )
-                        for kind in ("original", "semantic")
+                        for kind in ("original", "h264", "semantic")
                     },
                 }
                 for c in cfg["channels"]
             ],
             "stats_error": self.bind_error,
+            "h264": self.h264.status(),
         }
 
     def connect(self, channel_id, kind, offer):
         cfg = self.store.snapshot()
-        channel = next(
-            (c for c in cfg["channels"] if c["id"] == channel_id), None
-        )
-        if channel is None or kind not in ("original", "semantic"):
+        channel = next((c for c in cfg["channels"] if c["id"] == channel_id), None)
+        if channel is None or kind not in ("original", "h264", "semantic"):
             raise ValueError("视频通道不存在")
         path = urlsplit(channel[kind]).path.strip("/")
         endpoint = cfg["webrtc"] + "/" + quote(path, safe="/") + "/whep"
@@ -329,6 +373,8 @@ class Monitor:
 
     def close(self):
         self.closed.set()
+        self.h264.close()
+        self.h264_thread.join(timeout=2)
         self.thread.join(timeout=2)
         from concurrent.futures import ThreadPoolExecutor
 
@@ -343,13 +389,11 @@ def make_handler(monitor):
         def log_message(self, *_args):
             pass
 
-        def send(
-            self, status, body, content_type="application/json", headers=None
-        ):
+        def send(self, status, body, content_type="application/json", headers=None):
             if not isinstance(body, bytes):
-                body = json.dumps(
-                    body, ensure_ascii=False, allow_nan=False
-                ).encode("utf-8")
+                body = json.dumps(body, ensure_ascii=False, allow_nan=False).encode(
+                    "utf-8"
+                )
             self.send_response(status)
             self.send_header("Content-Type", content_type + "; charset=utf-8")
             self.send_header("Content-Length", str(len(body)))
@@ -385,9 +429,7 @@ def make_handler(monitor):
             token = None
             try:
                 origin = self.headers.get("Origin")
-                if origin and urlsplit(origin).netloc != self.headers.get(
-                    "Host"
-                ):
+                if origin and urlsplit(origin).netloc != self.headers.get("Host"):
                     self.send(403, {"error": "请求来源无效"})
                     return
                 length = int(self.headers.get("Content-Length", "0"))
@@ -396,9 +438,16 @@ def make_handler(monitor):
                 body = self.rfile.read(length)
                 path = urlsplit(self.path).path
                 if path == "/api/config":
-                    self.send(200, monitor.store.save(json.loads(body)))
+                    config = monitor.store.save(json.loads(body))
+                    monitor.h264.enabled = None
+                    self.send(200, config)
+                elif path in ("/api/h264/start", "/api/h264/stop"):
+                    monitor.h264.enabled = path.endswith("/start")
+                    if not monitor.h264.enabled:
+                        monitor.h264.stop()
+                    self.send(200, {"ok": True})
                 elif re.fullmatch(
-                    r"/api/whep/[a-z0-9_-]+/(original|semantic)", path
+                    r"/api/whep/[a-z0-9_-]+/(original|h264|semantic)", path
                 ):
                     _, _, _, channel, kind = path.split("/")
                     answer, token = monitor.connect(channel, kind, body)
@@ -445,19 +494,13 @@ def make_handler(monitor):
 
 def main():
     parser = argparse.ArgumentParser(description="五路语义压缩视频监控")
-    directory = (
-        Path(sys.executable).parent if getattr(sys, "frozen", False) else ROOT
-    )
-    parser.add_argument(
-        "--config", type=Path, default=directory / "ui_config.json"
-    )
+    directory = Path(sys.executable).parent if getattr(sys, "frozen", False) else ROOT
+    parser.add_argument("--config", type=Path, default=directory / "ui_config.json")
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--open", action="store_true")
     args = parser.parse_args()
     monitor = Monitor(ConfigStore(args.config))
-    server = ThreadingHTTPServer(
-        ("127.0.0.1", args.port), make_handler(monitor)
-    )
+    server = ThreadingHTTPServer(("127.0.0.1", args.port), make_handler(monitor))
     server.daemon_threads = True
     print(f"http://127.0.0.1:{server.server_port}", flush=True)
     if args.open:

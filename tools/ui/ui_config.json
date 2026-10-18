@@ -11,7 +11,8 @@
       "width": 1920,
       "height": 1080,
       "fps": 12,
-      "stats_port": 39600
+      "stats_port": 39600,
+      "h264": "rtsp://127.0.0.1:8554/camera-h2640"
     },
     {
       "id": "ch2",
@@ -21,7 +22,8 @@
       "width": 1920,
       "height": 1080,
       "fps": 12,
-      "stats_port": 39601
+      "stats_port": 39601,
+      "h264": "rtsp://127.0.0.1:8554/camera-h2641"
     },
     {
       "id": "ch3",
@@ -31,7 +33,8 @@
       "width": 1920,
       "height": 1080,
       "fps": 12,
-      "stats_port": 39602
+      "stats_port": 39602,
+      "h264": "rtsp://127.0.0.1:8554/camera-h2642"
     },
     {
       "id": "ch4",
@@ -41,7 +44,8 @@
       "width": 1920,
       "height": 1080,
       "fps": 12,
-      "stats_port": 39603
+      "stats_port": 39603,
+      "h264": "rtsp://127.0.0.1:8554/camera-h2643"
     },
     {
       "id": "ch5",
@@ -51,7 +55,13 @@
       "width": 1920,
       "height": 1080,
       "fps": 12,
-      "stats_port": 39604
+      "stats_port": 39604,
+      "h264": "rtsp://127.0.0.1:8554/camera-h2644"
     }
-  ]
+  ],
+  "h264_qp": 40,
+  "h264_delay_ms": 200,
+  "h264_ffmpeg": "auto",
+  "h264_encoder": "auto",
+  "h264_auto_start": true
 }

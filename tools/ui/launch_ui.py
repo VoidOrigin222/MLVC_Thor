@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 import socket
+import subprocess
 import sys
 import tempfile
 import threading
@@ -14,18 +15,27 @@ from http.server import ThreadingHTTPServer
 from urllib.request import Request, urlopen
 
 from server import ConfigStore, Monitor, ROOT, make_handler
+from h264 import ffmpeg_path
 
 
 def self_test(report):
     result = {"passed": False}
     try:
+        ffmpeg = ffmpeg_path()
+        if getattr(sys, "frozen", False):
+            assert Path(ffmpeg).is_file(), "Bundled FFmpeg missing"
+        subprocess.run(
+            [ffmpeg, "-version"],
+            capture_output=True,
+            check=True,
+            timeout=8,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+        result["ffmpeg"] = "passed"
         with tempfile.TemporaryDirectory() as directory:
-            cfg = json.loads(
-                (ROOT / "ui_config.json").read_text(encoding="utf8")
-            )
+            cfg = json.loads((ROOT / "ui_config.json").read_text(encoding="utf8"))
             sockets = [
-                socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-                for _ in range(5)
+                socket.socket(socket.AF_INET, socket.SOCK_DGRAM) for _ in range(5)
             ]
             for channel, stream in zip(cfg["channels"], sockets):
                 stream.bind(("127.0.0.1", 0))
@@ -35,9 +45,7 @@ def self_test(report):
             path = Path(directory) / "parameters.json"
             path.write_text(json.dumps(cfg), encoding="utf8")
             monitor = Monitor(ConfigStore(path))
-            server = ThreadingHTTPServer(
-                ("127.0.0.1", 0), make_handler(monitor)
-            )
+            server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(monitor))
             worker = threading.Thread(target=server.serve_forever, daemon=True)
             worker.start()
             address = f"http://127.0.0.1:{server.server_port}"
@@ -63,24 +71,18 @@ def self_test(report):
     except Exception:
         result["error"] = traceback.format_exc()
     report.parent.mkdir(parents=True, exist_ok=True)
-    report.write_text(
-        json.dumps(result, ensure_ascii=False, indent=2), encoding="utf8"
-    )
+    report.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf8")
     return 0 if result["passed"] else 1
 
 
 def main():
     parser = argparse.ArgumentParser(description="五路语义压缩视频监控")
-    base = (
-        Path(sys.executable).parent if getattr(sys, "frozen", False) else ROOT
-    )
+    base = Path(sys.executable).parent if getattr(sys, "frozen", False) else ROOT
     parser.add_argument("--config", type=Path, default=base / "ui_config.json")
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--self-test", type=Path)
     parser.add_argument("--no-browser", action="store_true")
-    parser.add_argument(
-        "--auto-close", type=float, default=0, help=argparse.SUPPRESS
-    )
+    parser.add_argument("--auto-close", type=float, default=0, help=argparse.SUPPRESS)
     args = parser.parse_args()
     if not 0 <= args.port <= 65535:
         parser.error("端口必须为 0–65535")
@@ -120,9 +122,7 @@ def main():
         server = None
         for port in range(args.port, min(args.port + 10, 65536)):
             try:
-                server = ThreadingHTTPServer(
-                    ("127.0.0.1", port), make_handler(monitor)
-                )
+                server = ThreadingHTTPServer(("127.0.0.1", port), make_handler(monitor))
                 break
             except OSError:
                 continue
@@ -160,9 +160,9 @@ def main():
 
     actions = ttk.Frame(frame)
     actions.pack(fill="x")
-    ttk.Button(
-        actions, text="打开页面", command=lambda: webbrowser.open(address)
-    ).pack(side="left")
+    ttk.Button(actions, text="打开页面", command=lambda: webbrowser.open(address)).pack(
+        side="left"
+    )
     ttk.Button(actions, text="停止并退出", command=close).pack(side="right")
     window.protocol("WM_DELETE_WINDOW", close)
     window.deiconify()

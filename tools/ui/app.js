@@ -3,7 +3,8 @@
 const $ = (id) => document.getElementById(id);
 const expand =
   '<svg viewBox="0 0 24 24"><path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5"/></svg>';
-const kinds = ["original", "semantic"];
+const kinds = ["original", "h264", "semantic"];
+const labels = { original: "原图", h264: "H.264", semantic: "语义压缩" };
 const players = new Map();
 const histories = new Map();
 let config,
@@ -78,11 +79,13 @@ class FrameDelay {
     this.active = true;
     this.canvas.hidden = false;
     const epoch = ++this.epoch;
-    const capture = (now, metadata) => {
+    const capture = () => {
       if (!this.active || epoch !== this.epoch) return;
       this.captureToken = this.video.requestVideoFrameCallback(capture);
       if (this.video.readyState < 2 || this.pending >= 2) return;
-      const capturedAt = metadata.expectedDisplayTime ?? now;
+      // Use one clock for both queues. Callback timestamps can be stale when
+      // a background tab resumes, and expectedDisplayTime is only a prediction.
+      const capturedAt = performance.now();
       this.pending++;
       let image;
       try {
@@ -116,8 +119,9 @@ class FrameDelay {
           if (epoch === this.epoch) this.pending--;
         });
     };
-    const paint = (now) => {
+    const paint = () => {
       if (!this.active || epoch !== this.epoch) return;
+      const now = performance.now();
       let next;
       while (
         this.queue.length &&
@@ -195,16 +199,23 @@ class Player {
     this.video = $(this.key + "-video");
     this.generation = 0;
     this.live = false;
+    const delay = kind === "original" ? config.original_delay_ms : kind === "h264" ? config.h264_delay_ms : 0;
     this.delay =
-      kind === "original" && config.original_delay_ms > 0
-        ? new FrameDelay(this.video, config.original_delay_ms)
+      delay > 0
+        ? new FrameDelay(this.video, delay)
         : null;
     this.video.addEventListener("playing", () => {
       if (!this.peer) return;
-      this.state("播放中", true);
-      this.lastFrameAt = performance.now();
+      this.receivedFrame();
       this.delay?.start();
     });
+  }
+  receivedFrame() {
+    this.hasFrames = true;
+    this.lastFrameAt = performance.now();
+    clearTimeout(this.retry);
+    this.retry = null;
+    this.state("播放中", true);
   }
   state(text, live = false) {
     this.live = live;
@@ -232,6 +243,9 @@ class Player {
     }
     this.video.srcObject = null;
     this.sample = null;
+    this.metrics = null;
+    this.hasFrames = false;
+    this.lastFrameAt = performance.now();
     $(this.key + "-caption").textContent = "— × — · — FPS";
     this.state(text);
   }
@@ -257,7 +271,10 @@ class Player {
         if (generation !== this.generation) return;
         this.video.srcObject =
           event.streams[0] || new MediaStream([event.track]);
-        this.video.play().catch(() => this.state("点击重连以播放"));
+        this.video.play().catch(() => {
+          if (generation === this.generation)
+            this.state("点击重连以播放");
+        });
       };
       peer.onconnectionstatechange = () => {
         if (generation !== this.generation) return;
@@ -322,17 +339,30 @@ class Player {
               (report.timestamp - this.sample.time),
           );
         }
-        if (!this.sample || report.framesDecoded > this.sample.frames)
-          this.lastFrameAt = performance.now();
-        this.sample = { time: report.timestamp, frames: report.framesDecoded };
-        if (performance.now() - this.lastFrameAt > 6000) {
-          this.state("无信号");
-          this.schedule();
+        if (report.framesDecoded > (this.sample?.frames || 0))
+          this.receivedFrame();
+        if (this.sample && report.timestamp > this.sample.time && report.framesDecoded > this.sample.frames) {
+          const bytes = report.bytesReceived - this.sample.bytes;
+          const frames = report.framesDecoded - this.sample.frames;
+          const pixels = this.video.videoWidth * this.video.videoHeight;
+          if (bytes >= 0 && pixels > 0) {
+            const bpp = bytes * 8 / (frames * pixels);
+            this.metrics = { kbs: bytes / (report.timestamp - this.sample.time), bpp, ratio: bpp > 0 ? 24 / bpp : null };
+          } else {
+            this.metrics = null;
+          }
         }
+        this.sample = { time: report.timestamp, frames: report.framesDecoded, bytes: report.bytesReceived };
         $(this.key + "-caption").hidden = !this.video.videoWidth;
-        $(this.key + "-caption").textContent = this.video.videoWidth
-          ? `${this.video.videoWidth} × ${this.video.videoHeight} · ${number(fps, 0)} FPS`
+        $(this.key + "-caption").innerHTML = this.video.videoWidth
+          ? `<span class="resolution">${this.video.videoWidth} × ${this.video.videoHeight} · </span>${number(fps, 0)} FPS`
           : "";
+      }
+      // A new session may need to wait for its first keyframe. Also watch
+      // connected peers without any inbound report, rather than waiting forever.
+      if (performance.now() - this.lastFrameAt > (this.hasFrames ? 6000 : 15000)) {
+        this.state("无信号");
+        this.schedule();
       }
     } catch (_) {}
   }
@@ -341,18 +371,19 @@ class Player {
 function updateLive() {
   if (!config) return;
   let count = 0;
+  const visible = [];
   for (const channel of config.channels) {
     const ready = kinds.filter(
       (kind) => players.get(keyFor(channel, kind))?.live,
     ).length;
     const card = $(channel.id + "-card");
     if (!card) continue;
-    card.classList.toggle("live", ready === 2);
+    card.classList.toggle("live", ready === 3);
     $(channel.id + "-state").textContent =
-      ready === 2
+      ready === 3
         ? "播放中"
-        : ready === 1
-          ? "1 / 2 已连接"
+        : ready > 0
+          ? `${ready} / 3 已连接`
           : paused
             ? "已暂停"
             : "未连接";
@@ -361,7 +392,17 @@ function updateLive() {
     card.hidden =
       (selected !== null && selected !== channel.id) ||
       (filter === "live" && !ready);
+    if (!card.hidden) visible.push(card);
   }
+  visible.forEach((card, index) => {
+    card.classList.toggle("solo", visible.length === 1);
+    card.classList.toggle(
+      "wide",
+      visible.length === 2 ||
+        visible.length === 4 ||
+        (visible.length === 5 && index >= 3),
+    );
+  });
   $("live-count").textContent = count;
 
   $("empty-filter").hidden = !(filter === "live" && count === 0);
@@ -385,12 +426,12 @@ function render() {
     const feeds = kinds
       .map((kind) => {
         const key = keyFor(channel, kind);
-        return `<div class="feed" id="${key}"><span class="feed-label ${kind}">${kind === "original" ? "原图" : "语义压缩"}</span><video id="${key}-video" autoplay muted playsinline aria-label="${escapeHtml(channel.name)}${kind === "original" ? "原图" : "语义压缩"}"></video><div class="video-empty"><span id="${key}-empty">无信号</span></div><span class="feed-caption" id="${key}-caption" hidden></span><button class="expand-button" data-expand="${key}" title="全屏" aria-label="全屏">${expand}</button></div>`;
+        return `<div class="feed" id="${key}"><header class="feed-heading"><span class="feed-label ${kind}">${labels[kind]}</span><span class="feed-caption" id="${key}-caption" hidden></span></header><div class="picture"><video id="${key}-video" autoplay muted playsinline aria-label="${escapeHtml(channel.name)}${labels[kind]}"></video><div class="video-empty"><span id="${key}-empty">无信号</span></div><button class="expand-button" data-expand="${key}" title="全屏" aria-label="全屏">${expand}</button></div><div class="feed-metrics"><div class="metric"><span class="metric-label">bpp</span><span class="metric-value" id="${key}-bpp">—</span></div><div class="metric"><span class="metric-label">带宽</span><span class="metric-value"><span id="${key}-kbs">—</span><small>kB/s</small></span></div><div class="metric"><span class="metric-label">压缩比</span><span class="metric-value"><span id="${key}-ratio">—</span><small>: 1</small></span></div></div></div>`;
       })
       .join("");
     $("channel-grid").insertAdjacentHTML(
       "beforeend",
-      `<article class="channel-card" id="${channel.id}-card"><header class="card-heading"><h2>${escapeHtml(channel.name)}</h2><span class="pair-status"><i></i><span id="${channel.id}-state">未连接</span></span><button class="card-options" data-edit="${index}" aria-label="配置${escapeHtml(channel.name)}" title="通道参数">···</button></header><div class="pair">${feeds}</div><footer class="card-metrics"><div class="metric"><span class="metric-label">bpp</span><span class="metric-value" id="${channel.id}-bpp">—</span></div><div class="metric bandwidth"><span class="metric-label">带宽</span><span class="metric-value"><span id="${channel.id}-kbs">—</span><small>kB/s</small></span></div><div class="metric"><span class="metric-label">压缩比</span><span class="metric-value"><span id="${channel.id}-ratio">—</span><small>: 1</small></span></div><div class="bandwidth-plot"><svg viewBox="0 0 100 28" aria-label="带宽变化"><path id="${channel.id}-plot" d=""/></svg></div></footer></article>`,
+      `<article class="channel-card" id="${channel.id}-card"><header class="card-heading"><h2>${escapeHtml(channel.name)}</h2><span class="pair-status"><i></i><span id="${channel.id}-state">未连接</span></span><button class="card-options" data-edit="${index}" aria-label="配置${escapeHtml(channel.name)}" title="通道参数">···</button></header><div class="pair">${feeds}</div><footer class="comparison-history"><span>带宽 <small>kB/s</small></span><svg viewBox="0 0 100 28" preserveAspectRatio="none" aria-label="H.264 与语义压缩带宽对比"><path class="h264-line" id="${channel.id}-h264-plot" d=""/><path class="semantic-line" id="${channel.id}-plot" d=""/></svg><span class="plot-legend"><i class="h264-swatch"></i>H.264<i class="semantic-swatch"></i>语义压缩</span></footer></article>`,
     );
     for (const kind of kinds)
       players.set(keyFor(channel, kind), new Player(channel, kind));
@@ -416,27 +457,37 @@ async function refresh() {
       available = 0;
     for (const channel of config.channels) {
       const metrics = byId.get(channel.id);
-      $(channel.id + "-bpp").textContent = number(metrics?.bpp, 4);
-      $(channel.id + "-kbs").textContent = number(metrics?.kbs, 1);
-      $(channel.id + "-ratio").textContent = number(metrics?.ratio, 0);
+      const h264 = players.get(keyFor(channel, "h264"));
+      const h264Metrics = h264?.live ? h264.metrics : null;
+      for (const kind of kinds) {
+        const value = kind === "semantic" ? metrics : kind === "h264" ? h264Metrics : { bpp: 24, kbs: channel.width * channel.height * channel.fps * 3 / 1000, ratio: 1 };
+        const key = keyFor(channel, kind);
+        $(key + "-bpp").textContent = number(value?.bpp, 4);
+        $(key + "-kbs").textContent = number(value?.kbs, 1);
+        $(key + "-ratio").textContent = number(value?.ratio, kind === "original" ? 1 : 0);
+      }
       const history = histories.get(channel.id);
       if (metrics) {
         total += metrics.kbs;
         available++;
-        history.push({ time: now, value: metrics.kbs });
       }
+      if (metrics || h264Metrics) history.push({ time: now, semantic: metrics?.kbs, h264: h264Metrics?.kbs });
       while (history.length && history[0].time < now - 30000) history.shift();
-      const peak = Math.max(1, ...history.map((point) => point.value));
-      $(channel.id + "-plot").setAttribute(
+      const peak = Math.max(1, ...history.flatMap((point) => [point.semantic || 0, point.h264 || 0]));
+      for (const kind of ["semantic", "h264"]) {
+        $(channel.id + (kind === "h264" ? "-h264-plot" : "-plot")).setAttribute(
         "d",
-        history
+        history.filter(point => Number.isFinite(point[kind]))
           .map(
             (point, index) =>
-              `${index ? "L" : "M"}${100 - (now - point.time) / 300},${25 - (point.value / peak) * 21}`,
+              `${index ? "L" : "M"}${100 - (now - point.time) / 300},${25 - (point[kind] / peak) * 21}`,
           )
           .join(" "),
       );
+      }
     }
+    $("h264-error").textContent = status.h264?.error || "";
+    $("h264-error").hidden = !status.h264?.error;
     $("bandwidth-total").textContent = available === 5 ? number(total, 1) : "—";
     $("bandwidth-total").title =
       available === 5
@@ -452,7 +503,7 @@ async function refresh() {
 function captureFields() {
   if (!draft) return;
   const channel = draft.channels[editIndex];
-  for (const field of ["name", "original", "semantic"])
+  for (const field of ["name", "original", "h264", "semantic"])
     channel[field] = $("field-" + field).value.trim();
   for (const field of ["width", "height", "fps", "stats_port"])
     channel[field] = Number($("field-" + field).value);
@@ -467,10 +518,11 @@ function channelFields() {
     )
     .join("");
   $("channel-fields").innerHTML =
-    '<label>通道名称<input id="field-name" maxlength="32" required></label><label>原图 RTSP<textarea id="field-original" rows="2" required spellcheck="false"></textarea></label><label>语义压缩 RTSP<textarea id="field-semantic" rows="2" required spellcheck="false"></textarea></label><div class="form-row"><label>宽度<input id="field-width" type="number" min="16" max="8192" required></label><label>高度<input id="field-height" type="number" min="16" max="8192" required></label><label title="仅作为编码源参数记录；板端帧率需在编码配置中修改">编码 FPS<input id="field-fps" type="number" min="1" max="240" step="any" required></label></div><label>编码统计 UDP 端口<input id="field-stats_port" type="number" min="1024" max="65535" required></label>';
+    '<label>通道名称<input id="field-name" maxlength="32" required></label><label>原图 RTSP<textarea id="field-original" rows="2" required spellcheck="false"></textarea></label><label>H.264 RTSP<textarea id="field-h264" rows="2" required spellcheck="false"></textarea></label><label>语义压缩 RTSP<textarea id="field-semantic" rows="2" required spellcheck="false"></textarea></label><div class="form-row"><label>宽度<input id="field-width" type="number" min="16" max="8192" required></label><label>高度<input id="field-height" type="number" min="16" max="8192" required></label><label title="仅作为编码源参数记录；板端帧率需在编码配置中修改">编码 FPS<input id="field-fps" type="number" min="1" max="240" step="any" required></label></div><label>编码统计 UDP 端口<input id="field-stats_port" type="number" min="1024" max="65535" required></label>';
   for (const field of [
     "name",
     "original",
+    "h264",
     "semantic",
     "width",
     "height",
@@ -484,8 +536,9 @@ function openSettings(index = 0) {
   if (!config) return;
   draft = structuredClone(config);
   editIndex = index;
-  for (const field of ["webrtc", "media_api", "original_delay_ms"])
+  for (const field of ["webrtc", "media_api", "original_delay_ms", "h264_qp", "h264_delay_ms", "h264_ffmpeg", "h264_encoder"])
     $(field).value = draft[field];
+  $("h264_auto_start").checked = draft.h264_auto_start;
   $("settings-error").hidden = true;
   channelFields();
   if (!$("settings-dialog").open) $("settings-dialog").showModal();
@@ -564,6 +617,11 @@ $("settings-form").addEventListener("submit", async (event) => {
   draft.webrtc = $("webrtc").value.trim();
   draft.media_api = $("media_api").value.trim();
   draft.original_delay_ms = Number($("original_delay_ms").value);
+  draft.h264_qp = Number($("h264_qp").value);
+  draft.h264_delay_ms = Number($("h264_delay_ms").value);
+  draft.h264_ffmpeg = $("h264_ffmpeg").value.trim();
+  draft.h264_encoder = $("h264_encoder").value;
+  draft.h264_auto_start = $("h264_auto_start").checked;
   $("save-settings").disabled = true;
   try {
     config = await api("/api/config", draft);
@@ -584,6 +642,26 @@ $("settings-form").addEventListener("submit", async (event) => {
 window.addEventListener("pagehide", () => {
   for (const player of players.values()) player.close();
 });
+window.addEventListener("pageshow", (event) => {
+  if (event.persisted && !paused)
+    for (const player of players.values()) player.connect();
+});
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState !== "visible" || paused) return;
+  for (const player of players.values()) {
+    if (!player.peer || performance.now() - player.lastFrameAt > 15000)
+      player.connect();
+  }
+  refresh();
+});
+for (const action of ["start", "stop"]) {
+  $("h264-" + action).addEventListener("click", async () => {
+    try {
+      await api("/api/h264/" + action, {});
+      toast(action === "start" ? "正在启动 H.264" : "H.264 已停止");
+    } catch (error) { toast(error.message, true); }
+  });
+}
 function clock() {
   $("clock").textContent = new Intl.DateTimeFormat("zh-CN", {
     year: "numeric",

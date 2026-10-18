@@ -1,4 +1,4 @@
-"""Build a one-file Windows launcher; MediaMTX remains an external service."""
+"""Build a one-file Windows launcher with hardware H.264 FFmpeg dependencies."""
 
 import argparse
 import hashlib
@@ -15,12 +15,13 @@ REPO = ROOT.parents[1]
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--output", type=Path, default=REPO / "artifacts/ui-exe/dist"
-    )
+    parser.add_argument("--output", type=Path, default=REPO / "artifacts/ui-exe/dist")
     args = parser.parse_args()
     if sys.platform != "win32":
         parser.error("需要在 Windows 上构建")
+    ffmpeg = Path(shutil.which("ffmpeg") or "ffmpeg.exe").resolve()
+    if not ffmpeg.is_file():
+        parser.error("FFmpeg 不存在，无法打包 H.264 对照功能")
     output = args.output.resolve()
     if (output / "SemanticFiveMonitor.exe").exists():
         parser.error("输出目录已有程序，请选择新的 --output 目录")
@@ -51,6 +52,12 @@ def main():
                 command += ["--add-binary", str(conda / name) + ";."]
     for name in ("index.html", "app.js", "styles.css", "ui_config.json"):
         command += ["--add-data", str(ROOT / name) + ";."]
+    dependencies = [ffmpeg] + sorted(ffmpeg.parent.glob("*.dll"))
+    for file in dependencies:
+        command += ["--add-binary", str(file) + ";."]
+    license_file = ffmpeg.parent.parent / "LICENSE"
+    if license_file.is_file():
+        command += ["--add-data", str(license_file) + ";licenses/ffmpeg"]
     command.append(str(ROOT / "launch_ui.py"))
     subprocess.run(command, cwd=ROOT, env=env, check=True)
     shutil.copy2(ROOT / "ui_config.json", output / "ui_config.json")
@@ -60,6 +67,7 @@ def main():
         "executable": exe.name,
         "sha256": hashlib.sha256(exe.read_bytes()).hexdigest(),
         "bytes": exe.stat().st_size,
+        "ffmpeg_files": [p.name for p in dependencies],
         "files": {
             p.name: hashlib.sha256(p.read_bytes()).hexdigest()
             for p in ROOT.iterdir()
