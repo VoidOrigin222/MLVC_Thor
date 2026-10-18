@@ -1,4 +1,4 @@
-"""Publish two still scenes, two looping videos and a live clock over RTSP."""
+"""Publish five configured still scenes, looping videos or live clocks over RTSP."""
 
 import argparse
 import hashlib
@@ -31,6 +31,25 @@ def timer_filter(font):
     )
 
 
+def configured_sources(config):
+    sources = config.get("streams")
+    if sources is None:
+        # Preserve historical benchmark configurations and their lane order.
+        sources = ([{"type": "static", "video": config["static_video"]}] * 2
+                   + [{"type": "dynamic", "video": config["dynamic_video"]}] * 2
+                   + [{"type": "timer"}])
+    if not isinstance(sources, list) or len(sources) != 5:
+        raise ValueError("streams must contain exactly five sources")
+    for source in sources:
+        if not isinstance(source, dict) or source.get("type") not in (
+                "static", "dynamic", "timer"):
+            raise ValueError("Each source type must be static, dynamic or timer")
+        if source["type"] != "timer" and (
+                not isinstance(source.get("video"), str) or not source["video"].strip()):
+            raise ValueError("Static and dynamic sources require a video path")
+    return sources
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", type=Path,
@@ -51,15 +70,22 @@ def main():
     font = Path(config["font"])
     if not font.is_file():
         parser.error(f"Font not found: {font}")
-    static, dynamic = (Path(config[k]) for k in ("static_video", "dynamic_video"))
-    for path in (static, dynamic):
+    try:
+        sources = configured_sources(config)
+    except (ValueError, KeyError) as error:
+        parser.error(str(error))
+    for source in sources:
+        if source["type"] == "timer":
+            continue
+        path = Path(source["video"])
         if not path.is_file():
             parser.error(f"Video not found: {path}")
-    stream = probe(dynamic)
-    rate_n, rate_d = map(int, stream["r_frame_rate"].split("/"))
-    if (stream["codec_name"] != "h264" or stream["width"] != width
-            or stream["height"] != height or rate_n != fps * rate_d):
-        parser.error("dynamic_video must be H.264 at configured size and FPS")
+        if source["type"] == "dynamic":
+            stream = probe(path)
+            rate_n, rate_d = map(int, stream["r_frame_rate"].split("/"))
+            if (stream["codec_name"] != "h264" or stream["width"] != width
+                    or stream["height"] != height or rate_n != fps * rate_d):
+                parser.error(f"{path} must be H.264 at configured size and FPS")
 
     children, logs = [], []
     stopped = False
@@ -78,43 +104,50 @@ def main():
     log_dir = Path("logs/test-sources") / run_id
     log_dir.mkdir(parents=True)
     try:
-        # Cache a truly still loop; four publishers can then copy H.264 packets.
-        identity = f"{static.resolve()}:{static.stat().st_size}:" \
-                   f"{static.stat().st_mtime_ns}:{width}:{height}:{fps}"
-        digest = hashlib.sha256(identity.encode()).hexdigest()[:16]
-        still = Path("data/video/generated") / f"still-{digest}.mp4"
-        still.parent.mkdir(parents=True, exist_ok=True)
-        if not still.exists():
-            temporary = still.with_suffix(".part.mp4")
-            vf = (f"scale={width}:{height},select=eq(n\\,0),"
-                  f"loop=loop=-1:size=1:start=0,setpts=N/({fps}*TB)")
-            with (log_dir / "prepare-static.log").open("w") as log:
-                proc = subprocess.Popen(common + ["-y", "-hwaccel", "cuda", "-i",
-                    str(static), "-vf", vf, "-r", str(fps), "-frames:v",
-                    str(fps * 10)] + encode + [str(temporary)],
-                    stdout=log, stderr=subprocess.STDOUT)
-                children.append(proc)
-                while proc.poll() is None and not stopped:
-                    time.sleep(.1)
-                if stopped:
-                    return 0
-                if proc.returncode:
-                    raise RuntimeError(f"Static preparation failed; see {log_dir}")
-                temporary.replace(still)
-                children.remove(proc)
+        videos = {}
+        for lane, source in enumerate(sources):
+            if source["type"] == "timer":
+                continue
+            video = Path(source["video"])
+            if source["type"] == "static":
+                # Cache a truly still loop; replay never consumes an encoder.
+                identity = f"{video.resolve()}:{video.stat().st_size}:" \
+                           f"{video.stat().st_mtime_ns}:{width}:{height}:{fps}"
+                digest = hashlib.sha256(identity.encode()).hexdigest()[:16]
+                still = Path("data/video/generated") / f"still-{digest}.mp4"
+                still.parent.mkdir(parents=True, exist_ok=True)
+                if not still.exists():
+                    temporary = still.with_suffix(".part.mp4")
+                    vf = (f"scale={width}:{height},select=eq(n\\,0),"
+                          f"loop=loop=-1:size=1:start=0,setpts=N/({fps}*TB)")
+                    with (log_dir / f"prepare-static-{lane}.log").open("w") as log:
+                        proc = subprocess.Popen(common + ["-y", "-hwaccel", "cuda", "-i",
+                            str(video), "-vf", vf, "-r", str(fps), "-frames:v",
+                            str(fps * 10)] + encode + [str(temporary)],
+                            stdout=log, stderr=subprocess.STDOUT)
+                        children.append(proc)
+                        while proc.poll() is None and not stopped:
+                            time.sleep(.1)
+                        if stopped:
+                            return 0
+                        if proc.returncode:
+                            raise RuntimeError(f"Static preparation failed; see {log_dir}")
+                        temporary.replace(still)
+                        children.remove(proc)
+                video = still
+            videos[lane] = video
         if stopped:
             return 0
-        for lane in range(5):
-            if lane < 4:
-                video = still if lane < 2 else dynamic
+        for lane, source in enumerate(sources):
+            label = source["type"]
+            if label != "timer":
+                video = videos[lane]
                 command = common + ["-re", "-stream_loop", "-1", "-i", str(video),
                                     "-map", "0:v:0", "-an", "-c:v", "copy"]
-                label = "static" if lane < 2 else "dynamic"
             else:
                 command = common + ["-re", "-f", "lavfi", "-i",
                     f"color=c=0x141c26:s={width}x{height}:r={fps}",
                     "-vf", timer_filter(str(font))] + encode
-                label = "live timer"
             log = (log_dir / f"input{lane}.log").open("w")
             logs.append(log)
             children.append(subprocess.Popen(command + ["-rtsp_transport", "tcp",

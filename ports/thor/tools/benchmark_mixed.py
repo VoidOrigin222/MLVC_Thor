@@ -1,4 +1,4 @@
-"""Validate two still scenes, two moving scenes and a live timer on two Thors."""
+"""Validate the configured mixed scenes and live timer on two Thors."""
 
 import argparse
 import json

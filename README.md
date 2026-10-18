@@ -3,8 +3,10 @@
 五路原图与语义压缩的配对监控界面、独立参数文件和 Windows 启动器见
 [五路视频 UI](tools/ui/README.md)。
 
-两静态、两动态和一路实时计时器的测试源用 `bash scripts/run_test_sources.sh`
+一路静态、通道 2 实时计时器和三路不同动态场景的测试源用 `bash scripts/run_test_sources.sh`
 在编码板启动，参数见 [Thor 运行说明](ports/thor/README.md#五路-rtsp)。
+通道 2 计时器及三个不同动态场景的验证见
+[测试源布局记录](ports/thor/TEST_SOURCES_VALIDATION.md)。
 本机及双板的目录、归档位置和清理记录见 [目录说明](ports/thor/WORKSPACE_LAYOUT.md)。
 混合五路的积压定位、时延修复和长测见
 [混合场景验证](ports/thor/MIXED_LATENCY_VALIDATION.md)。

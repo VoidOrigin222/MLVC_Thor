@@ -59,7 +59,7 @@
       "h264": "rtsp://127.0.0.1:8554/camera-h2644"
     }
   ],
-  "h264_qp": 40,
+  "h264_qp": 28,
   "h264_delay_ms": 200,
   "h264_ffmpeg": "auto",
   "h264_encoder": "auto",

@@ -158,7 +158,7 @@ bash scripts/run_encoder.sh configs/encoder.toml
 使用公开配置模板复现五路基准的方法见 [BENCHMARKING.md](BENCHMARKING.md)。
 MediaMTX 由使用者启动。
 
-五路测试输入固定为两路静态、两路动态和一路实时计时器。先启动电脑上的 MediaMTX，
+五路测试输入默认一路静态、通道 2 实时计时器及三路不同动态场景。先启动电脑上的 MediaMTX，
 再在编码板单独的终端运行：
 
 ```bash
@@ -172,14 +172,21 @@ bash scripts/run_test_sources.sh
 
 | 路径 | 场景 | 处理 |
 |---|---|---|
-| input0、input1 | 静态矿井 | 固定静态素材首帧，循环发布 |
-| input2、input3 | 动态矿井 | 动态素材循环发布 |
-| input4 | 实时计时器 | 显示经过时间和帧号，持续递增 |
+| input0（通道 1） | 矿井巷道静态 | 固定静态素材首帧，循环发布 |
+| input1（通道 2） | 实时计时器 | 显示经过时间和帧号，持续递增 |
+| input2（通道 3） | 井下作业动态 | `dynamic-12fps.mp4` 循环发布 |
+| input3（通道 4） | 实验室动态 | `lab-12fps.mp4` 循环发布 |
+| input4（通道 5） | 室外场地动态 | `outdoor-12fps.mp4` 循环发布 |
 
 静态缓存首次启动用 NVDEC 解码、NVENC 编码生成到 `data/video/generated/`。
 随后四路素材只复制 H.264 码流，计时器一路使用 NVENC 实时编码；没有软件编码回退。
 动态素材必须预先准备为配置中的分辨率和帧率，脚本会检查，不会静默改变速率。
-两路静态使用同一张图，两路动态使用同一素材，不代表四个独立采集设备。
+参数文件的 `streams` 数组按通道 1–5 排列，每项用 `type` 选择 `static`、
+`dynamic` 或 `timer`；静态和动态项用 `video` 指定文件。三路动态使用不同视频，
+不再复制同一段素材；这些是循环测试源，不代表五个独立采集设备。
+新增实验室和室外素材经 NVDEC/NVENC 转换为 1080p、12 FPS、H.264，和其他视频
+一样单独放在编码板 `data/video/`，不随 Git 源码分发。
+历史 `static_video` / `dynamic_video` 配置仍按原来的两静态、两动态、最后一路计时器运行。
 保持终端打开，在另一个终端启动编码程序；Ctrl+C 或终端断开会停止本次五路源。
 若任一路退出，脚本会停止本次其余源，并保留 `logs/test-sources/<启动编号>/`。
 
