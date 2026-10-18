@@ -50,8 +50,9 @@ URL，包含流名称。浏览器和 MediaMTX 不在同一电脑时，MediaMTX �
 包头；bpp 按编码帧数与图像尺寸计算，压缩比使用 RGB24 的 24 bpp 为基准。
 视频角标的 FPS 则是浏览器实际接收/解码帧率。
 
-五路总配置 `configs/encoder.toml` 的 `[encoder]` 中取消 `ui_stats_host` 的注释，
-再分别取消五个 `[streams.encoder]` 下 `ui_stats_port` 的注释（39600–39604）。
+五路总配置 `configs/encoder.toml` 已默认开启统计，接收地址为 `192.168.5.3`，
+五路 UDP 端口为 39600–39604，与 UI 默认参数对应。更换 UI 电脑 IP 时修改
+`[encoder].ui_stats_host`。需要关闭某路统计时，将对应的 `ui_stats_port` 设为 0。
 单路配置仍可直接加入：
 
 ```toml
@@ -60,7 +61,7 @@ ui_stats_host = "192.168.5.3"
 ui_stats_port = 39600
 ```
 
-统计默认关闭，`ui_stats_port=0` 不创建统计网络连接。启用后最多每 500 ms
+`ui_stats_port=0` 不创建统计网络连接。启用后最多每 500 ms
 通过非阻塞 UDP 发送一次累计值；统计接收端不在线不会阻塞或中断编解码。
 UI 必须与新增统计接口的可执行程序配套使用，旧二进制不识别这两个配置项。
 允许板卡访问电脑上的对应 UDP 端口，五路一一对应，避免占用 RTP/RTCP 端口。

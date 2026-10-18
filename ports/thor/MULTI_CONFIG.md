@@ -87,6 +87,7 @@ manifest 都改为 `models/manifest_thor_batch5.json`，并准备对应引擎。
 测试源 `configs/five/test_sources.json` 及 Windows UI 参数也要对应修改。
 RTP 发送与接收端口按路一一对应，RTP/RTCP 分别使用 39480/39481 至 39488/39489。
 
-UI 统计默认关闭，保持原配置行为。启用时取消 `[encoder]` 中 `ui_stats_host` 的注释，
-并取消五路 `ui_stats_port` 的注释；UI 电脑局域网地址为 `192.168.5.3`，
-各路统计端口为 39600–39604。原图补偿和 WebRTC 参数仍在 UI 的 JSON 中设置。
+UI 的带宽、bpp 和压缩比统计默认开启。`[encoder].ui_stats_host` 为 UI 电脑的
+局域网地址 `192.168.5.3`，五路 `ui_stats_port` 为 39600–39604，与 UI 默认参数对应。
+更换电脑 IP 时修改 `ui_stats_host`；如需关闭某路统计，将该路 `ui_stats_port` 设为 0。
+原图补偿和 WebRTC 参数仍在 UI 的 JSON 中设置。

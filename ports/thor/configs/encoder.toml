@@ -26,8 +26,8 @@ output_transport_host = "192.168.5.17"
 output_transport_payload_type = 96
 output_transport_pacing_rate_bps = 2000000
 output_transport_max_burst_bytes = 1240
-# Enable with the five per-stream ui_stats_port lines.
-# ui_stats_host = "192.168.5.3"
+# UI statistics receiver on the Windows computer.
+ui_stats_host = "192.168.5.3"
 
 [encoder.pipeline]
 stream_workers = 1
@@ -41,32 +41,32 @@ graph_packet_capacity = 2
 [streams.encoder]
 input_rtsp = "rtsp://192.168.5.3:8554/input0"
 output_transport_port = 39480
-# ui_stats_port = 39600
+ui_stats_port = 39600
 
 # Channel 2
 [[streams]]
 [streams.encoder]
 input_rtsp = "rtsp://192.168.5.3:8554/input1"
 output_transport_port = 39482
-# ui_stats_port = 39601
+ui_stats_port = 39601
 
 # Channel 3
 [[streams]]
 [streams.encoder]
 input_rtsp = "rtsp://192.168.5.3:8554/input2"
 output_transport_port = 39484
-# ui_stats_port = 39602
+ui_stats_port = 39602
 
 # Channel 4
 [[streams]]
 [streams.encoder]
 input_rtsp = "rtsp://192.168.5.3:8554/input3"
 output_transport_port = 39486
-# ui_stats_port = 39603
+ui_stats_port = 39603
 
 # Channel 5
 [[streams]]
 [streams.encoder]
 input_rtsp = "rtsp://192.168.5.3:8554/input4"
 output_transport_port = 39488
-# ui_stats_port = 39604
+ui_stats_port = 39604

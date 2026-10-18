@@ -40,7 +40,7 @@ int main(int argc, char** argv) {
   assert(argc == 3);
   const std::filesystem::path config_path(argv[1]);
   const auto root = toml::parse_file(config_path.string());
-  // All effective fields must match the previously validated lane templates.
+  // Codec fields match the validated templates; UI metrics are now enabled.
   for (const std::string operation : {"encode", "decode"}) {
     const auto combined = mlvc::thor::LoadMultiStreamConfig(
         operation == "encode" ? config_path : argv[2], operation);
@@ -52,7 +52,12 @@ int main(int argc, char** argv) {
     for (int lane = 0; lane < 5; ++lane) {
       const auto old_path = config_path.parent_path() / "five/contexts" /
                             (operation + "-" + std::to_string(lane) + ".toml");
-      assert(combined.streams[lane] == toml::parse_file(old_path.string()));
+      auto expected = toml::parse_file(old_path.string());
+      if (operation == "encode") {
+        expected.insert_or_assign("ui_stats_host", "192.168.5.3");
+        expected.insert_or_assign("ui_stats_port", 39600 + lane);
+      }
+      assert(combined.streams[lane] == expected);
     }
   }
 
@@ -96,6 +101,7 @@ int main(int argc, char** argv) {
   changed.insert_or_assign("log_prefix", 4);
   fixture.Reject(changed, "log_prefix");
   changed = root;
-  changed["encoder"].as_table()->insert_or_assign("ui_stats_port", 39600);
+  overrides = (*changed["streams"].as_array())[1].as_table();
+  (*overrides)["encoder"].as_table()->insert_or_assign("ui_stats_port", 39600);
   fixture.Reject(changed, "overlap");
 }
