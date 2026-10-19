@@ -69,6 +69,46 @@ class RoleLauncherTests(unittest.TestCase):
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn("Usage:", result.stderr)
 
+    def test_legacy_single_role_finds_source_template(self):
+        scripts = Path(__file__).resolve().parents[1] / "scripts"
+        for operation, config in (("encode", "encoder_rtsp"), ("decode", "decoder_rtp")):
+            with self.subTest(operation=operation):
+                relative = f"src/MLVC/ports/thor/configs/{config}.toml"
+                template = self.root / relative
+                template.parent.mkdir(parents=True, exist_ok=True)
+                template.write_text("# fixture")
+                binary = self.root / "bin" / f"mlvc_{operation}_thor"
+                binary.write_text('#!/usr/bin/env bash\nprintf "%s\\n" "$@"\n')
+                binary.chmod(0o755)
+                result = subprocess.run(
+                    ["bash", str(scripts / f"run_{operation}.sh")],
+                    cwd=self.root, env=self.env, text=True, capture_output=True,
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(result.stdout.splitlines(), ["--config", relative])
+
+    def test_legacy_five_modes_find_source_templates(self):
+        script = Path(__file__).resolve().parents[1] / "scripts/run_five.sh"
+        binary = self.root / "bin/mlvc_multi_thor"
+        binary.write_text('#!/usr/bin/env bash\nprintf "%s\\n" "$@"\n')
+        binary.chmod(0o755)
+        for mode in ("contexts", "batch5"):
+            for operation in ("encode", "decode"):
+                with self.subTest(mode=mode, operation=operation):
+                    paths = [f"src/MLVC/ports/thor/configs/five/{mode}/{operation}-{i}.toml"
+                             for i in range(5)]
+                    for relative in paths:
+                        path = self.root / relative
+                        path.parent.mkdir(parents=True, exist_ok=True)
+                        path.write_text("# fixture")
+                    result = subprocess.run(
+                        ["bash", str(script), operation, mode], cwd=self.root,
+                        env=self.env, text=True, capture_output=True,
+                    )
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertEqual(result.stdout.splitlines(),
+                                     [operation, mode, f"logs/five-{operation}", *paths])
+
 
 if __name__ == "__main__":
     unittest.main()

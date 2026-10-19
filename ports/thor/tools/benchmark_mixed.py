@@ -19,9 +19,10 @@ def source(host, label, timeout):
 import json,os,subprocess
 from pathlib import Path
 os.chdir({bench.ROOT!r})
+Path('logs').mkdir(exist_ok=True)
 config=json.loads(Path('configs/five/test_sources.json').read_text())
 config['rtsp_base']={bench.RTSP_BASE!r}
-path='configs/{label}-sources.json'
+path='logs/{label}-sources.json'
 Path(path).write_text(json.dumps(config))
 tool='src/MLVC/ports/thor/tools/publish_test_sources.py'
 cmd=['python3',tool,'--config',path,'--duration',{str(timeout+50)!r}]

@@ -54,6 +54,15 @@ int main() {
   assert(config.stream.motion_backend == "nvenc");
   assert(config.stream.video_decode_backend == "nvdec");
   mlvc::codec::ValidateEncodeInput(config.stream);
+  for (const int fps : {12, 20, 30}) {
+    WriteConfig(path, encode, "target_fps = " + std::to_string(fps) + "\n");
+    const auto sampled = mlvc::LoadEncoderConfig(path);
+    assert(sampled.stream.target_fps == fps);
+    // The legacy nominal value remains accepted for old configurations.
+    WriteConfig(path, encode,
+                "fps = 12\ntarget_fps = " + std::to_string(fps) + "\n");
+    assert(mlvc::LoadEncoderConfig(path).stream.target_fps == fps);
+  }
   for (const std::string& value :
        {"", "video.mp4", "http://host/input", "rtsp://", "rtsp:///input",
         "rtsp://:8554/x", "rtsp://user@/x", "rtsp://host/with space"}) {

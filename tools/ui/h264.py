@@ -179,6 +179,10 @@ class Publishers:
             if not enabled:
                 self.stop()
                 return
+            valid_ids = {c["id"] for c in config["channels"]}
+            for key in list(self.jobs):
+                if key not in valid_ids:
+                    self.stop(key)
             candidates = [
                 c
                 for c in config["channels"]
@@ -189,10 +193,6 @@ class Publishers:
             self.probe(config)
             if not self.encoder or self.closed:
                 return
-            valid_ids = {c["id"] for c in config["channels"]}
-            for key in list(self.jobs):
-                if key not in valid_ids:
-                    self.stop(key)
             for channel in candidates:
                 args = command(config, channel, self.encoder)
                 job = self.jobs.get(channel["id"])

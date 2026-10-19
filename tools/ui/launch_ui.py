@@ -35,7 +35,7 @@ def self_test(report):
         with tempfile.TemporaryDirectory() as directory:
             cfg = json.loads((ROOT / "ui_config.json").read_text(encoding="utf8"))
             sockets = [
-                socket.socket(socket.AF_INET, socket.SOCK_DGRAM) for _ in range(5)
+                socket.socket(socket.AF_INET, socket.SOCK_DGRAM) for _ in cfg["channels"]
             ]
             for channel, stream in zip(cfg["channels"], sockets):
                 stream.bind(("127.0.0.1", 0))
@@ -76,7 +76,7 @@ def self_test(report):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="五路语义压缩视频监控")
+    parser = argparse.ArgumentParser(description="多路语义压缩视频监控")
     base = Path(sys.executable).parent if getattr(sys, "frozen", False) else ROOT
     parser.add_argument("--config", type=Path, default=base / "ui_config.json")
     parser.add_argument("--port", type=int, default=8765)
@@ -137,12 +137,12 @@ def main():
         window.destroy()
         return 1
     address = f"http://127.0.0.1:{server.server_port}"
-    window.title("五路视频监控")
+    window.title("视频监控")
     window.geometry("420x210")
     window.resizable(False, False)
     frame = ttk.Frame(window, padding=23)
     frame.pack(fill="both", expand=True)
-    ttk.Label(frame, text="五路视频监控", font=("Microsoft YaHei UI", 15)).pack(
+    ttk.Label(frame, text="视频监控", font=("Microsoft YaHei UI", 15)).pack(
         anchor="w"
     )
     ttk.Label(frame, text=address, padding=(0, 12)).pack(anchor="w")

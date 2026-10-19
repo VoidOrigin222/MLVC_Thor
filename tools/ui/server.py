@@ -1,4 +1,4 @@
-"""Local five-channel WebRTC monitor; Python standard library only."""
+"""Configurable multichannel WebRTC monitor; Python standard library only."""
 
 from __future__ import annotations
 
@@ -89,8 +89,8 @@ def validate_config(value):
     if type(delay) is not int or not 0 <= delay <= 2000:
         raise ValueError("原图显示补偿必须为 0–2000 ms 的整数")
     channels = result["channels"]
-    if not isinstance(channels, list) or len(channels) != 5:
-        raise ValueError("需要配置五个通道")
+    if not isinstance(channels, list) or not channels:
+        raise ValueError("至少需要配置一个通道")
     ids, ports = set(), set()
     for index, channel in enumerate(channels):
         fields = {
@@ -493,7 +493,7 @@ def make_handler(monitor):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="五路语义压缩视频监控")
+    parser = argparse.ArgumentParser(description="多路语义压缩视频监控")
     directory = Path(sys.executable).parent if getattr(sys, "frozen", False) else ROOT
     parser.add_argument("--config", type=Path, default=directory / "ui_config.json")
     parser.add_argument("--port", type=int, default=8765)

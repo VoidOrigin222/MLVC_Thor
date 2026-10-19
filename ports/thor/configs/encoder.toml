@@ -1,5 +1,6 @@
-# Five-stream encoder. Paths are relative to the runtime workspace.
+# Start the first stream_count entries; spare channels may stay in this file.
 execution = "contexts"
+stream_count = 5
 log_prefix = "logs/encoder"
 
 [encoder]
@@ -15,7 +16,7 @@ translation_warp = true
 motion_backend = "nvenc"
 motion_prefetch_frames = 1
 motion_skip_loop_filter = true
-fps = 12
+# Target output FPS; source FPS is detected from RTSP. May be overridden per stream.
 target_fps = 12
 input_device_resident = true
 video_decode_backend = "nvdec"
@@ -70,3 +71,24 @@ ui_stats_port = 39603
 input_rtsp = "rtsp://192.168.5.3:8554/input4"
 output_transport_port = 39488
 ui_stats_port = 39604
+
+# Channel 6 (spare until stream_count >= 6)
+[[streams]]
+[streams.encoder]
+input_rtsp = "rtsp://192.168.5.3:8554/input5"
+output_transport_port = 39490
+ui_stats_port = 39605
+
+# Channel 7 (spare until stream_count >= 7)
+[[streams]]
+[streams.encoder]
+input_rtsp = "rtsp://192.168.5.3:8554/input6"
+output_transport_port = 39492
+ui_stats_port = 39606
+
+# Channel 8 (spare until stream_count >= 8)
+[[streams]]
+[streams.encoder]
+input_rtsp = "rtsp://192.168.5.3:8554/input7"
+output_transport_port = 39494
+ui_stats_port = 39607

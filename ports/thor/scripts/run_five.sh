@@ -21,7 +21,10 @@ configs=()
 config_mode="$mode"
 [[ "$mode" != processes ]] || config_mode=contexts
 for lane in 0 1 2 3 4; do
-  configs+=("configs/five/$config_mode/$operation-$lane.toml")
+  template="configs/five/$config_mode/$operation-$lane.toml"
+  [[ -f "$template" ]] || template="src/MLVC/ports/thor/$template"
+  [[ -f "$template" ]] || { echo "Missing benchmark template: $template" >&2; exit 1; }
+  configs+=("$template")
 done
 if [[ "$mode" == processes ]]; then
   unset MLVC_THOR_BATCH5 MLVC_THOR_SHARE_ENGINES

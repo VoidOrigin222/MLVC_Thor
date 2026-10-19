@@ -1,6 +1,8 @@
 """Keep long-trial collectors alive for the full requested codec duration."""
 
 import ast
+import contextlib
+import io
 import json
 import os
 import subprocess
@@ -11,9 +13,79 @@ from pathlib import Path
 from unittest import mock
 
 import benchmark_five as bench
+import benchmark_mixed as mixed
 
 
 class LongTrialTests(unittest.TestCase):
+    def test_generated_configs_use_logs_and_source_templates(self):
+        source = Path(__file__).resolve().parents[1] / "configs/five/contexts"
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "configs/five").mkdir(parents=True)
+            for role in ("encoder", "decoder"):
+                (root / f"configs/{role}.toml").write_text("# keep")
+            original = {str(p.relative_to(root)): p.read_bytes()
+                        for p in (root / "configs").rglob('*') if p.is_file()}
+            for operation, host in (("encode", bench.ENCODER), ("decode", bench.DECODER)):
+                templates = root / "src/MLVC/ports/thor/configs/five/contexts"
+                templates.mkdir(parents=True, exist_ok=True)
+                for lane in range(5):
+                    name = f"{operation}-{lane}.toml"
+                    (templates / name).write_bytes((source / name).read_bytes())
+                commands = []
+
+                def launch(command, **kwargs):
+                    kwargs["stdout"].close()
+                    commands.append(command)
+                    return mock.Mock(pid=10000 + len(commands))
+
+                def local_remote(_host, script):
+                    previous = os.getcwd()
+                    try:
+                        with mock.patch("subprocess.Popen", side_effect=launch), contextlib.redirect_stdout(io.StringIO()):
+                            exec(compile(script, "prepare-script", "exec"), {})
+                    finally:
+                        os.chdir(previous)
+
+                with mock.patch.object(bench, "ROOT", directory), mock.patch.object(
+                    bench, "remote", side_effect=local_remote
+                ):
+                    bench.prepare(host, "scratch", "contexts", 30, 20, 1, "bin")
+                generated = list((root / "logs").glob(f"scratch-{operation}-lane*.toml"))
+                self.assertEqual(len(generated), 5)
+                self.assertTrue(all("frame_num = 30" in p.read_text() for p in generated))
+                codec = commands[-1]
+                self.assertTrue(all(p.startswith("logs/") for p in codec[-5:]))
+            current = {str(p.relative_to(root)): p.read_bytes()
+                       for p in (root / "configs").rglob('*') if p.is_file()}
+            self.assertEqual(current, original)
+
+    def test_mixed_source_scratch_does_not_modify_production_config(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            path = root / "configs/five/test_sources.json"
+            path.parent.mkdir(parents=True)
+            path.write_text(json.dumps({"rtsp_base": "rtsp://original:8554", "streams": []}))
+            before = path.read_bytes()
+
+            def local_remote(_host, script):
+                previous = os.getcwd()
+                try:
+                    with mock.patch("subprocess.Popen") as popen, contextlib.redirect_stdout(io.StringIO()):
+                        popen.return_value.pid = 10000
+                        popen.side_effect = lambda *a, **kw: (kw["stdout"].close() or mock.Mock(pid=10000))
+                        exec(compile(script, "source-script", "exec"), {})
+                finally:
+                    os.chdir(previous)
+
+            with mock.patch.object(bench, "ROOT", directory), mock.patch.object(
+                bench, "remote", side_effect=local_remote
+            ):
+                mixed.source(bench.ENCODER, "scratch", 10)
+            self.assertEqual(path.read_bytes(), before)
+            self.assertTrue((root / "logs/scratch-sources.json").is_file())
+            self.assertFalse((root / "configs/scratch-sources.json").exists())
+
     def test_looped_source_is_expanded_before_realtime_seek(self):
         commands = []
 

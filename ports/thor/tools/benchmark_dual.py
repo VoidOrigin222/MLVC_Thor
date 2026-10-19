@@ -32,17 +32,21 @@ subprocess.Popen(['python3','tools/collect_latency.py','--frames',{str(frames)!r
 import os,re,subprocess
 from pathlib import Path
 os.chdir({root!r})
-s=Path('configs/decoder_rtp.toml').read_text()
+template=Path('configs/decoder_rtp.toml')
+if not template.exists():template=Path('src/MLVC/ports/thor/configs/decoder_rtp.toml')
+s=template.read_text()
 s=s.replace('39340','39450').replace('8554/ulbvc','18554/ulbvc-thor')
 s=s.replace('[pipeline]','latency_probe_host = "192.168.5.16"\\nlatency_probe_port = 39460\\nprofile_output = "logs/{label}-decode-trace.json"\\n[pipeline]')
-Path('configs/{label}-decode.toml').write_text(s)
-subprocess.Popen(['timeout','70','bin/bench/bench_decode','--config','configs/{label}-decode.toml'],stdout=open('logs/{label}-decode.log','w'),stderr=subprocess.STDOUT,start_new_session=True)
+Path('logs/{label}-decode.toml').write_text(s)
+subprocess.Popen(['timeout','70','bin/bench/bench_decode','--config','logs/{label}-decode.toml'],stdout=open('logs/{label}-decode.log','w'),stderr=subprocess.STDOUT,start_new_session=True)
 ''')
     text=remote('Encoder',f'''
 import os,re,subprocess,json,time,statistics
 from pathlib import Path
 os.chdir({root!r})
-s=Path('configs/encoder_rtsp.toml').read_text().replace('39340','39450')
+template=Path('configs/encoder_rtsp.toml')
+if not template.exists():template=Path('src/MLVC/ports/thor/configs/encoder_rtsp.toml')
+s=template.read_text().replace('39340','39450')
 s=re.sub(r'(?m)^frame_num\\s*=.*$','frame_num = {frames}',s)
 s=re.sub(r'(?m)^input_rtsp\\s*=.*$', 'input_rtsp = "rtsp://192.168.5.3:18554/input-thor"',s)
 if {args.variant!r} in ('optimized','nvdec'):
@@ -54,9 +58,9 @@ if {args.variant!r}=='nvdec':
  s=re.sub(r'(?m)^video_decode_backend\\s*=.*\\n','',s)
  s=s.replace('[pipeline]','video_decode_backend = "nvdec"\\n[pipeline]')
 s=s.replace('[pipeline]','profile_warmup_frames = 96\\nprofile_output = "logs/{label}-encode-trace.json"\\n[pipeline]')
-Path('configs/{label}-encode.toml').write_text(s)
+Path('logs/{label}-encode.toml').write_text(s)
 with open('logs/{label}-encode.log','w') as log:
- subprocess.run(['bin/bench/{'baseline_encode' if args.variant=='baseline' else 'nvdec_encode' if args.variant=='nvdec' else 'optimized_encode'}','--config','configs/{label}-encode.toml'],stdout=log,stderr=subprocess.STDOUT,check=True,timeout=60)
+ subprocess.run(['bin/bench/{'baseline_encode' if args.variant=='baseline' else 'nvdec_encode' if args.variant=='nvdec' else 'optimized_encode'}','--config','logs/{label}-encode.toml'],stdout=log,stderr=subprocess.STDOUT,check=True,timeout=60)
 for _ in range(100):
  if Path('logs/{label}-acks.json').exists():break
  time.sleep(.1)

@@ -85,6 +85,7 @@ def prepare(
 import os,re,subprocess,json
 from pathlib import Path
 os.chdir({ROOT!r})
+Path('logs').mkdir(exist_ok=True)
 label={label!r}; scheme={scheme!r}; operation={operation!r}
 config_mode='contexts' if scheme=='processes' else scheme
 tool_root=Path('src/MLVC/ports/thor/tools')
@@ -116,7 +117,7 @@ for lane in range(5):
    s=re.sub(r'(?m)^'+re.escape(key)+r'\\s*=.*$',key+' = '+json.dumps(value),s)
   s=re.sub(r'(?m)^entropy_workers\\s*=.*$', 'entropy_workers = {entropy_workers}',s)
  s=s.replace('[pipeline]',extra+'[pipeline]')
- path='configs/'+label+'-'+operation+'-lane'+str(lane)+'.toml'
+ path='logs/'+label+'-'+operation+'-lane'+str(lane)+'.toml'
  Path(path).write_text(s); configs.append(path)
 env=os.environ.copy()
 env.update({(runtime_environment or {})!r})

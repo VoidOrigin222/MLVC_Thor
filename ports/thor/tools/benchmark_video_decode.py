@@ -27,7 +27,7 @@ for repeat in range(3):
                                 f'video_decode_backend = "{backend}"')
         config = config.replace('nvdec-smoke.mlvc', f'{label}.mlvc')
         config = config.replace('nvdec-smoke-trace.json', f'{label}-trace.json')
-        (root / f'configs/{label}.toml').write_text(config)
+        (root / f'logs/{label}.toml').write_text(config)
         readings = []
         monitor = subprocess.Popen([
             'nvidia-smi', '--query-gpu=utilization.gpu,utilization.memory,'
@@ -47,7 +47,7 @@ for repeat in range(3):
         thread.start()
         try:
             with (root / f'logs/{label}.log').open('w') as log:
-                subprocess.run([args.binary, '--config', f'configs/{label}.toml'],
+                subprocess.run([args.binary, '--config', f'logs/{label}.toml'],
                                env=dict(os.environ, MLVC_THOR_TIMING='1'),
                                stdout=log, stderr=subprocess.STDOUT, check=True, timeout=75)
         finally:

@@ -15,6 +15,7 @@ struct MultiStreamConfig {
   std::vector<toml::table> streams;
 };
 
+// Load the first stream_count definitions (all entries for legacy configs).
 // Paths within the configuration remain relative to the runtime workspace.
 MultiStreamConfig LoadMultiStreamConfig(const std::filesystem::path& path,
                                         const std::string& operation);

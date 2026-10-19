@@ -395,12 +395,13 @@ function updateLive() {
     if (!card.hidden) visible.push(card);
   }
   visible.forEach((card, index) => {
-    card.classList.toggle("solo", visible.length === 1);
+    card.classList.toggle("solo", visible.length === 1 ||
+      (visible.length > 4 && visible.length % 3 === 1 && index === visible.length - 1));
     card.classList.toggle(
       "wide",
       visible.length === 2 ||
         visible.length === 4 ||
-        (visible.length === 5 && index >= 3),
+        (visible.length % 3 === 2 && index >= visible.length - 2),
     );
   });
   $("live-count").textContent = count;
@@ -488,11 +489,11 @@ async function refresh() {
     }
     $("h264-error").textContent = status.h264?.error || "";
     $("h264-error").hidden = !status.h264?.error;
-    $("bandwidth-total").textContent = available === 5 ? number(total, 1) : "—";
+    $("bandwidth-total").textContent = available === config.channels.length ? number(total, 1) : "—";
     $("bandwidth-total").title =
-      available === 5
-        ? "五路语义码流带宽合计"
-        : `已收到 ${available} / 5 路编码统计`;
+      available === config.channels.length
+        ? `${config.channels.length} 路语义码流带宽合计`
+        : `已收到 ${available} / ${config.channels.length} 路编码统计`;
   } catch (_) {
     // A playback service outage is shown on each picture; keep controls usable.
   } finally {
@@ -511,6 +512,7 @@ function captureFields() {
 
 function channelFields() {
   const channel = draft.channels[editIndex];
+  $("remove-channel").disabled = draft.channels.length === 1;
   $("settings-tabs").innerHTML = draft.channels
     .map(
       (_, index) =>
@@ -531,6 +533,40 @@ function channelFields() {
   ])
     $("field-" + field).value = channel[field];
 }
+
+$("add-channel").addEventListener("click", () => {
+  captureFields();
+  let lane = 0;
+  const ids = new Set(draft.channels.map(channel => channel.id));
+  const ports = new Set(draft.channels.map(channel => channel.stats_port));
+  const urls = new Set(draft.channels.flatMap(channel => kinds.map(kind => channel[kind])));
+  const channel = structuredClone(draft.channels[editIndex]);
+  let source;
+  try { source = new URL(channel.original); }
+  catch (_) {
+    $("settings-error").textContent = "请先填写完整的原图 RTSP 地址";
+    $("settings-error").hidden = false;
+    return;
+  }
+  // URL.origin is null for RTSP; retain the protocol and authority explicitly.
+  const prefix = `${source.protocol}//${source.host}`;
+  while (ids.has(`ch${lane + 1}`) || ports.has(39600 + lane) ||
+    ["input", "camera-h264", "ulbvc"].some(path => urls.has(`${prefix}/${path}${lane}`))) lane++;
+  Object.assign(channel, {
+    id: `ch${lane + 1}`, name: `通道 ${String(lane + 1).padStart(2, "0")}`,
+    original: `${prefix}/input${lane}`, h264: `${prefix}/camera-h264${lane}`,
+    semantic: `${prefix}/ulbvc${lane}`, stats_port: 39600 + lane,
+  });
+  draft.channels.push(channel);
+  editIndex = draft.channels.length - 1;
+  channelFields();
+});
+$("remove-channel").addEventListener("click", () => {
+  if (draft.channels.length <= 1) return;
+  draft.channels.splice(editIndex, 1);
+  editIndex = Math.min(editIndex, draft.channels.length - 1);
+  channelFields();
+});
 
 function openSettings(index = 0) {
   if (!config) return;

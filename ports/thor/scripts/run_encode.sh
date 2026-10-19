@@ -9,5 +9,8 @@ case "$#:${1:-}" in
   *) usage >&2; exit 2 ;;
 esac
 source "$(dirname "${BASH_SOURCE[0]}")/common.sh"
+if [[ "$config" == configs/encoder_rtsp.toml && ! -f "$config" ]]; then
+  config="src/MLVC/ports/thor/$config"
+fi
 [[ -f "$config" ]] || { echo "Missing configuration: $config" >&2; exit 1; }
 exec bin/mlvc_encode_thor --config "$config"

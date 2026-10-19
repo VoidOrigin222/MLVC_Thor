@@ -98,6 +98,25 @@ class H264Tests(unittest.TestCase):
             manager.update(cfg, {"input0"})
             popen.assert_not_called()
 
+    def test_removed_channel_stops_even_when_remaining_sources_are_offline(self):
+        cfg = defaults()
+        manager = Publishers()
+        manager.encoder = "h264_qsv"
+        process = Mock()
+        process.poll.return_value = None
+        try:
+            with patch.object(manager, "probe"), patch(
+                "h264.subprocess.Popen", return_value=process
+            ):
+                manager.update(cfg, {"input4"})
+                self.assertIn("ch5", manager.jobs)
+                cfg["channels"] = cfg["channels"][:2]
+                manager.update(cfg, set())
+                self.assertNotIn("ch5", manager.jobs)
+                process.terminate.assert_called_once()
+        finally:
+            manager.close()
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -52,7 +52,7 @@ class LaneLogBuffer final : public std::streambuf {
 
 class StartGate {
  public:
-  explicit StartGate(int lanes) : remaining_(lanes) {}
+  explicit StartGate(size_t lanes) : remaining_(lanes) {}
   void Wait() {
     std::unique_lock<std::mutex> lock(mutex_);
     if (--remaining_ == 0) ready_.notify_all();
@@ -60,7 +60,7 @@ class StartGate {
   }
 
  private:
-  int remaining_;
+  size_t remaining_;
   std::mutex mutex_;
   std::condition_variable ready_;
 };
@@ -79,10 +79,10 @@ int main(int argc, char** argv) {
 #endif
   try {
     const bool total_config = argc == 4 && std::string(argv[2]) == "--config";
-    mlvc::Check(total_config || argc == 9,
+    mlvc::Check(total_config || argc >= 5,
                 "Usage: encoder|decoder --config CONFIG.toml\n"
                 "Legacy: mlvc_multi_thor encode|decode contexts|batch5 "
-                "LOG_PREFIX CONFIG0 CONFIG1 CONFIG2 CONFIG3 CONFIG4");
+                "LOG_PREFIX CONFIG0 [CONFIG1 ...]");
     const std::string operation(argv[1]);
     mlvc::Check(operation == "encode" || operation == "decode",
                 "Operation must be encode or decode");
@@ -92,6 +92,9 @@ int main(int argc, char** argv) {
     const std::string mode = total_config ? combined.execution : argv[2];
     mlvc::Check(mode == "contexts" || mode == "batch5",
                 "Mode must be contexts or batch5");
+    const size_t lane_count = total_config ? combined.streams.size() : argc - 4;
+    mlvc::Check(mode != "batch5" || lane_count == 5,
+                "batch5 requires exactly five streams");
     setenv("MLVC_THOR_SHARE_ENGINES", "1", 1);
     if (mode == "batch5")
       setenv("MLVC_THOR_BATCH5", "1", 1);
@@ -101,7 +104,7 @@ int main(int argc, char** argv) {
     std::vector<mlvc::EncoderApplicationConfig> encoders;
     std::vector<mlvc::DecoderApplicationConfig> decoders;
     // Validate all lanes before starting GPU work or waiting at the start gate.
-    for (int lane = 0; lane < 5; ++lane) {
+    for (size_t lane = 0; lane < lane_count; ++lane) {
       if (operation == "encode") {
         encoders.push_back(
             total_config ? mlvc::ParseEncoderConfig(combined.streams[lane])
@@ -114,15 +117,17 @@ int main(int argc, char** argv) {
     }
     const auto parent = std::filesystem::path(prefix).parent_path();
     if (!parent.empty()) std::filesystem::create_directories(parent);
-    std::vector<int> result(5, 1);
-    StartGate gate(5);
+    std::cout << "operation=" << operation << " execution=" << mode
+              << " stream_count=" << lane_count << '\n';
+    std::vector<int> result(lane_count, 1);
+    StartGate gate(lane_count);
     std::mutex startup_mutex;
     std::vector<std::thread> threads;
     LaneLogBuffer buffer(std::cout.rdbuf());
     LaneLogBuffer error_buffer(std::cerr.rdbuf());
     auto* original = std::cout.rdbuf(&buffer);
     auto* original_error = std::cerr.rdbuf(&error_buffer);
-    for (int lane = 0; lane < 5; ++lane) {
+    for (size_t lane = 0; lane < lane_count; ++lane) {
       threads.emplace_back([&, lane] {
         std::ofstream log(prefix + "-lane" + std::to_string(lane) + ".log");
         lane_output = &log;
@@ -187,7 +192,7 @@ int main(int argc, char** argv) {
     std::cout.rdbuf(original);
     std::cerr.rdbuf(original_error);
     int status = 0;
-    for (int lane = 0; lane < 5; ++lane) {
+    for (size_t lane = 0; lane < lane_count; ++lane) {
       std::cout << "lane=" << lane << " exit=" << result[lane] << '\n';
       status |= result[lane];
     }

@@ -1,5 +1,6 @@
-# Five-stream decoder. Paths are relative to the runtime workspace.
+# Start the first stream_count entries; spare channels may stay in this file.
 execution = "contexts"
+stream_count = 5
 log_prefix = "logs/decoder"
 
 [decoder]
@@ -57,3 +58,21 @@ output_transport_rtsp_url = "rtsp://192.168.5.3:8554/ulbvc3"
 [streams.decoder]
 input_transport_port = 39488
 output_transport_rtsp_url = "rtsp://192.168.5.3:8554/ulbvc4"
+
+# Channel 6 (spare until stream_count >= 6)
+[[streams]]
+[streams.decoder]
+input_transport_port = 39490
+output_transport_rtsp_url = "rtsp://192.168.5.3:8554/ulbvc5"
+
+# Channel 7 (spare until stream_count >= 7)
+[[streams]]
+[streams.decoder]
+input_transport_port = 39492
+output_transport_rtsp_url = "rtsp://192.168.5.3:8554/ulbvc6"
+
+# Channel 8 (spare until stream_count >= 8)
+[[streams]]
+[streams.decoder]
+input_transport_port = 39494
+output_transport_rtsp_url = "rtsp://192.168.5.3:8554/ulbvc7"

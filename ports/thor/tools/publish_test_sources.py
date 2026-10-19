@@ -1,4 +1,4 @@
-"""Publish five configured still scenes, looping videos or live clocks over RTSP."""
+"""Publish configured still scenes, looping videos or live clocks over RTSP."""
 
 import argparse
 import hashlib
@@ -38,8 +38,9 @@ def configured_sources(config):
         sources = ([{"type": "static", "video": config["static_video"]}] * 2
                    + [{"type": "dynamic", "video": config["dynamic_video"]}] * 2
                    + [{"type": "timer"}])
-    if not isinstance(sources, list) or len(sources) != 5:
-        raise ValueError("streams must contain exactly five sources")
+    if not isinstance(sources, list) or not sources:
+        raise ValueError("streams must contain at least one source")
+    result = []
     for source in sources:
         if not isinstance(source, dict) or source.get("type") not in (
                 "static", "dynamic", "timer"):
@@ -47,7 +48,29 @@ def configured_sources(config):
         if source["type"] != "timer" and (
                 not isinstance(source.get("video"), str) or not source["video"].strip()):
             raise ValueError("Static and dynamic sources require a video path")
-    return sources
+        source = dict(source)
+        for key in ("fps", "width", "height"):
+            value = source.get(key, config.get(key))
+            if type(value) is not int or value <= 0 or (key == "fps" and value > 240):
+                raise ValueError(f"Source {key} must be a positive integer (FPS <= 240)")
+            source[key] = value
+        if source["width"] % 2 or source["height"] % 2:
+            raise ValueError("H.264 source width and height must be even")
+        result.append(source)
+    return result
+
+
+def matches_source(stream, source):
+    rate_n, rate_d = map(int, stream["r_frame_rate"].split("/"))
+    return (stream["codec_name"] == "h264" and stream["width"] == source["width"]
+            and stream["height"] == source["height"]
+            and rate_d > 0 and rate_n == source["fps"] * rate_d)
+
+
+def hardware_encode(fps):
+    return ["-an", "-c:v", "h264_nvenc", "-preset", "p1", "-tune", "ull",
+            "-rc", "constqp", "-qp", "18", "-bf", "0", "-rc-lookahead", "0",
+            "-g", str(fps), "-pix_fmt", "yuv420p"]
 
 
 def main():
@@ -64,9 +87,6 @@ def main():
         parser.error("rtsp_base must start with rtsp://")
     if args.duration is not None and args.duration <= 0:
         parser.error("duration must be positive")
-    fps, width, height = (int(config[k]) for k in ("fps", "width", "height"))
-    if min(fps, width, height) <= 0:
-        parser.error("fps, width and height must be positive")
     font = Path(config["font"])
     if not font.is_file():
         parser.error(f"Font not found: {font}")
@@ -80,12 +100,6 @@ def main():
         path = Path(source["video"])
         if not path.is_file():
             parser.error(f"Video not found: {path}")
-        if source["type"] == "dynamic":
-            stream = probe(path)
-            rate_n, rate_d = map(int, stream["r_frame_rate"].split("/"))
-            if (stream["codec_name"] != "h264" or stream["width"] != width
-                    or stream["height"] != height or rate_n != fps * rate_d):
-                parser.error(f"{path} must be H.264 at configured size and FPS")
 
     children, logs = [], []
     stopped = False
@@ -97,9 +111,6 @@ def main():
     for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
         signal.signal(sig, stop)
     common = ["ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "warning"]
-    encode = ["-an", "-c:v", "h264_nvenc", "-preset", "p1", "-tune", "ull",
-              "-rc", "constqp", "-qp", "18", "-bf", "0", "-rc-lookahead", "0",
-              "-g", str(fps), "-pix_fmt", "yuv420p"]
     run_id = time.strftime("%Y%m%d-%H%M%S") + f"-{os.getpid()}"
     log_dir = Path("logs/test-sources") / run_id
     log_dir.mkdir(parents=True)
@@ -108,22 +119,29 @@ def main():
         for lane, source in enumerate(sources):
             if source["type"] == "timer":
                 continue
+            fps, width, height = (source[k] for k in ("fps", "width", "height"))
             video = Path(source["video"])
-            if source["type"] == "static":
-                # Cache a truly still loop; replay never consumes an encoder.
+            if source["type"] == "static" or not matches_source(probe(video), source):
+                # Prepare mismatched clips once with NVDEC/NVENC, then replay
+                # without re-encoding during the semantic codec benchmark.
                 identity = f"{video.resolve()}:{video.stat().st_size}:" \
-                           f"{video.stat().st_mtime_ns}:{width}:{height}:{fps}"
+                           f"{video.stat().st_mtime_ns}:{width}:{height}:{fps}:{source['type']}"
                 digest = hashlib.sha256(identity.encode()).hexdigest()[:16]
-                still = Path("data/video/generated") / f"still-{digest}.mp4"
-                still.parent.mkdir(parents=True, exist_ok=True)
-                if not still.exists():
-                    temporary = still.with_suffix(".part.mp4")
-                    vf = (f"scale={width}:{height},select=eq(n\\,0),"
-                          f"loop=loop=-1:size=1:start=0,setpts=N/({fps}*TB)")
-                    with (log_dir / f"prepare-static-{lane}.log").open("w") as log:
+                prepared = Path("data/video/generated") / f"{source['type']}-{digest}.mp4"
+                prepared.parent.mkdir(parents=True, exist_ok=True)
+                if not prepared.exists():
+                    print(f"Preparing input{lane}: {width}x{height}, {fps} FPS ({video})", flush=True)
+                    temporary = prepared.with_suffix(".part.mp4")
+                    vf = f"scale={width}:{height},fps={fps}"
+                    length = []
+                    if source["type"] == "static":
+                        vf = (f"scale={width}:{height},select=eq(n\\,0),"
+                              f"loop=loop=-1:size=1:start=0,setpts=N/({fps}*TB)")
+                        length = ["-frames:v", str(fps * 10)]
+                    with (log_dir / f"prepare-{lane}.log").open("w") as log:
                         proc = subprocess.Popen(common + ["-y", "-hwaccel", "cuda", "-i",
-                            str(video), "-vf", vf, "-r", str(fps), "-frames:v",
-                            str(fps * 10)] + encode + [str(temporary)],
+                            str(video), "-vf", vf, "-r", str(fps)] + length +
+                            hardware_encode(fps) + ["-movflags", "+faststart", str(temporary)],
                             stdout=log, stderr=subprocess.STDOUT)
                         children.append(proc)
                         while proc.poll() is None and not stopped:
@@ -131,15 +149,16 @@ def main():
                         if stopped:
                             return 0
                         if proc.returncode:
-                            raise RuntimeError(f"Static preparation failed; see {log_dir}")
-                        temporary.replace(still)
+                            raise RuntimeError(f"Source preparation failed; see {log_dir}/prepare-{lane}.log")
+                        temporary.replace(prepared)
                         children.remove(proc)
-                video = still
+                video = prepared
             videos[lane] = video
         if stopped:
             return 0
         for lane, source in enumerate(sources):
             label = source["type"]
+            fps, width, height = (source[k] for k in ("fps", "width", "height"))
             if label != "timer":
                 video = videos[lane]
                 command = common + ["-re", "-stream_loop", "-1", "-i", str(video),
@@ -147,14 +166,14 @@ def main():
             else:
                 command = common + ["-re", "-f", "lavfi", "-i",
                     f"color=c=0x141c26:s={width}x{height}:r={fps}",
-                    "-vf", timer_filter(str(font))] + encode
+                    "-vf", timer_filter(str(font))] + hardware_encode(fps)
             log = (log_dir / f"input{lane}.log").open("w")
             logs.append(log)
             children.append(subprocess.Popen(command + ["-rtsp_transport", "tcp",
                 "-f", "rtsp", f"{base}/input{lane}"], stdout=log,
                 stderr=subprocess.STDOUT))
-            print(f"input{lane}: {label}, {base}/input{lane}", flush=True)
-        print(f"{width}x{height}, {fps} FPS. Logs: {log_dir}. Ctrl+C stops all five.",
+            print(f"input{lane}: {label}, {width}x{height}, {fps} FPS, {base}/input{lane}", flush=True)
+        print(f"{len(sources)} sources. Logs: {log_dir}. Ctrl+C stops these publishers.",
               flush=True)
         start = time.monotonic()
         while not stopped:

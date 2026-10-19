@@ -624,7 +624,13 @@ textarea:focus {
 }
 .settings-tabs {
   display: flex;
+  flex-wrap: wrap;
   gap: 6px;
+  margin-bottom: 17px;
+}
+.channel-actions {
+  display: flex;
+  gap: 8px;
   margin-bottom: 17px;
 }
 .settings-tabs button {

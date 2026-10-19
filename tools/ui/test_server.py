@@ -25,6 +25,25 @@ def defaults():
 
 
 class ConfigTests(unittest.TestCase):
+    def test_variable_channel_counts_and_mixed_fps_survive_restart(self):
+        for rates in ([30], [30, 30], [20] * 3, [30, 30, 20, 20, 20], [12] * 6):
+            with self.subTest(rates=rates), tempfile.TemporaryDirectory() as directory:
+                cfg = defaults()
+                template = cfg["channels"][0]
+                cfg["channels"] = []
+                for index, fps in enumerate(rates):
+                    channel = copy.deepcopy(template)
+                    channel.update(id=f"ch{index + 1}", stats_port=39600 + index, fps=fps)
+                    cfg["channels"].append(channel)
+                store = ConfigStore(Path(directory) / "parameters.json")
+                store.save(cfg)
+                self.assertEqual(ConfigStore(store.path).snapshot(), cfg)
+        for channels in ([], None, 2):
+            cfg = defaults()
+            cfg["channels"] = channels
+            with self.assertRaises(ValueError):
+                validate_config(cfg)
+
     def test_restart_reads_file_instead_of_browser_defaults(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "parameters.json"

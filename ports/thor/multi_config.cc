@@ -1,6 +1,7 @@
 #include "mlvc/thor/multi_config.h"
 
 #include <algorithm>
+#include <cstdint>
 #include <initializer_list>
 #include <set>
 #include <string_view>
@@ -56,7 +57,8 @@ MultiStreamConfig LoadMultiStreamConfig(const std::filesystem::path& path,
                 std::string(error.what()));
   }
   const std::string role = operation == "encode" ? "encoder" : "decoder";
-  CheckKeys(root, {"execution", "log_prefix", "encoder", "decoder", "streams"});
+  CheckKeys(root, {"execution", "stream_count", "log_prefix", "encoder",
+                   "decoder", "streams"});
   const auto execution = root["execution"].value<std::string>();
   Check(execution && (*execution == "contexts" || *execution == "batch5"),
         "execution must be contexts or batch5");
@@ -66,11 +68,24 @@ MultiStreamConfig LoadMultiStreamConfig(const std::filesystem::path& path,
   const auto* defaults = root[role].as_table();
   Check(defaults != nullptr, "missing [" + role + "] defaults");
   const auto* streams = root["streams"].as_array();
-  Check(streams && streams->size() == 5,
-        "multistream config requires exactly five [[streams]] entries");
+  Check(streams && !streams->empty(),
+        "multistream config requires at least one [[streams]] entry");
+  size_t stream_count = streams->size();
+  if (root.contains("stream_count")) {
+    const auto count = root["stream_count"].value<int64_t>();
+    Check(root["stream_count"].is_integer() && count && *count > 0,
+          "stream_count must be a positive integer");
+    Check(static_cast<uint64_t>(*count) <= streams->size(),
+          "stream_count exceeds the number of configured [[streams]] entries");
+    stream_count = static_cast<size_t>(*count);
+  }
+  Check(*execution != "batch5" || stream_count == 5,
+        "batch5 requires exactly five active streams");
   MultiStreamConfig result{*execution, prefix.value_or("logs/" + role), {}};
   std::set<int64_t> ports;
-  for (const auto& node : *streams) {
+  // Spare definitions are not parsed, connected, or assigned runtime resources.
+  for (size_t index = 0; index < stream_count; ++index) {
+    const auto& node = (*streams)[index];
     const auto* lane = node.as_table();
     Check(lane != nullptr, "each stream must be a table");
     CheckKeys(*lane, {"encoder", "decoder"});
